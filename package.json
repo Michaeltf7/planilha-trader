@@ -60,7 +60,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "Michaelttf7",
+        "owner": "Michaeltf7",
         "repo": "planilha-trader"
       }
     ]
