@@ -4,9 +4,12 @@ import random
 import sys
 import time
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +33,10 @@ except Exception as exc:
 
 API = "https://www.sofascore.com/api/v1"
 TOURNAMENT_ID = 16
-BR_TZ = ZoneInfo("America/Sao_Paulo")
+try:
+    BR_TZ = ZoneInfo("America/Sao_Paulo") if ZoneInfo else timezone(timedelta(hours=-3))
+except Exception:
+    BR_TZ = timezone(timedelta(hours=-3))
 PROFILES = ["chrome131", "chrome136", "chrome142", "chrome145"]
 HEADERS = {
     "Accept": "*/*",

@@ -34,6 +34,13 @@ function createMainWindow() {
   return win;
 }
 
+function getAppResourcePath(...parts) {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'app.asar.unpacked', ...parts);
+  }
+  return path.join(__dirname, '..', ...parts);
+}
+
 function setupAutoUpdater(win) {
   if (!app.isPackaged || process.env.PLANILHA_TRADER_DISABLE_AUTO_UPDATE === '1') return;
 
@@ -1170,7 +1177,7 @@ function runPythonJsonScript(scriptPath, timeoutMs = 90000, extraArgs = []) {
 }
 
 async function syncWorldCupSofascore() {
-  const scriptPath = path.join(__dirname, '..', 'tools', 'worldcup_sofascore_cffi.py');
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
   return runPythonJsonScript(scriptPath);
 }
 
@@ -1179,7 +1186,7 @@ async function fetchWorldCupMatchDetails(payload = {}) {
   if (!eventId) {
     return { ok: false, source: 'Sofascore', error: 'Jogo sem ID do Sofascore.' };
   }
-  const scriptPath = path.join(__dirname, '..', 'tools', 'worldcup_sofascore_cffi.py');
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
   return runPythonJsonScript(scriptPath, 60000, ['details', String(eventId)]);
 }
 
@@ -1190,7 +1197,7 @@ async function syncCompetitionData(payload = {}) {
   if (!uniqueTournamentId || !seasonId) {
     return { ok: false, source: 'Sofascore', error: 'Competicao sem IDs validos.' };
   }
-  const scriptPath = path.join(__dirname, '..', 'tools', 'worldcup_sofascore_cffi.py');
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
   return runPythonJsonScript(scriptPath, 120000, ['competition', String(uniqueTournamentId), String(seasonId), name]);
 }
 
@@ -1267,7 +1274,7 @@ function createNativeDwmReplica(sourceWin, rect) {
 
     const display = require('electron').screen.getDisplayMatching(sourceWin.getBounds());
     const scale = display?.scaleFactor || 1;
-    const scriptPath = path.join(__dirname, 'dwm-replica.ps1');
+    const scriptPath = getAppResourcePath('electron', 'dwm-replica.ps1');
     const args = [
       '-NoProfile',
       '-ExecutionPolicy',

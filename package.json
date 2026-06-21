@@ -1,6 +1,6 @@
 {
   "name": "planilha-trader",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Planilha Trader desktop",
   "main": "electron/main.js",
   "private": true,
@@ -17,6 +17,10 @@
     "directories": {
       "output": "release"
     },
+    "asarUnpack": [
+      "tools/**",
+      "electron/dwm-replica.ps1"
+    ],
     "files": [
       "index.html",
       "package.json",
