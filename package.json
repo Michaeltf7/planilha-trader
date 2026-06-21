@@ -1,0 +1,14 @@
+{
+  "name": "planilha-trader",
+  "version": "1.0.0",
+  "description": "Planilha Trader desktop",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "desktop": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^30.5.1"
+  }
+}

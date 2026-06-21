@@ -1,0 +1,2208 @@
+
+
+const App = {
+    data: [],
+    customMethods: [],
+    currentView: 'dashboard',
+    theme: 'light',
+    ligas: [],
+    dicionarioTimes: {},
+    excecoesJogos: {},
+    escudosTimes: {},
+
+    init() {
+        this.cacheDOM();
+        this.bindEvents();
+        this.loadTheme();
+        this.loadData();
+        this.render();
+    },
+    
+    cacheDOM() {
+        this.appContainer = document.getElementById('app-container');
+        this.pageTitle = document.getElementById('page-title');
+        this.navLinks = document.querySelectorAll('.nav-links a');
+        this.csvInput = document.getElementById('csvFileInput');
+        this.themeToggle = document.getElementById('theme-toggle');
+    },
+        "São Paulo": "https://upload.wikimedia.org/wikipedia/commons/a/a2/São_Paulo_Futebol_Clube_(SP).png",
+        "Corinthians": "https://upload.wikimedia.org/wikipedia/commons/5/5f/Corinthians_logo.png",
+        "Grêmio": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Grêmio_Foot_Ball_Porto_Alegrense.png",
+        "Internacional": "https://upload.wikimedia.org/wikipedia/commons/6/61/Sport_Club_Internacional.png",
+        "Cruzeiro": "https://upload.wikimedia.org/wikipedia/commons/0/03/Cruzeiro_Esporte_Clube.png",
+        "Atlético Mineiro": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Clube_Atlético_Mineiro_(2023).png",
+        "Botafogo": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Botafogo_de_Futebol_e_Regatas.png",
+        "Fluminense": "https://upload.wikimedia.org/wikipedia/commons/2/2e/Fluminense_Football_Club.png",
+        "Vasco": "https://upload.wikimedia.org/wikipedia/commons/0/0a/CR_Vasco_da_Gama.png",
+        "Athletico Paranaense": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Athletico_Paranaense.png",
+        "Coritiba": "https://upload.wikimedia.org/wikipedia/commons/7/7f/Coritiba_Foot_Ball_Club.png",
+        "Bahia": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Esporte_Clube_Bahia.png",
+        "Sport": "https://upload.wikimedia.org/wikipedia/commons/9/94/Sport_Club_do_Recife.png",
+        "Fortaleza": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Fortaleza_EC.png",
+        "Ceará": "https://upload.wikimedia.org/wikipedia/commons/8/8a/Ceará_Sporting_Club.png",
+        "Goiás": "https://upload.wikimedia.org/wikipedia/commons/5/5a/Goiás_Esporte_Clube.png",
+        "Red Bull Bragantino": "https://upload.wikimedia.org/wikipedia/commons/8/81/Red_Bull_Bragantino.png",
+        "Cuiabá": "https://upload.wikimedia.org/wikipedia/commons/9/90/Cuiabá_Esporte_Clube.png",
+        "Juventude": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Esporte_Clube_Juventude.png",
+        "Atlético Goianiense": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Atlético_Goiano.png",
+        "América Mineiro": "https://upload.wikimedia.org/wikipedia/commons/c/c2/América_Mineiro.png",
+        "Chapecoense": "https://upload.wikimedia.org/wikipedia/commons/e/e3/Associa%C3%A7%C3%A3o_Chapecoense_de_Futebol.png",
+        "Avaí": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Ava%C3%AD_Futebol_Clube.png",
+        "River Plate": "https://upload.wikimedia.org/wikipedia/commons/3/3f/Club_Atl%C3%A9tico_River_Plate.png",
+        "Boca Juniors": "https://upload.wikimedia.org/wikipedia/commons/f/f3/Club_Atl%C3%A9tico_Boca_Juniors.png",
+        "Racing Club": "https://upload.wikimedia.org/wikipedia/commons/8/8a/Racing_Club_de_Avellaneda.png",
+        "Independiente": "https://upload.wikimedia.org/wikipedia/commons/6/69/Club_Independiente.png",
+        "San Lorenzo": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Club_San_Lorenzo_de_Almagro.png",
+        "Huracán": "https://upload.wikimedia.org/wikipedia/commons/e/e1/Club_Hurac%C3%A1n.png",
+        "Estudiantes": "https://upload.wikimedia.org/wikipedia/commons/2/2a/Estudiantes_de_LaPlata.png",
+        "Talleres Córdoba": "https://upload.wikimedia.org/wikipedia/commons/f/f9/Talleres_C%C3%B3rdoba.png",
+        "Banfield": "https://upload.wikimedia.org/wikipedia/commons/5/56/Club_Banfield.png",
+        "Lanus": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Club_Lan%C3%BAs.png",
+        "Rosario Central": "https://upload.wikimedia.org/wikipedia/commons/d/d9/Rosario_Central.png",
+        "Real Madrid": "https://upload.wikimedia.org/wikipedia/commons/5/56/Real_Madrid_CF.svg.png",
+        "Barcelona": "https://upload.wikimedia.org/wikipedia/commons/4/47/FC_Barcelona.svg.png",
+        "Atlético Madrid": "https://upload.wikimedia.org/wikipedia/commons/3/3e/Club_atl%C3%A9tico_de_Madrid.png",
+        "Sevilla": "https://upload.wikimedia.org/wikipedia/commons/f/fd/Sevilla_FC.svg.png",
+        "Valencia": "https://upload.wikimedia.org/wikipedia/commons/7/70/Valencia_CF.svg.png",
+        "Villarreal": "https://upload.wikimedia.org/wikipedia/commons/3/35/Villarreal_CF.svg.png",
+        "Real Betis": "https://upload.wikimedia.org/wikipedia/commons/f/f3/Real_Betis.svg.png",
+        "Real Sociedad": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Real_Sociedad.svg.png",
+        "Athletic Bilbao": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Athletic_Club.svg.png",
+        "Celta Vigo": "https://upload.wikimedia.org/wikipedia/commons/4/43/Celta_de_Vigo.svg.png",
+        "Manchester City": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Manchester_City_FC_badge.svg.png",
+        "Liverpool": "https://upload.wikimedia.org/wikipedia/commons/0/0c/Liverpool_FC.svg.png",
+        "Chelsea": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Chelsea_FC_badge.svg.png",
+        "Arsenal": "https://upload.wikimedia.org/wikipedia/commons/5/53/Arsenal_FC.svg.png",
+        "Manchester United": "https://upload.wikimedia.org/wikipedia/commons/7/7a/Manchester_United_FC_crest.svg.png",
+        "Tottenham": "https://upload.wikimedia.org/wikipedia/commons/b/b4/Tottenham_Hotspur.svg.png",
+        "Leicester": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Leicester_City_crest.svg.png",
+        "West Ham": "https://upload.wikimedia.org/wikipedia/commons/c/c8/West_Ham_United_fc_badge.svg.png",
+        "Aston Villa": "https://upload.wikimedia.org/wikipedia/commons/0/07/Aston_Villa_FC_crest.svg.png",
+        "Everton": "https://upload.wikimedia.org/wikipedia/commons/1/1b/Everton_FC_badge.svg.png",
+        "Newcastle": "https://upload.wikimedia.org/wikipedia/commons/5/52/Newcastle_United_Logo.svg.png",
+        "Wolves": "https://upload.wikimedia.org/wikipedia/commons/f/fc/Wolverhampton_Wanderers_FC.svg.png",
+        "Crystal Palace": "https://upload.wikimedia.org/wikipedia/commons/b/b5/Crystal_Palace_FC_badge.svg.png",
+        "Brighton": "https://upload.wikimedia.org/wikipedia/commons/d/d3/Brighton_%26_Hove_Albion.svg.png",
+        "Burnley": "https://upload.wikimedia.org/wikipedia/commons/1/1b/Burnley_FC_badge.svg.png",
+        "Southampton": "https://upload.wikimedia.org/wikipedia/commons/c/c9/Southampton_FC.svg.png",
+        "Juventus": "https://upload.wikimedia.org/wikipedia/commons/b/bc/Juventus_FC.png",
+        "Inter Milan": "https://upload.wikimedia.org/wikipedia/commons/0/00/Inter_Milan_Badge.svg.png",
+        "Milan": "https://upload.wikimedia.org/wikipedia/commons/d/d0/AC_Milan_Badge.svg.png",
+        "Roma": "https://upload.wikimedia.org/wikipedia/commons/f/f7/AS_Roma_badge.svg.png",
+        "Napoli": "https://upload.wikimedia.org/wikipedia/commons/4/4f/SSC_Napoli.svg.png",
+        "Lazio": "https://upload.wikimedia.org/wikipedia/commons/9/9f/S_S_Lazio.png",
+        "Atalanta": "https://upload.wikimedia.org/wikipedia/commons/4/48/Atalanta_BC.png",
+        "Fiorentina": "https://upload.wikimedia.org/wikipedia/commons/2/28/ACF_Fiorentina.png",
+        "Torino": "https://upload.wikimedia.org/wikipedia/commons/8/8d/Torino_FC.png",
+        "Bayern Munique": "https://upload.wikimedia.org/wikipedia/commons/4/4b/FC_Bayern_M%C3%BCnchen_logo_(2022).svg.png",
+        "Borussia Dortmund": "https://upload.wikimedia.org/wikipedia/commons/6/67/Borussia_Dortmund.svg.png",
+        "RB Leipzig": "https://upload.wikimedia.org/wikipedia/commons/a/a9/RB_Leipzig_Logo.svg.png",
+        "Leverkusen": "https://upload.wikimedia.org/wikipedia/commons/0/05/Bayer_04_Leverkusen_Logo.svg.png",
+        "Eintracht Frankfurt": "https://upload.wikimedia.org/wikipedia/commons/0/04/Eintracht_Frankfurt_Logo.svg.png",
+        "Wolfsburg": "https://upload.wikimedia.org/wikipedia/commons/f/fb/VfL_Wolfsburg.svg.png",
+        "Freiburg": "https://upload.wikimedia.org/wikipedia/commons/8/8f/SC_Freiburg_logo.svg.png",
+        "Stuttgart": "https://upload.wikimedia.org/wikipedia/commons/4/4f/VfB_Stuttgart_1893_Logo.svg.png",
+        "PSG": "https://upload.wikimedia.org/wikipedia/commons/a/a7/Paris_Saint-Germain_Logo.svg.png",
+        "Lyon": "https://upload.wikimedia.org/wikipedia/commons/8/8a/Olympique_Lyon.svg.png",
+        "Monaco": "https://upload.wikimedia.org/wikipedia/commons/7/76/AS_Monaco_FC.svg.png",
+        "Marseille": "https://upload.wikimedia.org/wikipedia/commons/3/37/Olympique_de_Marseille.svg.png",
+        "Lille": "https://upload.wikimedia.org/wikipedia/commons/f/f2/Lille_OSC_logo.svg.png",
+        "Porto": "https://upload.wikimedia.org/wikipedia/commons/8/84/FC_Porto_2023.svg.png",
+        "Benfica": "https://upload.wikimedia.org/wikipedia/commons/0/02/SL_ Benfica_badge.svg.png",
+        "Sporting": "https://upload.wikimedia.org/wikipedia/commons/7/7e/Sporting_Club_de_Portugal_Logo.png",
+        "Braga": "https://upload.wikimedia.org/wikipedia/commons/a/a8/SC_Braga.png",
+        "Ajax": "https://upload.wikimedia.org/wikipedia/commons/b/b9/AFC_Ajax_(2020).svg.png",
+        "PSV Eindhoven": "https://upload.wikimedia.org/wikipedia/commons/1/1e/PSV_Eindhoven.svg.png",
+        "Feyenoord": "https://upload.wikimedia.org/wikipedia/commons/0/01/Feyenoord.svg.png"
+    },
+    initialDicionario: {
+        "Flamengo": "Brasileirão",
+        "Palmeiras": "Brasileirão",
+        "Santos": "Brasileirão",
+        "São Paulo": "Brasileirão",
+        "Corinthians": "Brasileirão",
+        "Grêmio": "Brasileirão",
+        "Internacional": "Brasileirão",
+        "Cruzeiro": "Brasileirão",
+        "Atlético Mineiro": "Brasileirão",
+        "Botafogo": "Brasileirão",
+        "Fluminense": "Brasileirão",
+        "Vasco": "Brasileirão",
+        "Athletico Paranaense": "Brasileirão",
+        "Coritiba": "Brasileirão",
+        "São Paulo": "Brasileirão",
+        "Bahia": "Brasileirão",
+        "Sport": "Brasileirão",
+        "Fortaleza": "Brasileirão",
+        "Ceará": "Brasileirão",
+        "Atlético Goianiense": "Brasileirão",
+        "Goiás": "Brasileirão",
+        "Red Bull Bragantino": "Brasileirão",
+        "Avaí": "Brasileirão",
+        "Corinthians": "Brasileirão",
+        "Juventude": "Brasileirão",
+        "Cuiabá": "Brasileirão",
+        "Botafogo": "Brasileirão",
+        "Vasco": "Brasileirão",
+        "América Mineiro": "Brasileirão",
+        "Chapecoense": "Brasileirão",
+        "Santos": "Brasileirão",
+        "River Plate": "Argentino",
+        "Boca Juniors": "Argentino",
+        "Racing Club": "Argentino",
+        "Independiente": "Argentino",
+        "San Lorenzo": "Argentino",
+        "Huracán": "Argentino",
+        "Velez Sarsfield": "Argentino",
+        "Estudiantes": "Argentino",
+        "La Plata": "Argentino",
+        "Talleres Córdoba": "Argentino",
+        "Banfield": "Argentino",
+        "Lanus": "Argentino",
+        "Newells Old Boys": "Argentino",
+        "Rosario Central": "Argentino",
+        "Real Madrid": "La Liga",
+        "Barcelona": "La Liga",
+        "Atlético Madrid": "La Liga",
+        "Sevilla": "La Liga",
+        "Valencia": "La Liga",
+        "Villarreal": "La Liga",
+        "Real Betis": "La Liga",
+        "Real Sociedad": "La Liga",
+        "Athletic Bilbao": "La Liga",
+        "Celta Vigo": "La Liga",
+        "Getafe": "La Liga",
+        "Granada": "La Liga",
+        "Alavés": "La Liga",
+        "Levante": "La Liga",
+        "Osasuna": "La Liga",
+        "Mallorca": "La Liga",
+        "Manchester City": "Premier League",
+        "Liverpool": "Premier League",
+        "Chelsea": "Premier League",
+        "Arsenal": "Premier League",
+        "Manchester United": "Premier League",
+        "Tottenham": "Premier League",
+        "Leicester": "Premier League",
+        "West Ham": "Premier League",
+        "Aston Villa": "Premier League",
+        "Everton": "Premier League",
+        "Newcastle": "Premier League",
+        "Wolves": "Premier League",
+        "Crystal Palace": "Premier League",
+        "Brighton": "Premier League",
+        "Burnley": "Premier League",
+        "Southampton": "Premier League",
+        "Juventus": "Serie A",
+        "Inter Milan": "Serie A",
+        "Milan": "Serie A",
+        "Roma": "Serie A",
+        "Napoli": "Serie A",
+        "Lazio": "Serie A",
+        "Atalanta": "Serie A",
+        "Fiorentina": "Serie A",
+        "Torino": "Serie A",
+        "Sampdoria": "Serie A",
+        "Bologna": "Serie A",
+        "Udinese": "Serie A",
+        "Sassuolo": "Serie A",
+        "Verona": "Serie A",
+        "Bayern Munique": "Bundesliga",
+        "Borussia Dortmund": "Bundesliga",
+        "RB Leipzig": "Bundesliga",
+        "Leverkusen": "Bundesliga",
+        "Eintracht Frankfurt": "Bundesliga",
+        "Wolfsburg": "Bundesliga",
+        "Union Berlin": "Bundesliga",
+        "Freiburg": "Bundesliga",
+        "Stuttgart": "Bundesliga",
+        "Hertha": "Bundesliga",
+        "Mönchengladbach": "Bundesliga",
+        "PSG": "Ligue 1",
+        "Lyon": "Ligue 1",
+        "Monaco": "Ligue 1",
+        "Marseille": "Ligue 1",
+        "Lille": "Ligue 1",
+        "Rennes": "Ligue 1",
+        "Nice": "Ligue 1",
+        "Strasbourg": "Ligue 1",
+        "Bordeaux": "Ligue 1",
+        "Montpellier": "Ligue 1",
+        "Nantes": "Ligue 1",
+        "Brest": "Ligue 1",
+        "Angers": "Ligue 1",
+        "Porto": "Liga Portugal",
+        "Benfica": "Liga Portugal",
+        "Sporting": "Liga Portugal",
+        "Braga": "Liga Portugal",
+        "Ajax": "Eredivisie",
+        "PSV Eindhoven": "Eredivisie",
+        "Feyenoord": "Eredivisie",
+        "Flamengo": "Libertadores",
+        "Palmeiras": "Libertadores",
+        "River Plate": "Libertadores",
+        "Boca Juniors": "Libertadores",
+        "Independiente": "Libertadores",
+        "Racing Club": "Libertadores",
+        "Santos": "Libertadores",
+        "São Paulo": "Libertadores",
+        "Grêmio": "Libertadores",
+        "Cruzeiro": "Libertadores",
+        "Atlético Mineiro": "Libertadores",
+        "Corinthians": "Libertadores",
+        "Nacional": "Libertadores",
+        "Peñarol": "Libertadores",
+        "Universidad Chile": "Libertadores",
+        "Colo Colo": "Libertadores",
+        "Emelec": "Libertadores",
+        "Liga Quito": "Libertadores",
+        "Barcelona SC": "Libertadores",
+        "Al Ahly": "Champions League",
+        " Zamalek": "Champions League",
+        "Wydad": "Champions League",
+        "Raja Casablanca": "Champions League",
+        "Espérance": "Champions League",
+        "Mamelodi Sundowns": "Champions League",
+        "Kawasaki Frontale": "Champions League",
+        "Urawa Red Diamonds": "Champions League",
+        "Jeonbuk": "Champions League",
+        "Seongnam": "Champions League",
+        "Sydney FC": "Champions League",
+        "Auckland City": "Champions League"
+    },
+
+    getEscudoTime(nomeTime) {
+        if (!nomeTime) return '';
+        
+        // Primeiro tenta encontrar exatamente
+        if (this.escudosTimes[nomeTime]) {
+            return this.escudosTimes[nomeTime];
+        }
+
+        // Tenta encontrar com algumas variações
+        const variacoes = [
+            nomeTime,
+            nomeTime.trim(),
+            nomeTime.toLowerCase(),
+            nomeTime.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        ];
+
+        for (const v of variacoes) {
+            if (this.escudosTimes[v]) {
+                return this.escudosTimes[v];
+            }
+            // Busca case-insensitive
+            for (const [key, url] of Object.entries(this.escudosTimes)) {
+                if (key.toLowerCase() === v.toLowerCase()) {
+                    return url;
+                }
+            }
+        }
+
+        return '';
+    },
+
+    init() {
+        this.cacheDOM();
+        this.bindEvents();
+        this.loadTheme();
+        this.loadData();
+        this.render();
+    },
+    
+    cacheDOM() {
+        this.appContainer = document.getElementById('app-container');
+        this.pageTitle = document.getElementById('page-title');
+        this.navLinks = document.querySelectorAll('.nav-links a');
+        this.csvInput = document.getElementById('csvFileInput');
+        this.themeToggle = document.getElementById('theme-toggle');
+    },
+    
+    bindEvents() {
+        this.navLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const view = link.getAttribute('data-view');
+                this.changeView(view);
+                
+                // Update active class
+                this.navLinks.forEach(l => l.classList.remove('active'));
+                link.classList.add('active');
+            });
+        });
+        
+        this.csvInput.addEventListener('change', (e) => this.handleFileUpload(e));
+        
+        this.themeToggle.addEventListener('click', () => this.toggleTheme());
+    },
+    
+    loadTheme() {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            this.theme = savedTheme;
+            document.documentElement.setAttribute('data-theme', this.theme);
+        }
+        this.updateThemeIcon();
+    },
+    
+    toggleTheme() {
+        this.theme = this.theme === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', this.theme);
+        localStorage.setItem('theme', this.theme);
+        this.updateThemeIcon();
+        this.render(); // Re-render to update charts colors if needed
+    },
+    
+    updateThemeIcon() {
+        const icon = this.themeToggle.querySelector('i');
+        if (this.theme === 'dark') {
+            icon.className = 'bx bx-sun';
+        } else {
+            icon.className = 'bx bx-moon';
+        }
+    },
+    
+    loadData() {
+        const savedData = localStorage.getItem('planilhaData');
+        if (savedData) {
+            this.data = JSON.parse(savedData);
+        }
+        const savedMethods = localStorage.getItem('planilhaMethods');
+        if (savedMethods) {
+            this.customMethods = JSON.parse(savedMethods);
+        }
+        const savedLigas = localStorage.getItem('planilhaLigas');
+        if (savedLigas) {
+            this.ligas = JSON.parse(savedLigas);
+        }
+        const savedDicionario = localStorage.getItem('planilhaDicionarioTimes');
+        if (savedDicionario) {
+            this.dicionarioTimes = JSON.parse(savedDicionario);
+        } else {
+            this.dicionarioTimes = { ...this.initialDicionario };
+        }
+        const savedExcecoes = localStorage.getItem('planilhaExcecoesJogos');
+        if (savedExcecoes) {
+            this.excecoesJogos = JSON.parse(savedExcecoes);
+        }
+        
+        const savedCiclosConfig = localStorage.getItem('planilhaCiclosConfig');
+        if (savedCiclosConfig) {
+            this.ciclosConfig = JSON.parse(savedCiclosConfig);
+        } else {
+            this.ciclosConfig = [
+                { stakeInicial: 500, objetivo: 1000, fatorReducao: 0, stopLucro: 100 },
+                { stakeInicial: 500, objetivo: 1000, fatorReducao: 0, stopLucro: 100 },
+                { stakeInicial: 750, objetivo: 1500, fatorReducao: 0, stopLucro: 100 },
+                { stakeInicial: 1450, objetivo: 2900, fatorReducao: 0, stopLucro: 100 },
+                { stakeInicial: 2850, objetivo: 5700, fatorReducao: 0, stopLucro: 100 }
+            ];
+        }
+        
+        const savedCiclosState = localStorage.getItem('planilhaCiclosState');
+        if (savedCiclosState) {
+            this.ciclosState = JSON.parse(savedCiclosState);
+        } else {
+            this.ciclosState = {
+                cicloAtual: 0,
+                stakeAtual: 500,
+                saldoCiclo: 0,
+                entradasCiclo: [],
+                lucroTotalGeral: 0,
+                bancaInicial: 500,
+                historicoCiclos: []
+            };
+        }
+        
+        if (this.ligas.length === 0) {
+            this.ligas = ['Brasileirão', 'Libertadores', 'Copa do Brasil', 'Champions League', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Argentino', 'Copa do Brasil', 'Copa Libertadores', 'Copa America', 'Euro'];
+        }
+    },
+    
+    saveData() {
+        localStorage.setItem('planilhaData', JSON.stringify(this.data));
+        localStorage.setItem('planilhaMethods', JSON.stringify(this.customMethods));
+        localStorage.setItem('planilhaLigas', JSON.stringify(this.ligas));
+        localStorage.setItem('planilhaDicionarioTimes', JSON.stringify(this.dicionarioTimes));
+        localStorage.setItem('planilhaExcecoesJogos', JSON.stringify(this.excecoesJogos));
+        localStorage.setItem('planilhaCiclosConfig', JSON.stringify(this.ciclosConfig));
+        localStorage.setItem('planilhaCiclosState', JSON.stringify(this.ciclosState));
+    },
+
+    detectLeague(game, dateStr) {
+        const teams = game.split(' x ').map(t => t.trim());
+        if (teams.length < 2) return '';
+        
+        const teamA = teams[0];
+        const teamB = teams[1];
+        const gameId = `${game}_${dateStr.split(' ')[0]}`;
+        
+        if (this.excecoesJogos[gameId]) {
+            return this.excecoesJogos[gameId];
+        }
+        
+        const leagueA = this.dicionarioTimes[teamA] || '';
+        const leagueB = this.dicionarioTimes[teamB] || '';
+        
+        if (!leagueA || !leagueB) {
+            return '';
+        }
+        
+        if (leagueA === leagueB) {
+            return leagueA;
+        }
+        
+        return 'Confronto Misto';
+    },
+    
+    async handleFileUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const csvContent = event.target.result;
+            const newData = parseCSV(csvContent);
+            
+            // Mesclar userMethods existentes baseados no ID determinístico
+            const existingMap = new Map();
+            if (this.data && this.data.length > 0) {
+                this.data.forEach(t => {
+                    if (t.userMethod) existingMap.set(t.id, t.userMethod);
+                });
+            }
+            
+            newData.forEach(t => {
+                if (existingMap.has(t.id)) {
+                    t.userMethod = existingMap.get(t.id);
+                } else {
+                    t.userMethod = ''; // Default vazio
+                }
+            });
+            
+            this.data = newData;
+            this.saveData();
+            this.render();
+        };
+        reader.readAsText(file);
+    },
+    
+    changeView(view) {
+        this.currentView = view;
+        
+        // Update Title
+        const titleMap = {
+            'dashboard': 'Dashboard',
+            'entradas': 'Todas as Entradas',
+            'metodos': 'Análise por Métodos',
+            'ligas': 'Análise por Liga',
+            'times': 'Análise por Time',
+            'financas': 'Saques e Depósitos',
+            'ciclos': 'Método de Ciclos'
+        };
+        this.pageTitle.textContent = titleMap[view] || 'Planilha Trader';
+        
+        this.render();
+    },
+    
+    render() {
+        if (!this.data || this.data.length === 0) {
+            this.appContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class='bx bx-cloud-upload'></i>
+                    <h3>Nenhum dado encontrado</h3>
+                    <p>Por favor, importe seu CSV da Betfair para começar.</p>
+                </div>
+            `;
+            return;
+        }
+
+        switch(this.currentView) {
+            case 'dashboard':
+                this.renderDashboard();
+                break;
+            case 'entradas':
+                this.renderEntradas();
+                break;
+            case 'metodos':
+                this.renderMetodos();
+                break;
+            case 'ligas':
+                this.renderLigas();
+                break;
+            case 'times':
+                this.renderTimes();
+                break;
+            case 'financas':
+                this.renderFinancas();
+                break;
+            case 'ciclos':
+                this.renderCiclos();
+                break;
+        }
+    },
+    
+    formatCurrency(value) {
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+    },
+
+    formatNumber(value) {
+        return new Intl.NumberFormat('pt-BR').format(value);
+    },
+
+    // LÓGICA DE CICLOS
+    calcularProximoStake(stakeAtual, lucroEntrada, objetivo, stopLucro) {
+        const stake5Porcento = stakeAtual * 0.05;
+        if (lucroEntrada >= stake5Porcento) {
+            return stakeAtual;
+        }
+        return stakeAtual;
+    },
+
+    verificarCicloCompleto(saldoCiclo, objetivo, stakeInicial, stopLucroPorcentagem) {
+        const lucroObjetivo = objetivo - stakeInicial;
+        const objetivoParcial = lucroObjetivo * (stopLucroPorcentagem / 100);
+        return saldoCiclo >= objetivoParcial;
+    },
+
+    getEntradasDisponiveis() {
+        const trades = this.data.filter(d => !d.isDepositOrWithdrawal);
+        const usedIds = new Set();
+        this.ciclosState.historicoCiclos.forEach(ciclo => {
+            ciclo.entradas.forEach(e => usedIds.add(e.id));
+        });
+        this.ciclosState.entradasCiclo.forEach(e => usedIds.add(e.id));
+        return trades.filter(t => !usedIds.has(t.id));
+    },
+
+    // VIEWS RENDERERS
+    renderDashboard() {
+        const trades = this.data.filter(d => !d.isDepositOrWithdrawal);
+        const financas = this.data.filter(d => d.isDepositOrWithdrawal);
+        
+        const totalProfit = trades.reduce((acc, curr) => acc + curr.netProfit, 0);
+        const wins = trades.filter(t => t.netProfit > 0).length;
+        const losses = trades.filter(t => t.netProfit < 0).length;
+        const winrate = trades.length > 0 ? ((wins / trades.length) * 100).toFixed(2) : 0;
+        
+        const depositos = financas.filter(f => f.netProfit > 0).reduce((acc, curr) => acc + curr.netProfit, 0);
+        const saques = financas.filter(f => f.netProfit < 0).reduce((acc, curr) => acc + Math.abs(curr.netProfit), 0);
+        const saldoConta = depositos - saques + totalProfit;
+        
+        const greenRecords = trades.filter(t => t.netProfit > 0);
+        const redRecords = trades.filter(t => t.netProfit < 0);
+        const maiorGreen = greenRecords.length > 0 ? Math.max(...greenRecords.map(t => t.netProfit)) : 0;
+        const maiorRed = redRecords.length > 0 ? Math.min(...redRecords.map(t => t.netProfit)) : 0;
+        
+        this.appContainer.innerHTML = `
+            <div class="dashboard-grid">
+                <div class="stat-card">
+                    <div class="icon-wrapper" style="background: rgba(67, 24, 255, 0.1); color: var(--primary-color);">
+                        <i class='bx bx-wallet'></i>
+                    </div>
+                    <div class="title">Saldo da Conta</div>
+                    <div class="value ${saldoConta >= 0 ? 'profit' : 'loss'}">${this.formatCurrency(saldoConta)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-wrapper" style="background: var(--success-bg); color: var(--success-color);">
+                        <i class='bx bx-trending-up'></i>
+                    </div>
+                    <div class="title">Maior Green</div>
+                    <div class="value profit">${this.formatCurrency(maiorGreen)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-wrapper" style="background: var(--danger-bg); color: var(--danger-color);">
+                        <i class='bx bx-trending-down'></i>
+                    </div>
+                    <div class="title">Maior Red</div>
+                    <div class="value loss">${this.formatCurrency(maiorRed)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-wrapper" style="background: rgba(67, 24, 255, 0.1); color: var(--primary-color);">
+                        <i class='bx bx-line-chart'></i>
+                    </div>
+                    <div class="title">Lucro Total</div>
+                    <div class="value ${totalProfit >= 0 ? 'profit' : 'loss'}">${this.formatCurrency(totalProfit)}</div>
+                </div>
+            </div>
+            
+            <div class="dashboard-grid" style="margin-top: 15px;">
+                <div class="stat-card">
+                    <div class="icon-wrapper" style="background: rgba(163, 174, 209, 0.2); color: var(--text-secondary);">
+                        <i class='bx bx-bar-chart-alt-2'></i>
+                    </div>
+                    <div class="title">Total de Entradas</div>
+                    <div class="value">${trades.length}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-wrapper" style="background: var(--success-bg); color: var(--success-color);">
+                        <i class='bx bx-check-circle'></i>
+                    </div>
+                    <div class="title">Acertos (Greens)</div>
+                    <div class="value profit">${wins}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-wrapper" style="background: var(--danger-bg); color: var(--danger-color);">
+                        <i class='bx bx-x-circle'></i>
+                    </div>
+                    <div class="title">Erros (Reds)</div>
+                    <div class="value loss">${losses}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-wrapper" style="background: rgba(255, 171, 0, 0.1); color: #FFAB00;">
+                        <i class='bx bx-target-lock'></i>
+                    </div>
+                    <div class="title">Taxa de Acerto</div>
+                    <div class="value">${winrate}%</div>
+                </div>
+            </div>
+            
+            <div class="charts-area">
+                <div class="chart-card">
+                    <h3>Evolução do Saldo</h3>
+                    <div style="position: relative; height: 280px; width: 100%;">
+                        <canvas id="pnlChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card" style="display: flex; flex-direction: column;">
+                    <h3>Assertividade</h3>
+                    <div style="position: relative; height: 200px; width: 100%; margin: auto;">
+                        <canvas id="winLossChart"></canvas>
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none;">
+                            <span style="font-size: 28px; font-weight: 700; color: var(--text-primary); font-family: 'Outfit', sans-serif;">${winrate}%</span>
+                        </div>
+                    </div>
+                    <div style="text-align: center; margin-top: 10px; font-size: 13px; color: var(--text-secondary);">
+                        <span style="color: var(--success-color);">● Greens: ${wins}</span> &nbsp;|&nbsp; 
+                        <span style="color: var(--danger-color);">● Reds: ${losses}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="charts-area" style="margin-top: 24px;">
+                <div class="chart-card" style="grid-column: span 2;">
+                    <h3>Lucro por Mercado</h3>
+                    <div style="position: relative; height: 300px; width: 100%;">
+                        <canvas id="marketsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="charts-area" style="margin-top: 24px;">
+                <div class="chart-card" style="display: flex; flex-direction: column;">
+                    <h3>Por Método Pessoal</h3>
+                    <div style="position: relative; height: 250px; width: 100%; margin: auto;">
+                        <canvas id="methodsChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card" style="display: flex; flex-direction: column;">
+                    <h3>Por Liga</h3>
+                    <div style="position: relative; height: 250px; width: 100%; margin: auto;">
+                        <canvas id="ligasChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        this.initCharts(trades, wins, losses, financas);
+    },
+    
+    initCharts(trades, wins, losses, financas) {
+        // Reverse trades to chronological order (oldest first)
+        const chronologicalTrades = [...trades].reverse();
+        
+        let cumulative = 0;
+        const labels = [];
+        const dataPoints = [];
+        
+        // Agrupar lucro por dia
+        const dailyProfit = new Map();
+        
+        chronologicalTrades.forEach(t => {
+            const day = t.dateStr.split(' ')[0]; // Extrai apenas a data
+            if (!dailyProfit.has(day)) {
+                dailyProfit.set(day, 0);
+            }
+            dailyProfit.set(day, dailyProfit.get(day) + t.netProfit);
+        });
+
+        for (const [day, profit] of dailyProfit.entries()) {
+            cumulative += profit;
+            labels.push(day);
+            dataPoints.push(cumulative);
+        }
+        
+        const ctxPnl = document.getElementById('pnlChart').getContext('2d');
+        const colorPrimary = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim();
+        const colorText = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
+        const borderColor = getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim();
+        const successColor = getComputedStyle(document.documentElement).getPropertyValue('--success-color').trim();
+        const dangerColor = getComputedStyle(document.documentElement).getPropertyValue('--danger-color').trim();
+        
+        let gradient = ctxPnl.createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, colorPrimary + '66'); // 40% opacity
+        gradient.addColorStop(1, colorPrimary + '00'); // 0% opacity
+        
+        new Chart(ctxPnl, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Lucro Acumulado',
+                    data: dataPoints,
+                    borderColor: colorPrimary,
+                    backgroundColor: gradient,
+                    borderWidth: 2,
+                    pointBackgroundColor: colorPrimary,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: 10, bottom: 10, left: 10, right: 10 } },
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 28, 68, 0.9)',
+                        titleFont: { size: 13, family: 'Inter' },
+                        bodyFont: { size: 14, family: 'Inter', weight: 'bold' },
+                        padding: 12,
+                        cornerRadius: 8,
+                        displayColors: false,
+                        callbacks: {
+                            label: function(context) {
+                                return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { 
+                        display: false 
+                    },
+                    y: { 
+                        ticks: { color: colorText, font: { family: 'Inter' } },
+                        grid: { color: borderColor, borderDash: [5, 5] },
+                        border: { display: false }
+                    }
+                },
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+            }
+        });
+        
+        const ctxWL = document.getElementById('winLossChart').getContext('2d');
+        new Chart(ctxWL, {
+            type: 'doughnut',
+            data: {
+                labels: ['Greens', 'Reds'],
+                datasets: [{
+                    data: [wins, losses],
+                    backgroundColor: [successColor, dangerColor],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '75%',
+                layout: { padding: { top: 10, bottom: 5, left: 10, right: 10 } },
+                plugins: {
+                    legend: { 
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 28, 68, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8,
+                        bodyFont: { size: 14, family: 'Inter', weight: 'bold' }
+                    }
+                }
+            }
+        });
+        
+        // Gráfico de Lucro por Mercado
+        const mercadoStats = {};
+        trades.forEach(t => {
+            const mercado = t.method || 'Outro';
+            if (!mercadoStats[mercado]) {
+                mercadoStats[mercado] = { profit: 0, count: 0 };
+            }
+            mercadoStats[mercado].profit += t.netProfit;
+            mercadoStats[mercado].count += 1;
+        });
+        
+        const sortedMarkets = Object.keys(mercadoStats)
+            .map(k => ({ name: k, profit: mercadoStats[k].profit, count: mercadoStats[k].count }))
+            .sort((a, b) => b.profit - a.profit)
+            .slice(0, 10);
+        
+        const marketLabels = sortedMarkets.map(m => m.name);
+        const marketData = sortedMarkets.map(m => m.profit);
+        const marketColors = marketData.map(p => p >= 0 ? successColor : dangerColor);
+        
+        const ctxMarkets = document.getElementById('marketsChart').getContext('2d');
+        new Chart(ctxMarkets, {
+            type: 'bar',
+            data: {
+                labels: marketLabels,
+                datasets: [{
+                    label: 'Lucro',
+                    data: marketData,
+                    backgroundColor: marketColors,
+                    borderRadius: 6,
+                    barThickness: 30
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: 10, bottom: 10, left: 10, right: 10 } },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 28, 68, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8,
+                        titleFont: { size: 13, family: 'Inter' },
+                        bodyFont: { size: 14, family: 'Inter', weight: 'bold' },
+                        callbacks: {
+                            label: function(context) {
+                                const idx = context.dataIndex;
+                                const count = sortedMarkets[idx].count;
+                                return [
+                                    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.x),
+                                    `(${count} entradas)`
+                                ];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { 
+                            color: colorText, 
+                            font: { family: 'Inter' },
+                            callback: function(value) {
+                                return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
+                            }
+                        },
+                        grid: { color: borderColor, borderDash: [5, 5] },
+                        border: { display: false }
+                    },
+                    y: {
+                        ticks: { color: colorText, font: { family: 'Inter', size: 12 } },
+                        grid: { display: false },
+                        border: { display: false }
+                    }
+                }
+            }
+        });
+        
+        // Gráfico de Métodos Pessoais
+        const metodoStats = {};
+        trades.forEach(t => {
+            const metodo = t.userMethod || 'Sem método';
+            if (!metodoStats[metodo]) {
+                metodoStats[metodo] = { profit: 0, count: 0 };
+            }
+            metodoStats[metodo].profit += t.netProfit;
+            metodoStats[metodo].count += 1;
+        });
+        
+        const sortedMetodos = Object.keys(metodoStats)
+            .map(k => ({ name: k, profit: metodoStats[k].profit, count: metodoStats[k].count }))
+            .sort((a, b) => b.profit - a.profit);
+        
+        if (sortedMetodos.length > 0) {
+            const metodoColors = [
+                '#0F969C', '#06b6d4', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#ef4444'
+            ];
+            
+            const ctxMethods = document.getElementById('methodsChart').getContext('2d');
+            new Chart(ctxMethods, {
+                type: 'doughnut',
+                data: {
+                    labels: sortedMetodos.map(m => m.name),
+                    datasets: [{
+                        data: sortedMetodos.map(m => m.profit),
+                        backgroundColor: sortedMetodos.map((_, i) => metodoColors[i % metodoColors.length]),
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: { 
+                            position: 'right',
+                            labels: { 
+                                color: colorText, 
+                                padding: 12, 
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                font: { size: 11 }
+                            } 
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(17, 28, 68, 0.9)',
+                            padding: 12,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: function(context) {
+                                    const idx = context.dataIndex;
+                                    const count = sortedMetodos[idx].count;
+                                    const profit = context.parsed;
+                                    return [
+                                        new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(profit),
+                                        `(${count} entradas)`
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Gráfico de Ligas
+        const ligaStats = {};
+        trades.forEach(t => {
+            const liga = this.detectLeague(t.game, t.dateStr) || 'Não identificado';
+            if (!ligaStats[liga]) {
+                ligaStats[liga] = { profit: 0, count: 0 };
+            }
+            ligaStats[liga].profit += t.netProfit;
+            ligaStats[liga].count += 1;
+        });
+        
+        const sortedLigas = Object.keys(ligaStats)
+            .map(k => ({ name: k, profit: ligaStats[k].profit, count: ligaStats[k].count }))
+            .sort((a, b) => b.profit - a.profit)
+            .slice(0, 8);
+        
+        if (sortedLigas.length > 0) {
+            const ligaColors = [
+                '#10b981', '#0F969C', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#6366f1', '#ef4444'
+            ];
+            
+            const ctxLigas = document.getElementById('ligasChart').getContext('2d');
+            new Chart(ctxLigas, {
+                type: 'doughnut',
+                data: {
+                    labels: sortedLigas.map(l => l.name),
+                    datasets: [{
+                        data: sortedLigas.map(l => l.profit),
+                        backgroundColor: sortedLigas.map((_, i) => ligaColors[i % ligaColors.length]),
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: { 
+                            position: 'right',
+                            labels: { 
+                                color: colorText, 
+                                padding: 12, 
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                font: { size: 11 }
+                            } 
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(17, 28, 68, 0.9)',
+                            padding: 12,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: function(context) {
+                                    const idx = context.dataIndex;
+                                    const count = sortedLigas[idx].count;
+                                    const profit = context.parsed;
+                                    return [
+                                        new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(profit),
+                                        `(${count} entradas)`
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    },
+
+    renderEntradas() {
+        if (!this.entradasState) {
+            this.entradasState = {
+                currentPage: 1,
+                itemsPerPage: 50,
+                filterTeam: '',
+                filterDate: '',
+                filterMethod: '',
+                filterLeague: ''
+            };
+        }
+        
+        const state = this.entradasState;
+        let trades = this.data.filter(d => !d.isDepositOrWithdrawal);
+        
+        // Opções únicas para selects
+        const uniqueDates = [...new Set(trades.map(t => t.dateStr.split(' ')[0]))];
+        const uniqueNativeMarkets = [...new Set(trades.map(t => t.method))];
+        const uniqueLeagues = [...new Set(trades.map(t => this.detectLeague(t.game, t.dateStr)).filter(l => l))];
+        
+        // Aplicar Filtros
+        if (state.filterTeam) {
+            const term = state.filterTeam.toLowerCase();
+            trades = trades.filter(t => t.game.toLowerCase().includes(term));
+        }
+        if (state.filterDate) {
+            trades = trades.filter(t => t.dateStr.startsWith(state.filterDate));
+        }
+        if (state.filterMethod) {
+            trades = trades.filter(t => t.userMethod === state.filterMethod);
+        }
+        if (state.filterLeague) {
+            trades = trades.filter(t => this.detectLeague(t.game, t.dateStr) === state.filterLeague);
+        }
+        
+        // Paginação
+        const totalItems = trades.length;
+        const totalPages = Math.ceil(totalItems / state.itemsPerPage) || 1;
+        
+        if (state.currentPage > totalPages) state.currentPage = totalPages;
+        
+        const startIndex = (state.currentPage - 1) * state.itemsPerPage;
+        const endIndex = startIndex + state.itemsPerPage;
+        const currentTrades = trades.slice(startIndex, endIndex);
+        
+        let rows = currentTrades.map(t => {
+            const detectedLeague = this.detectLeague(t.game, t.dateStr);
+            const leagueClass = detectedLeague === 'Confronto Misto' ? 'warning' : (detectedLeague ? 'default' : '');
+            
+            // Extrai os times do jogo e busca os escudos
+            const teams = t.game.split(' x ').map(x => x.trim());
+            const escudoA = this.getEscudoTime(teams[0]);
+            const escudoB = this.getEscudoTime(teams[1]);
+            const imgA = escudoA ? `<img src="${escudoA}" style="width: 24px; height: 24px; object-fit: contain; margin-right: 4px;" onerror="this.style.display='none'">` : '';
+            const imgB = escudoB ? `<img src="${escudoB}" style="width: 24px; height: 24px; object-fit: contain; margin-left: 4px;" onerror="this.style.display='none'">` : '';
+            const gameDisplay = teams.length >= 2 ? 
+                `${imgA}<span>${teams[0]}</span> x <span>${teams[1]}${imgB}` : 
+                t.game;
+            
+            return `
+            <tr>
+                <td>${t.dateStr}</td>
+                <td>${gameDisplay}</td>
+                <td>${t.method}</td>
+                <td>
+                    <span class="liga-badge ${leagueClass}" style="padding: 4px 8px; border-radius: 4px; font-size: 12px; background: ${leagueClass === 'warning' ? 'rgba(255, 171, 0, 0.15)' : 'rgba(67, 24, 255, 0.1)'} ; color: ${leagueClass === 'warning' ? '#FFAB00' : 'var(--primary-color)'};">
+                        ${detectedLeague || '-'}
+                    </span>
+                </td>
+                <td>
+                    <select class="filter-control method-select" data-id="${t.id}" style="padding: 8px; font-size: 13px; width: 100%; border-radius: 8px;">
+                        <option value="">Nenhum</option>
+                        ${this.customMethods.map(m => `<option value="${m}" ${t.userMethod === m ? 'selected' : ''}>${m}</option>`).join('')}
+                    </select>
+                </td>
+                <td>
+                    <span class="badge ${t.netProfit >= 0 ? 'green' : 'red'}">
+                        ${this.formatCurrency(t.netProfit)}
+                    </span>
+                </td>
+            </tr>
+        `}).join('');
+
+        if (currentTrades.length === 0) {
+            rows = `<tr><td colspan="6" style="text-align:center; padding: 40px; color: var(--text-secondary);">Nenhuma entrada encontrada com os filtros selecionados.</td></tr>`;
+        }
+        
+        this.appContainer.innerHTML = `
+            <div class="filters-container">
+                <div class="filter-group">
+                    <label>Buscar Time/Jogo</label>
+                    <input type="text" class="filter-control" id="filter-team" placeholder="Ex: Flamengo..." value="${state.filterTeam}">
+                </div>
+                <div class="filter-group">
+                    <label>Data</label>
+                    <select class="filter-control" id="filter-date">
+                        <option value="">Todas as datas</option>
+                        ${uniqueDates.map(d => `<option value="${d}" ${state.filterDate === d ? 'selected' : ''}>${d}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Liga</label>
+                    <select class="filter-control" id="filter-league">
+                        <option value="">Todas as ligas</option>
+                        ${uniqueLeagues.map(l => `<option value="${l}" ${state.filterLeague === l ? 'selected' : ''}>${l}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Seu Método Pessoal</label>
+                    <select class="filter-control" id="filter-method">
+                        <option value="">Todos os métodos</option>
+                        ${this.customMethods.map(m => `<option value="${m}" ${state.filterMethod === m ? 'selected' : ''}>${m}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Jogo</th>
+                            <th>Mercado</th>
+                            <th>Liga</th>
+                            <th style="width: 200px;">Método Pessoal</th>
+                            <th>P/L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+                
+                <div class="pagination">
+                    <div class="pagination-info">
+                        Mostrando ${totalItems === 0 ? 0 : startIndex + 1} a ${Math.min(endIndex, totalItems)} de ${totalItems} entradas
+                    </div>
+                    <div class="pagination-controls">
+                        <button class="btn-page" id="btn-prev" ${state.currentPage <= 1 ? 'disabled' : ''}>Anterior</button>
+                        <span style="font-weight: 600; color: var(--text-primary); display: flex; align-items: center;">Página ${state.currentPage} de ${totalPages}</span>
+                        <button class="btn-page" id="btn-next" ${state.currentPage >= totalPages ? 'disabled' : ''}>Próxima</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Event Listeners para Filtros e Paginação
+        const teamInput = document.getElementById('filter-team');
+        teamInput.addEventListener('input', (e) => {
+            this.entradasState.filterTeam = e.target.value;
+            this.entradasState.currentPage = 1;
+            this.renderEntradas();
+            
+            // Restaura o foco e o cursor
+            const newInput = document.getElementById('filter-team');
+            newInput.focus();
+            const val = newInput.value;
+            newInput.value = '';
+            newInput.value = val;
+        });
+
+        document.getElementById('filter-date').addEventListener('change', (e) => {
+            this.entradasState.filterDate = e.target.value;
+            this.entradasState.currentPage = 1;
+            this.renderEntradas();
+        });
+
+        document.getElementById('filter-league').addEventListener('change', (e) => {
+            this.entradasState.filterLeague = e.target.value;
+            this.entradasState.currentPage = 1;
+            this.renderEntradas();
+        });
+
+        document.getElementById('filter-method').addEventListener('change', (e) => {
+            this.entradasState.filterMethod = e.target.value;
+            this.entradasState.currentPage = 1;
+            this.renderEntradas();
+        });
+
+        document.getElementById('btn-prev').addEventListener('click', () => {
+            if (this.entradasState.currentPage > 1) {
+                this.entradasState.currentPage--;
+                this.renderEntradas();
+            }
+        });
+
+        document.getElementById('btn-next').addEventListener('click', () => {
+            if (this.entradasState.currentPage < totalPages) {
+                this.entradasState.currentPage++;
+                this.renderEntradas();
+            }
+        });
+
+        // Event Listener para as selects de método na tabela
+        const methodSelects = document.querySelectorAll('.method-select');
+        methodSelects.forEach(select => {
+            select.addEventListener('change', (e) => {
+                const id = e.target.getAttribute('data-id');
+                const val = e.target.value;
+                const trade = this.data.find(d => d.id === id);
+                if(trade) {
+                    trade.userMethod = val;
+                    this.saveData();
+                }
+            });
+        });
+    },
+
+    renderMetodos() {
+        let html = `
+            <div class="filters-container" style="justify-content: space-between; align-items: center;">
+                <div class="filter-group" style="flex: 0 0 400px; max-width: 100%;">
+                    <label>Cadastrar Novo Método Pessoal</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="new-method-input" class="filter-control" placeholder="Ex: Back Favorito no 2º Tempo" style="flex: 1;">
+                        <button id="add-method-btn" class="btn-primary" style="padding: 8px 16px;">
+                            <i class='bx bx-plus'></i> Criar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const trades = this.data.filter(d => !d.isDepositOrWithdrawal && d.userMethod);
+        const methodStats = {};
+        
+        // Inicializar stats para todos os métodos criados, mesmo os sem entradas
+        this.customMethods.forEach(m => {
+            methodStats[m] = { profit: 0, count: 0, wins: 0 };
+        });
+
+        trades.forEach(t => {
+            if (methodStats[t.userMethod]) {
+                methodStats[t.userMethod].profit += t.netProfit;
+                methodStats[t.userMethod].count += 1;
+                if (t.netProfit > 0) methodStats[t.userMethod].wins += 1;
+            }
+        });
+        
+        const sortedMethods = Object.keys(methodStats).map(k => ({
+            name: k,
+            ...methodStats[k]
+        })).sort((a, b) => b.profit - a.profit);
+        
+        let rows = sortedMethods.map(m => `
+            <tr>
+                <td><strong>${m.name}</strong></td>
+                <td>${m.count}</td>
+                <td>${m.count > 0 ? ((m.wins / m.count) * 100).toFixed(2) : '0.00'}%</td>
+                <td>
+                    <span class="badge ${m.profit >= 0 ? 'green' : 'red'}">
+                        ${this.formatCurrency(m.profit)}
+                    </span>
+                </td>
+                <td style="text-align: right;">
+                    <button class="btn-icon delete-method" data-name="${m.name}" style="width: 32px; height: 32px; font-size: 16px; color: var(--danger-color); display: inline-flex; margin-left: auto;">
+                        <i class='bx bx-trash'></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+
+        if (this.customMethods.length === 0) {
+            rows = `<tr><td colspan="5" style="text-align:center; padding: 40px; color: var(--text-secondary);">Você ainda não criou nenhum método. Use o campo acima para criar.</td></tr>`;
+        }
+        
+        html += `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Método Pessoal</th>
+                            <th>Nº de Entradas</th>
+                            <th>Taxa de Acerto</th>
+                            <th>Lucro Resultante</th>
+                            <th style="text-align: right;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        this.appContainer.innerHTML = html;
+
+        // Binds
+        const btnAdd = document.getElementById('add-method-btn');
+        const inputMethod = document.getElementById('new-method-input');
+        
+        const addFn = () => {
+            const val = inputMethod.value.trim();
+            if (val && !this.customMethods.includes(val)) {
+                this.customMethods.push(val);
+                this.saveData();
+                this.renderMetodos();
+            } else if (this.customMethods.includes(val)) {
+                alert('Este método já existe!');
+            }
+        };
+
+        btnAdd.addEventListener('click', addFn);
+        inputMethod.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addFn();
+        });
+
+        document.querySelectorAll('.delete-method').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const name = e.currentTarget.getAttribute('data-name');
+                if (confirm(`Tem certeza que deseja excluir o método "${name}"? As entradas associadas a ele ficarão sem método.`)) {
+                    this.customMethods = this.customMethods.filter(m => m !== name);
+                    // Clear from trades
+                    this.data.forEach(t => {
+                        if(t.userMethod === name) t.userMethod = '';
+                    });
+                    this.saveData();
+                    this.renderMetodos();
+                }
+            });
+        });
+    },
+
+    renderLigas() {
+        const trades = this.data.filter(d => !d.isDepositOrWithdrawal);
+        
+        const allTeams = new Set();
+        trades.forEach(t => {
+            const teams = t.game.split(' x ').map(x => x.trim());
+            teams.forEach(team => { if (team) allTeams.add(team); });
+        });
+        
+        const sortedTeams = Array.from(allTeams).sort();
+        
+        const uniqueGames = new Set();
+        trades.forEach(t => {
+            const dateOnly = t.dateStr.split(' ')[0];
+            uniqueGames.add(`${t.game}_${dateOnly}`);
+        });
+        
+        const gameList = Array.from(uniqueGames).sort((a, b) => {
+            const dateA = a.split('_').slice(-1)[0];
+            const dateB = b.split('_').slice(-1)[0];
+            return dateB.localeCompare(dateA);
+        }).slice(0, 200);
+        
+        if (!this.ligasState) {
+            this.ligasState = {
+                activeTab: 'estatisticas',
+                teamFilter: '',
+                gameFilter: ''
+            };
+        }
+        
+        const state = this.ligasState;
+        
+        const leagueStats = {};
+        this.ligas.forEach(l => {
+            leagueStats[l] = { profit: 0, count: 0, wins: 0 };
+        });
+        
+        trades.forEach(t => {
+            const detected = this.detectLeague(t.game, t.dateStr);
+            if (detected && leagueStats[detected]) {
+                leagueStats[detected].profit += t.netProfit;
+                leagueStats[detected].count += 1;
+                if (t.netProfit > 0) leagueStats[detected].wins += 1;
+            }
+        });
+        
+        const sortedLeagues = Object.keys(leagueStats).map(k => ({
+            name: k,
+            ...leagueStats[k]
+        })).sort((a, b) => b.profit - a.profit);
+        
+        const tabs = ['estatisticas', 'gerenciar', 'dicionario', 'excecoes'];
+        let tabContent = '';
+        
+        if (state.activeTab === 'estatisticas') {
+            let rows = sortedLeagues.map(l => `
+                <tr>
+                    <td><strong>${l.name}</strong></td>
+                    <td>${l.count}</td>
+                    <td>${l.count > 0 ? ((l.wins / l.count) * 100).toFixed(2) : '0.00'}%</td>
+                    <td>
+                        <span class="badge ${l.profit >= 0 ? 'green' : 'red'}">
+                            ${this.formatCurrency(l.profit)}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+            
+            if (this.ligas.length === 0) {
+                rows = `<tr><td colspan="4" style="text-align:center; padding: 40px; color: var(--text-secondary);">Nenhuma liga cadastrada. Va em "Gerenciar Ligas" para adicionar.</td></tr>`;
+            }
+            
+            tabContent = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Liga</th>
+                                <th>Nº de Entradas</th>
+                                <th>Taxa de Acerto</th>
+                                <th>Lucro Resultante</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } else if (state.activeTab === 'gerenciar') {
+            tabContent = `
+                <div class="filter-group" style="max-width: 500px; margin-bottom: 20px;">
+                    <label>Cadastrar Nova Liga</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="new-liga-input" class="filter-control" placeholder="Ex: Brasileirão, Libertadores..." style="flex: 1;">
+                        <button id="add-liga-btn" class="btn-primary" style="padding: 8px 16px;">
+                            <i class='bx bx-plus'></i> Criar
+                        </button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Liga</th>
+                                <th style="text-align: right;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${this.ligas.length === 0 ? `<tr><td colspan="2" style="text-align:center; padding: 40px; color: var(--text-secondary);">Nenhuma liga cadastrada.</td></tr>` : this.ligas.map(l => `
+                                <tr>
+                                    <td><strong>${l}</strong></td>
+                                    <td style="text-align: right;">
+                                        <button class="btn-icon delete-liga" data-name="${l}" style="width: 32px; height: 32px; font-size: 16px; color: var(--danger-color);">
+                                            <i class='bx bx-trash'></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } else if (state.activeTab === 'dicionario') {
+            const filteredTeams = state.teamFilter 
+                ? sortedTeams.filter(t => t.toLowerCase().includes(state.teamFilter.toLowerCase()))
+                : sortedTeams;
+            
+            tabContent = `
+                <div class="filter-group" style="max-width: 400px; margin-bottom: 20px;">
+                    <label>Buscar Time</label>
+                    <input type="text" id="team-search-input" class="filter-control" placeholder="Ex: Flamengo..." value="${state.teamFilter}">
+                </div>
+                <div class="table-container" style="max-height: 500px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th style="width: 250px;">Liga Padrão</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filteredTeams.map(team => `
+                                <tr>
+                                    <td>${team}</td>
+                                    <td>
+                                        <select class="liga-select" data-team="${team}" style="padding: 8px; font-size: 13px; width: 100%; border-radius: 8px;">
+                                            <option value="">Selecionar...</option>
+                                            ${this.ligas.map(l => `<option value="${l}" ${this.dicionarioTimes[team] === l ? 'selected' : ''}>${l}</option>`).join('')}
+                                        </select>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } else if (state.activeTab === 'excecoes') {
+            const filteredGames = state.gameFilter
+                ? gameList.filter(g => g.toLowerCase().includes(state.gameFilter.toLowerCase()))
+                : gameList;
+            
+            tabContent = `
+                <div class="filter-group" style="max-width: 400px; margin-bottom: 20px;">
+                    <label>Buscar Jogo</label>
+                    <input type="text" id="game-search-input" class="filter-control" placeholder="Ex: Flamengo x..." value="${state.gameFilter}">
+                </div>
+                <div class="table-container" style="max-height: 500px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Jogo</th>
+                                <th>Data</th>
+                                <th style="width: 250px;">Liga Forçada</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filteredGames.map(g => {
+                                const parts = g.split('_');
+                                const game = parts.slice(0, -1).join('_');
+                                const date = parts[parts.length - 1];
+                                const currentLiga = this.excecoesJogos[g] || '';
+                                return `
+                                <tr>
+                                    <td>${game}</td>
+                                    <td>${date}</td>
+                                    <td>
+                                        <select class="excecao-select" data-game-id="${g}" style="padding: 8px; font-size: 13px; width: 100%; border-radius: 8px;">
+                                            <option value="">Nenhuma (Auto)</option>
+                                            ${this.ligas.map(l => `<option value="${l}" ${currentLiga === l ? 'selected' : ''}>${l}</option>`).join('')}
+                                        </select>
+                                    </td>
+                                </tr>
+                            `}).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <p style="margin-top: 15px; color: var(--text-secondary); font-size: 13px;">
+                    <i class='bx bx-info-circle'></i> Selecione "Nenhuma (Auto)" para usar a detecção automática.
+                </p>
+            `;
+        }
+        
+        this.appContainer.innerHTML = `
+            <div class="ligas-tabs">
+                ${tabs.map(tab => `
+                    <button class="liga-tab ${state.activeTab === tab ? 'active' : ''}" data-tab="${tab}">
+                        ${tab === 'estatisticas' ? '📊 Estatísticas' : tab === 'gerenciar' ? '⚙️ Gerenciar Ligas' : tab === 'dicionario' ? '👥 Dicionário de Times' : '⚠️ Exceções de Jogos'}
+                    </button>
+                `).join('')}
+            </div>
+            ${tabContent}
+        `;
+        
+        document.querySelectorAll('.liga-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                this.ligasState.activeTab = e.target.getAttribute('data-tab');
+                this.renderLigas();
+            });
+        });
+        
+        const addLigaInput = document.getElementById('new-liga-input');
+        const addLigaBtn = document.getElementById('add-liga-btn');
+        
+        const addLigaFn = () => {
+            const val = addLigaInput.value.trim();
+            if (val && !this.ligas.includes(val)) {
+                this.ligas.push(val);
+                this.saveData();
+                this.renderLigas();
+            } else if (this.ligas.includes(val)) {
+                alert('Esta liga já existe!');
+            }
+        };
+        
+        if (addLigaBtn) {
+            addLigaBtn.addEventListener('click', addLigaFn);
+            addLigaInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') addLigaFn();
+            });
+        }
+        
+        document.querySelectorAll('.delete-liga').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const name = e.currentTarget.getAttribute('data-name');
+                if (confirm(`Tem certeza que deseja excluir a liga "${name}"?`)) {
+                    this.ligas = this.ligas.filter(l => l !== name);
+                    Object.keys(this.dicionarioTimes).forEach(team => {
+                        if (this.dicionarioTimes[team] === name) delete this.dicionarioTimes[team];
+                    });
+                    Object.keys(this.excecoesJogos).forEach(gameId => {
+                        if (this.excecoesJogos[gameId] === name) delete this.excecoesJogos[gameId];
+                    });
+                    this.saveData();
+                    this.renderLigas();
+                }
+            });
+        });
+        
+        const teamSearchInput = document.getElementById('team-search-input');
+        if (teamSearchInput) {
+            teamSearchInput.addEventListener('input', (e) => {
+                this.ligasState.teamFilter = e.target.value;
+                this.renderLigas();
+                const newInput = document.getElementById('team-search-input');
+                newInput.focus();
+                const val = newInput.value;
+                newInput.value = '';
+                newInput.value = val;
+            });
+        }
+        
+        document.querySelectorAll('.liga-select').forEach(select => {
+            select.addEventListener('change', (e) => {
+                const team = e.target.getAttribute('data-team');
+                const val = e.target.value;
+                if (val) {
+                    this.dicionarioTimes[team] = val;
+                } else {
+                    delete this.dicionarioTimes[team];
+                }
+                this.saveData();
+            });
+        });
+        
+        const gameSearchInput = document.getElementById('game-search-input');
+        if (gameSearchInput) {
+            gameSearchInput.addEventListener('input', (e) => {
+                this.ligasState.gameFilter = e.target.value;
+                this.renderLigas();
+                const newInput = document.getElementById('game-search-input');
+                newInput.focus();
+                const val = newInput.value;
+                newInput.value = '';
+                newInput.value = val;
+            });
+        }
+        
+        document.querySelectorAll('.excecao-select').forEach(select => {
+            select.addEventListener('change', (e) => {
+                const gameId = e.target.getAttribute('data-game-id');
+                const val = e.target.value;
+                if (val) {
+                    this.excecoesJogos[gameId] = val;
+                } else {
+                    delete this.excecoesJogos[gameId];
+                }
+                this.saveData();
+            });
+        });
+    },
+
+    renderTimes() {
+        const trades = this.data.filter(d => !d.isDepositOrWithdrawal);
+        const teamStats = {};
+        
+        trades.forEach(t => {
+            const teams = t.game.split(' x ').map(x => x.trim());
+            const dateOnly = t.dateStr.split(' ')[0];
+            const gameId = `${t.game}_${dateOnly}`;
+            
+            teams.forEach(team => {
+                if(!team) return;
+                if (!teamStats[team]) {
+                    teamStats[team] = { profit: 0, entriesCount: 0, uniqueGames: new Set() };
+                }
+                teamStats[team].profit += t.netProfit;
+                teamStats[team].entriesCount += 1;
+                teamStats[team].uniqueGames.add(gameId);
+            });
+        });
+        
+        const sortedTeams = Object.keys(teamStats).map(k => ({
+            name: k,
+            profit: teamStats[k].profit,
+            entriesCount: teamStats[k].entriesCount,
+            gamesCount: teamStats[k].uniqueGames.size
+        })).sort((a, b) => b.profit - a.profit);
+        
+        let rows = sortedTeams.map(t => {
+            const escudoUrl = this.getEscudoTime(t.name);
+            const escudoImg = escudoUrl ? `<img src="${escudoUrl}" alt="${t.name}" style="width: 32px; height: 32px; object-fit: contain;" onerror="this.style.display='none'">` : '';
+            return `
+            <tr>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        ${escudoImg}
+                        <strong>${t.name}</strong>
+                    </div>
+                </td>
+                <td>${t.gamesCount}</td>
+                <td>${t.entriesCount}</td>
+                <td>
+                    <span class="badge ${t.profit >= 0 ? 'green' : 'red'}">
+                        ${this.formatCurrency(t.profit)}
+                    </span>
+                </td>
+            </tr>
+        `}).join('');
+        
+        this.appContainer.innerHTML = `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Jogos Envolvidos</th>
+                            <th>Nº de Entradas</th>
+                            <th>Lucro Total Resultante</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    },
+
+    renderFinancas() {
+        const financas = this.data.filter(d => d.isDepositOrWithdrawal);
+        
+        let rows = financas.map(f => `
+            <tr>
+                <td>${f.dateStr}</td>
+                <td>${f.game}</td>
+                <td>
+                    <span class="badge ${f.netProfit >= 0 ? 'green' : 'red'}">
+                        ${this.formatCurrency(f.netProfit)}
+                    </span>
+                </td>
+                <td>${this.formatCurrency(f.balance)}</td>
+            </tr>
+        `).join('');
+        
+        this.appContainer.innerHTML = `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Tipo (Ref)</th>
+                            <th>Valor</th>
+                            <th>Saldo na Época</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    },
+
+    renderCiclos() {
+        const state = this.ciclosState;
+        const config = this.ciclosConfig;
+        const cicloAtual = config[state.cicloAtual];
+        const entradasDisponiveis = this.getEntradasDisponiveis();
+        
+        const tabs = ['painel', 'historico', 'config'];
+        const activeTab = this.ciclosActiveTab || 'painel';
+        
+        let tabContent = '';
+        
+        if (activeTab === 'painel') {
+            const lucroObjetivo = cicloAtual.objetivo - cicloAtual.stakeInicial;
+            const objetivoParcial = lucroObjetivo * (cicloAtual.stopLucro / 100);
+            const progresso = lucroObjetivo > 0 ? Math.min((state.saldoCiclo / lucroObjetivo) * 100, 100) : 0;
+            const stake5Porcento = state.stakeAtual * 0.05;
+            
+            const ultimaEntrada = state.entradasCiclo.length > 0 ? state.entradasCiclo[state.entradasCiclo.length - 1] : null;
+            const proximaStake = ultimaEntrada ? ultimaEntrada.stake + ultimaEntrada.profit : state.stakeAtual;
+            const objetivoEntrada = proximaStake * 0.05;
+            
+            tabContent = `
+                <div class="ciclos-dashboard">
+                    <div class="ciclos-stats-row">
+                        <div class="ciclos-stat-card">
+                            <div class="ciclos-stat-label">Ciclo Atual</div>
+                            <div class="ciclos-stat-value">${state.cicloAtual + 1} / ${config.length}</div>
+                        </div>
+                        <div class="ciclos-stat-card">
+                            <div class="ciclos-stat-label">Stake Inicial do Ciclo</div>
+                            <div class="ciclos-stat-value">${this.formatCurrency(cicloAtual.stakeInicial)}</div>
+                        </div>
+                        <div class="ciclos-stat-card highlight-card">
+                            <div class="ciclos-stat-label">Próxima Stake (Juros Compostos)</div>
+                            <div class="ciclos-stat-value">${this.formatCurrency(proximaStake)}</div>
+                        </div>
+                        <div class="ciclos-stat-card highlight-card">
+                            <div class="ciclos-stat-label">Objetivo por Entrada (5%)</div>
+                            <div class="ciclos-stat-value profit">${this.formatCurrency(objetivoEntrada)}</div>
+                        </div>
+                        <div class="ciclos-stat-card">
+                            <div class="ciclos-stat-label">Lucro Objetivo do Ciclo</div>
+                            <div class="ciclos-stat-value">${this.formatCurrency(lucroObjetivo)}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="ciclos-stats-row" style="margin-top: 15px;">
+                        <div class="ciclos-stat-card">
+                            <div class="ciclos-stat-label">Lucro Acumulado no Ciclo</div>
+                            <div class="ciclos-stat-value ${state.saldoCiclo >= 0 ? 'profit' : 'loss'}">${this.formatCurrency(state.saldoCiclo)}</div>
+                        </div>
+                        <div class="ciclos-stat-card">
+                            <div class="ciclos-stat-label">Lucro Total Geral</div>
+                            <div class="ciclos-stat-value ${state.lucroTotalGeral >= 0 ? 'profit' : 'loss'}">${this.formatCurrency(state.lucroTotalGeral)}</div>
+                        </div>
+                        <div class="ciclos-stat-card" style="flex: 2;">
+                            <div class="ciclos-stat-label">Faltam para Objetivo do Ciclo</div>
+                            <div class="ciclos-stat-value" style="color: var(--text-secondary);">${this.formatCurrency(Math.max(lucroObjetivo - state.saldoCiclo, 0))}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="ciclos-progress-section">
+                        <div class="ciclos-progress-header">
+                            <span>Progresso do Ciclo ${state.cicloAtual + 1}</span>
+                            <span>${this.formatCurrency(state.saldoCiclo)} / ${this.formatCurrency(lucroObjetivo)}</span>
+                        </div>
+                        <div class="ciclos-progress-bar">
+                            <div class="ciclos-progress-fill" style="width: ${progresso}%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="ciclos-actions-section">
+                        <h3><i class='bx bx-plus-circle'></i> Adicionar Entrada ao Ciclo</h3>
+                        
+                        <div class="ciclos-add-entry-form">
+                            <div class="form-group">
+                                <label>Selecionar entrada do histórico</label>
+                                <select id="ciclos-entry-select" class="filter-control">
+                                    <option value="">Selecione uma entrada...</option>
+                                    ${entradasDisponiveis.map(t => `
+                                        <option value="${t.id}">
+                                            ${t.dateStr} - ${t.game} - ${t.method} - ${this.formatCurrency(t.netProfit)}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Stake Utilizado (R$)</label>
+                                <input type="number" id="ciclos-stake-input" class="filter-control" value="${proximaStake}" step="1">
+                            </div>
+                            <div class="form-group">
+                                <label>Lucro/Prejuízo da Entrada (R$)</label>
+                                <input type="number" id="ciclos-profit-input" class="filter-control" placeholder="0.00" step="0.01">
+                            </div>
+                            <button id="ciclos-add-entry-btn" class="btn-primary">
+                                <i class='bx bx-plus'></i> Registrar Entrada
+                            </button>
+                        </div>
+                        
+                        <p style="margin-top: 10px; color: var(--text-secondary); font-size: 13px;">
+                            <i class='bx bx-info-circle'></i> Objetivo por jogo: ${this.formatCurrency(stake5Porcento)} (5% do stake)
+                        </p>
+                    </div>
+                    
+                    ${state.entradasCiclo.length > 0 ? `
+                    <div class="ciclos-current-entries">
+                        <h3><i class='bx bx-list-ul'></i> Entradas do Ciclo Atual</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Jogo</th>
+                                    <th>Mercado</th>
+                                    <th>Stake</th>
+                                    <th>Lucro/Prejuízo</th>
+                                    <th>Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${state.entradasCiclo.map(e => `
+                                    <tr>
+                                        <td>${e.dateStr}</td>
+                                        <td>${e.game}</td>
+                                        <td>${e.method}</td>
+                                        <td>${this.formatCurrency(e.stake)}</td>
+                                        <td>
+                                            <span class="badge ${e.profit >= 0 ? 'green' : 'red'}">
+                                                ${this.formatCurrency(e.profit)}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button class="btn-icon remove-ciclo-entry" data-id="${e.id}" style="color: var(--danger-color);">
+                                                <i class='bx bx-trash'></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        } else if (activeTab === 'historico') {
+            const ciclosOrdenados = [...state.historicoCiclos].reverse();
+            
+            if (ciclosOrdenados.length === 0) {
+                tabContent = `
+                    <div class="empty-state" style="padding: 60px 20px;">
+                        <i class='bx bx-history'></i>
+                        <h3>Nenhum ciclo concluído ainda</h3>
+                        <p>Os ciclos concluídos aparecerão aqui.</p>
+                    </div>
+                `;
+            } else {
+                tabContent = `
+                    <div class="ciclos-history-list">
+                        ${ciclosOrdenados.map((ciclo, idx) => `
+                            <div class="ciclos-history-card">
+                                <div class="ciclos-history-header">
+                                    <h3>Ciclo ${ciclo.numero}</h3>
+                                    <span class="badge ${ciclo.lucro >= 0 ? 'green' : 'red'}">
+                                        ${this.formatCurrency(ciclo.lucro)}
+                                    </span>
+                                </div>
+                                <div class="ciclos-history-stats">
+                                    <div><strong>Stake Inicial:</strong> ${this.formatCurrency(ciclo.stakeInicial)}</div>
+                                    <div><strong>Objetivo:</strong> ${this.formatCurrency(ciclo.objetivo)}</div>
+                                    <div><strong>Entradas:</strong> ${ciclo.entradas.length}</div>
+                                    <div><strong>Data Início:</strong> ${ciclo.dataInicio}</div>
+                                    <div><strong>Data Fim:</strong> ${ciclo.dataFim || '-'}</div>
+                                </div>
+                                <details>
+                                    <summary style="cursor: pointer; color: var(--primary-color);">Ver entradas (${ciclo.entradas.length})</summary>
+                                    <table style="margin-top: 10px;">
+                                        <thead>
+                                            <tr>
+                                                <th>Data</th>
+                                                <th>Jogo</th>
+                                                <th>Stake</th>
+                                                <th>Lucro</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${ciclo.entradas.map(e => `
+                                                <tr>
+                                                    <td>${e.dateStr}</td>
+                                                    <td>${e.game}</td>
+                                                    <td>${this.formatCurrency(e.stake)}</td>
+                                                    <td><span class="badge ${e.profit >= 0 ? 'green' : 'red'}">${this.formatCurrency(e.profit)}</span></td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </details>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+        } else if (activeTab === 'config') {
+            tabContent = `
+                <div class="ciclos-config-section">
+                    <div class="form-group" style="max-width: 300px; margin-bottom: 20px;">
+                        <label>Banca Inicial (R$)</label>
+                        <input type="number" id="ciclos-banca-inicial" class="filter-control" value="${state.bancaInicial}" step="1">
+                    </div>
+                    
+                    <h3>Configuração dos Ciclos</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ciclo</th>
+                                <th>Stake Inicial (R$)</th>
+                                <th>Objetivo (R$)</th>
+                                <th>Fator Redução (%)</th>
+                                <th>Stop Lucro (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${config.map((c, idx) => `
+                                <tr>
+                                    <td><strong>Ciclo ${idx + 1}</strong></td>
+                                    <td><input type="number" class="filter-control config-stake" data-idx="${idx}" value="${c.stakeInicial}" step="1"></td>
+                                    <td><input type="number" class="filter-control config-objetivo" data-idx="${idx}" value="${c.objetivo}" step="1"></td>
+                                    <td><input type="number" class="filter-control config-fator" data-idx="${idx}" value="${c.fatorReducao}" step="0.1" min="0" max="100"></td>
+                                    <td><input type="number" class="filter-control config-stop" data-idx="${idx}" value="${c.stopLucro}" step="1" min="1" max="100"></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    
+                    <button id="ciclos-save-config" class="btn-primary" style="margin-top: 20px;">
+                        <i class='bx bx-save'></i> Salvar Configuração
+                    </button>
+                    
+                    <div style="margin-top: 30px; padding: 20px; background: rgba(67, 24, 255, 0.05); border-radius: 12px;">
+                        <h4><i class='bx bx-reset'></i> Resetar Ciclos</h4>
+                        <p style="color: var(--text-secondary); margin-bottom: 15px;">Cuidado: Isso irá apagar todo o progresso dos ciclos e histórico.</p>
+                        <button id="ciclos-reset-btn" class="btn-danger">
+                            <i class='bx bx-trash'></i> Resetar Tudo
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        this.appContainer.innerHTML = `
+            <div class="ciclos-container">
+                <div class="ciclos-tabs">
+                    ${tabs.map(tab => `
+                        <button class="ciclos-tab ${activeTab === tab ? 'active' : ''}" data-tab="${tab}">
+                            ${tab === 'painel' ? '📊 Painel' : tab === 'historico' ? '📜 Histórico' : '⚙️ Configuração'}
+                        </button>
+                    `).join('')}
+                </div>
+                ${tabContent}
+            </div>
+        `;
+        
+        document.querySelectorAll('.ciclos-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                this.ciclosActiveTab = e.target.getAttribute('data-tab');
+                this.renderCiclos();
+            });
+        });
+        
+        if (activeTab === 'painel') {
+            document.getElementById('ciclos-add-entry-btn').addEventListener('click', () => {
+                const entrySelect = document.getElementById('ciclos-entry-select');
+                const stakeInput = document.getElementById('ciclos-stake-input');
+                const profitInput = document.getElementById('ciclos-profit-input');
+                
+                const selectedId = entrySelect.value;
+                const stake = parseFloat(stakeInput.value) || 0;
+                const profit = parseFloat(profitInput.value) || 0;
+                
+                if (!selectedId && profit === 0) {
+                    alert('Selecione uma entrada ou informe o lucro manualmente.');
+                    return;
+                }
+                
+                let entradaData = null;
+                if (selectedId) {
+                    entradaData = this.data.find(d => d.id === selectedId);
+                }
+                
+                const novaEntrada = {
+                    id: entradaData ? entradaData.id : 'manual_' + Date.now(),
+                    dateStr: entradaData ? entradaData.dateStr : new Date().toLocaleString('pt-BR'),
+                    game: entradaData ? entradaData.game : 'Entrada Manual',
+                    method: entradaData ? entradaData.method : 'Manual',
+                    stake: stake,
+                    profit: profit,
+                    netProfit: profit
+                };
+                
+                this.ciclosState.entradasCiclo.push(novaEntrada);
+                this.ciclosState.saldoCiclo += profit;
+                this.ciclosState.lucroTotalGeral += profit;
+                
+                const cicloConfig = this.ciclosConfig[this.ciclosState.cicloAtual];
+                const atingiuObjetivo = this.verificarCicloCompleto(this.ciclosState.saldoCiclo, cicloConfig.objetivo, cicloConfig.stakeInicial, cicloConfig.stopLucro);
+                
+                if (atingiuObjetivo) {
+                    const lucroCiclo = this.ciclosState.saldoCiclo;
+                    const cicloNumero = this.ciclosState.cicloAtual + 1;
+                    
+                    const novoCiclo = {
+                        numero: cicloNumero,
+                        stakeInicial: cicloConfig.stakeInicial,
+                        objetivo: cicloConfig.objetivo,
+                        lucro: lucroCiclo,
+                        entradas: [...this.ciclosState.entradasCiclo],
+                        dataInicio: this.ciclosState.entradasCiclo[0]?.dateStr || '-',
+                        dataFim: new Date().toLocaleString('pt-BR')
+                    };
+                    
+                    this.ciclosState.historicoCiclos.push(novoCiclo);
+                    
+                    const proximoCiclo = this.ciclosState.cicloAtual + 1;
+                    
+                    if (proximoCiclo < this.ciclosConfig.length) {
+                        const stakeProx = this.ciclosConfig[proximoCiclo].stakeInicial;
+                        const saqueMinimo = 50;
+                        const novoStake = Math.max(stakeProx - saqueMinimo, 100);
+                        
+                        this.ciclosState.cicloAtual = proximoCiclo;
+                        this.ciclosState.stakeAtual = novoStake;
+                        this.ciclosState.entradasCiclo = [];
+                        this.ciclosState.saldoCiclo = 0;
+                        
+                        alert(`🎉 Ciclo ${cicloNumero} completado!\n\nLucro: ${this.formatCurrency(lucroCiclo)}\nStake do próximo ciclo: ${this.formatCurrency(novoStake)}`);
+                    } else {
+                        alert(`🏆 PARABÉNS! Todos os ciclos completados!\n\nLucro total: ${this.formatCurrency(this.ciclosState.lucroTotalGeral)}`);
+                        this.ciclosState.cicloAtual = this.ciclosConfig.length - 1;
+                        this.ciclosState.stakeAtual = this.ciclosConfig[this.ciclosState.cicloAtual].stakeInicial;
+                        this.ciclosState.entradasCiclo = [];
+                    }
+                }
+                
+                this.saveData();
+                this.renderCiclos();
+            });
+            
+            document.querySelectorAll('.remove-ciclo-entry').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = e.currentTarget.getAttribute('data-id');
+                    const entrada = this.ciclosState.entradasCiclo.find(en => en.id === id);
+                    if (entrada) {
+                        this.ciclosState.saldoCiclo -= entrada.profit;
+                        this.ciclosState.lucroTotalGeral -= entrada.profit;
+                        this.ciclosState.entradasCiclo = this.ciclosState.entradasCiclo.filter(en => en.id !== id);
+                        this.saveData();
+                        this.renderCiclos();
+                    }
+                });
+            });
+            
+            if (entradasDisponiveis.length > 0) {
+                document.getElementById('ciclos-entry-select').addEventListener('change', (e) => {
+                    const selectedId = e.target.value;
+                    if (selectedId) {
+                        const entrada = this.data.find(d => d.id === selectedId);
+                        if (entrada) {
+                            document.getElementById('ciclos-profit-input').value = entrada.netProfit;
+                        }
+                    }
+                });
+            }
+        }
+        
+        if (activeTab === 'config') {
+            document.getElementById('ciclos-save-config').addEventListener('click', () => {
+                const bancaInicial = parseFloat(document.getElementById('ciclos-banca-inicial').value) || 500;
+                this.ciclosState.bancaInicial = bancaInicial;
+                
+                const stakes = document.querySelectorAll('.config-stake');
+                const objetivos = document.querySelectorAll('.config-objetivo');
+                const fatores = document.querySelectorAll('.config-fator');
+                const stops = document.querySelectorAll('.config-stop');
+                
+                stakes.forEach((el, idx) => {
+                    this.ciclosConfig[idx].stakeInicial = parseFloat(el.value) || 500;
+                });
+                objetivos.forEach((el, idx) => {
+                    this.ciclosConfig[idx].objetivo = parseFloat(el.value) || 1000;
+                });
+                fatores.forEach((el, idx) => {
+                    this.ciclosConfig[idx].fatorReducao = parseFloat(el.value) || 0;
+                });
+                stops.forEach((el, idx) => {
+                    this.ciclosConfig[idx].stopLucro = parseFloat(el.value) || 100;
+                });
+                
+                this.saveData();
+                alert('Configuração salva com sucesso!');
+            });
+            
+            document.getElementById('ciclos-reset-btn').addEventListener('click', () => {
+                if (confirm('Tem certeza que deseja resetar todos os ciclos? Esta ação não pode ser desfeita.')) {
+                    this.ciclosState = {
+                        cicloAtual: 0,
+                        stakeAtual: this.ciclosConfig[0].stakeInicial,
+                        saldoCiclo: 0,
+                        entradasCiclo: [],
+                        lucroTotalGeral: 0,
+                        bancaInicial: this.ciclosState.bancaInicial,
+                        historicoCiclos: []
+                    };
+                    this.saveData();
+                    this.renderCiclos();
+                }
+            });
+        }
+    }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    App.init();
+});

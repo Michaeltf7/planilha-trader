@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planilha Trader</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Boxicons for Icons -->
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <i class='bx bx-line-chart icon-logo'></i>
+                <h2>Planilha<span>Trader</span></h2>
+            </div>
+
+            <ul class="nav-links">
+                <li>
+                    <a href="#" class="active" data-view="dashboard">
+                        <i class='bx bx-grid-alt'></i>
+                        <span class="link_name">Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="central-analise">
+                        <i class='bx bx-analyse'></i>
+                        <span class="link_name">Central de Análise</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="desempenho">
+                        <i class='bx bx-calendar-check'></i>
+                        <span class="link_name">Desempenho</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="calendario">
+                        <i class='bx bx-calendar'></i>
+                        <span class="link_name">Calendário</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="planejamento">
+                        <i class='bx bx-task'></i>
+                        <span class="link_name">Planejamento Diário</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="copa-mundo">
+                        <i class='bx bx-football'></i>
+                        <span class="link_name">Copa do Mundo</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="competicoes">
+                        <i class='bx bx-trophy'></i>
+                        <span class="link_name">Competições</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="escada">
+                        <i class='bx bx-bar-chart-alt-2'></i>
+                        <span class="link_name">Simulador Escada</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="entradas">
+                        <i class='bx bx-list-ul'></i>
+                        <span class="link_name">Entradas</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="metodos">
+                        <i class='bx bx-target-lock'></i>
+                        <span class="link_name">Métodos</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="ligas">
+                        <i class='bx bx-trophy'></i>
+                        <span class="link_name">Por Liga</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="times">
+                        <i class='bx bx-shield-quarter'></i>
+                        <span class="link_name">Por Time</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="financas">
+                        <i class='bx bx-wallet'></i>
+                        <span class="link_name">Saque / Depósito</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="ciclos">
+                        <i class='bx bx-reset'></i>
+                        <span class="link_name">Método de Ciclos</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="escudos">
+                        <i class='bx bx-image'></i>
+                        <span class="link_name">Escudos</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-view="configuracoes">
+                        <i class='bx bx-cog'></i>
+                        <span class="link_name">Configurações</span>
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- Main Content -->
+        <section class="main-content">
+            <header>
+                <div class="header-left">
+                    <h2 id="page-title">Dashboard</h2>
+                </div>
+                <div class="header-right">
+                    <div class="upload-btn-wrapper" style="margin-right: 15px;">
+                        <button class="btn-betfair">
+                            <img src="img/betfair-logo.png" height="20" style="flex-shrink: 0; object-fit: contain;" alt="Betfair">
+                            (CSV)
+                        </button>
+                        <input type="file" id="csvFileInput" accept=".csv" />
+                    </div>
+                    <button id="theme-toggle" class="btn-icon">
+                        <i class='bx bx-moon'></i>
+                    </button>
+                </div>
+            </header>
+
+            <main id="app-container">
+                <!-- Views will be dynamically loaded here -->
+            </main>
+        </section>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/db.js"></script>
+    <script src="js/csvParser.js"></script>
+    <script src="js/analisePro.js"></script>
+    <script src="js/ladder.js"></script>
+    <script src="js/worldCup.js"></script>
+    <script src="js/competitions.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

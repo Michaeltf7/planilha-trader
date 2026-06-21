@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+    <head>
+        
+
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="csrf-token" content="mxI9rCRa7MjI4UblDfiQV5g0o4NhfKs7eby6VNdT">
+
+        <title>RadarFutebol.com</title>
+        <link rel="icon" href="https://www.radarfutebol.com/images/favicon.ico" type="image/x-icon" />
+
+        <!-- Fonts (self-hosted) -->
+        <link rel="preload" href="/fonts/figtree-400.woff2" as="font" type="font/woff2" crossorigin>
+
+        <link rel="preload" as="style" href="https://www.radarfutebol.com/build/assets/app-Br8cfHSn.css" nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" /><link rel="preload" as="style" href="https://www.radarfutebol.com/build/assets/app-DRDZlMXm.css" nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" /><link rel="modulepreload" as="script" href="https://www.radarfutebol.com/build/assets/app-CLcyDGNk.js" nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" /><link rel="modulepreload" as="script" href="https://www.radarfutebol.com/build/assets/vue-vendor-C-pVDDW2.js" nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" /><link rel="stylesheet" href="https://www.radarfutebol.com/build/assets/app-Br8cfHSn.css" nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" data-navigate-track="reload" /><link rel="stylesheet" href="https://www.radarfutebol.com/build/assets/app-DRDZlMXm.css" nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" data-navigate-track="reload" /><script type="module" src="https://www.radarfutebol.com/build/assets/app-CLcyDGNk.js" nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" data-navigate-track="reload"></script>        <!-- Livewire Styles --><style nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" data-livewire-style>[wire\:loading][wire\:loading], [wire\:loading\.delay][wire\:loading\.delay], [wire\:loading\.inline-block][wire\:loading\.inline-block], [wire\:loading\.inline][wire\:loading\.inline], [wire\:loading\.block][wire\:loading\.block], [wire\:loading\.flex][wire\:loading\.flex], [wire\:loading\.table][wire\:loading\.table], [wire\:loading\.grid][wire\:loading\.grid], [wire\:loading\.inline-flex][wire\:loading\.inline-flex] {display: none;}[wire\:loading\.delay\.none][wire\:loading\.delay\.none], [wire\:loading\.delay\.shortest][wire\:loading\.delay\.shortest], [wire\:loading\.delay\.shorter][wire\:loading\.delay\.shorter], [wire\:loading\.delay\.short][wire\:loading\.delay\.short], [wire\:loading\.delay\.default][wire\:loading\.delay\.default], [wire\:loading\.delay\.long][wire\:loading\.delay\.long], [wire\:loading\.delay\.longer][wire\:loading\.delay\.longer], [wire\:loading\.delay\.longest][wire\:loading\.delay\.longest] {display: none;}[wire\:offline][wire\:offline] {display: none;}[wire\:dirty]:not(textarea):not(input):not(select) {display: none;}:root {--livewire-progress-bar-color: #2299dd;}[x-cloak] {display: none !important;}[wire\:cloak] {display: none !important;}dialog#livewire-error::backdrop {background-color: rgba(0, 0, 0, .6);}</style>
+        <style>
+    .hide-scrollbar {
+        scrollbar-width: none;
+        /* Firefox */
+        -ms-overflow-style: none;
+        /* IE 10+ */
+    }
+
+    .hide-scrollbar::-webkit-scrollbar {
+        display: none;
+        /* Chrome/Safari */
+    }
+</style>
+    </head>
+
+    <body style="margin:0px;padding:0px;">
+        <div wire:snapshot="{&quot;data&quot;:{&quot;idUsuario&quot;:null,&quot;assinante&quot;:false,&quot;idioma&quot;:null,&quot;tema&quot;:null,&quot;idEvento&quot;:null,&quot;idWilliamhill&quot;:null,&quot;title&quot;:null,&quot;linkWilliamhill&quot;:null,&quot;exibirGraficoSofaScore&quot;:null,&quot;versaoOriginalWilliamHill&quot;:null,&quot;timeCasa&quot;:null,&quot;timeFora&quot;:null,&quot;painelEstatisticasAtual&quot;:null,&quot;golTimeCasaFt&quot;:null,&quot;golTimeForaFt&quot;:null,&quot;somGoal&quot;:null,&quot;somDangerAttack&quot;:null,&quot;somCorner&quot;:null,&quot;somPenal&quot;:null,&quot;somRedCard&quot;:null,&quot;quantidadeLances&quot;:null,&quot;ultimoLance&quot;:null},&quot;memo&quot;:{&quot;id&quot;:&quot;4l4DxxdUV8odwD3HVl69&quot;,&quot;name&quot;:&quot;radar&quot;,&quot;path&quot;:&quot;radar\/estudiantes-argentinos-juniors\/11352468&quot;,&quot;method&quot;:&quot;GET&quot;,&quot;release&quot;:&quot;a-a-a&quot;,&quot;children&quot;:{&quot;lw-258833315-0&quot;:[&quot;div&quot;,&quot;4DYElbAV7JhD4hxI5fLE&quot;],&quot;lw-258833315-1&quot;:[&quot;div&quot;,&quot;9wTjUUXEjMaDmszFheAQ&quot;]},&quot;scripts&quot;:[],&quot;assets&quot;:[],&quot;errors&quot;:[],&quot;locale&quot;:&quot;pt-br&quot;},&quot;checksum&quot;:&quot;caf73b50e1aef0734031d52406e73c43264cfc98b9181621e8ee5b5d41caec58&quot;}" wire:effects="[]" wire:id="4l4DxxdUV8odwD3HVl69" >
+    <!--[if BLOCK]><![endif]-->        <script nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" type="text/javascript">
+            window.close();
+        </script>
+    <!--[if ENDBLOCK]><![endif]-->
+    <!-- Barra superior -->
+    <div class="absolute w-full h-7 justify-start align-middle bg-white text-black dark:bg-black dark:text-white z-10">
+        <div class="flex flex-row justify-left">
+            <div class="flex flex-row mx-2 mt-1">
+                <div
+                    class="flex items-center rounded-full text-xs bg-gray-400">
+                    <div wire:click="exibirOcultarGraficoSofaScore"
+                        class="flex items-center px-2 cursor-pointer rounded-full border border-gray-300 bg-white">
+                        <span>&nbsp;</span>
+                    </div>
+                    <div wire:click="exibirOcultarGraficoSofaScore"
+                        class="flex items-center px-2 cursor-pointer ">
+                        <span>&nbsp;</span>
+                    </div>
+                </div>
+                <strong class="flex text-xs mx-1">Gráfico de Pressão</strong>
+            </div>
+            <div class="flex flex-row mx-2 mt-1">
+                <div
+                    class="flex items-center rounded-full text-xs bg-gray-400">
+                    <!--[if BLOCK]><![endif]-->                        <div wire:click="$dispatch('abrir-modal-assinar-oraculo')"
+                            class="flex items-center px-2 cursor-pointer rounded-full border border-gray-300 bg-white">
+                            <span>&nbsp;</span>
+                        </div>
+                        <div wire:click="$dispatch('abrir-modal-assinar-oraculo')"
+                            class="flex items-center px-2 cursor-pointer ">
+                            <span>&nbsp;</span>
+                        </div>
+                    <!--[if ENDBLOCK]><![endif]-->                </div>
+                <strong class="flex text-xs mx-1">Versão Original</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráfico Attack Momentum (Sofascore) -->
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <!-- Conteúdo principal fixo com rolagem interna nas colunas -->
+    <div class="w-full flex flex-col overflow-hidden pt-7">
+
+        <!--[if BLOCK]><![endif]-->            <div class="flex w-full py-2 items-center bg-gray-100 text-black dark:bg-gray-800 dark:text-white">
+                <div class="flex-shrink-0 pl-2">
+                    <div class="relative" x-data="{ open: false }" @click.outside="open = false" @close.stop="open = false">
+    <div @click="open = ! open">
+        <div class="relative w-5 h-5 cursor-pointer hover:scale-110 transition-transform" title="Sons">
+                                <span class="block som-desligado w-full h-full"></span>
+                                <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                            </div>
+    </div>
+
+    <div x-show="open"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="transform opacity-0 scale-95"
+            x-transition:enter-end="transform opacity-100 scale-100"
+            x-transition:leave="transition ease-in duration-75"
+            x-transition:leave-start="transform opacity-100 scale-100"
+            x-transition:leave-end="transform opacity-0 scale-95"
+            class="absolute z-50 mt-2 w-48 rounded-lg shadow-xl ltr:origin-top-left rtl:origin-top-right start-0 "
+            style="display: none;">
+        <div class="rounded-lg ring-1 ring-black/5 dark:ring-gray-700 py-1 bg-white dark:bg-gray-800">
+            <div class="py-1">
+                                <!--[if BLOCK]><![endif]-->                                    <div class="flex justify-between items-center px-3 py-1 text-[11px] cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" wire:click="toggleSom('somGoal')">
+                                        <span class="text-gray-700 dark:text-gray-200">Gols</span>
+                                        <span class="text-[10px] font-bold text-gray-400">
+                                            OFF
+                                        </span>
+                                    </div>
+                                                                    <div class="flex justify-between items-center px-3 py-1 text-[11px] cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" wire:click="toggleSom('somDangerAttack')">
+                                        <span class="text-gray-700 dark:text-gray-200">Ataques Perigosos</span>
+                                        <span class="text-[10px] font-bold text-gray-400">
+                                            OFF
+                                        </span>
+                                    </div>
+                                                                    <div class="flex justify-between items-center px-3 py-1 text-[11px] cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" wire:click="toggleSom('somCorner')">
+                                        <span class="text-gray-700 dark:text-gray-200">Escanteios</span>
+                                        <span class="text-[10px] font-bold text-gray-400">
+                                            OFF
+                                        </span>
+                                    </div>
+                                                                    <div class="flex justify-between items-center px-3 py-1 text-[11px] cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" wire:click="toggleSom('somPenal')">
+                                        <span class="text-gray-700 dark:text-gray-200">Pênaltis</span>
+                                        <span class="text-[10px] font-bold text-gray-400">
+                                            OFF
+                                        </span>
+                                    </div>
+                                                                    <div class="flex justify-between items-center px-3 py-1 text-[11px] cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" wire:click="toggleSom('somRedCard')">
+                                        <span class="text-gray-700 dark:text-gray-200">Cartões Vermelhos</span>
+                                        <span class="text-[10px] font-bold text-gray-400">
+                                            OFF
+                                        </span>
+                                    </div>
+                                <!--[if ENDBLOCK]><![endif]-->                            </div>
+        </div>
+    </div>
+</div>
+                </div>
+                <div class="flex-1 text-center">
+                    
+                    <span class="bg-yellow-300 text-black px-4 mx-2">
+                         - 
+                    </span>
+                    
+                </div>
+            </div>
+
+            
+            <!-- Layout Mobile: Estatísticas compactas no topo + Lances abaixo -->
+            <div class="flex flex-col sm:hidden w-full flex-1 bg-gray-200 text-black dark:bg-gray-900 dark:text-white overflow-hidden">
+                <!-- Estatísticas compactas (mobile) -->
+                <div class="w-full bg-gray-300 dark:bg-gray-800 px-2 py-1">
+                    <!-- Cabeçalho -->
+                    <div class="flex justify-center gap-3 text-xs font-semibold pb-1">
+                        <div wire:click.prevent="trocarPainelEstatisticas(0)" class="cursor-pointer text-yellow-600 dark:text-yellow-300">
+                            TOTAL
+                        </div>
+                        <div wire:click.prevent="trocarPainelEstatisticas(1)" class="cursor-pointer ">
+                            1T
+                        </div>
+                        <div wire:click.prevent="trocarPainelEstatisticas(2)" class="cursor-pointer ">
+                            2T
+                        </div>
+                        <div wire:click.prevent="trocarPainelEstatisticas(4)" class="cursor-pointer ">
+                            5'
+                        </div>
+                        <div wire:click.prevent="trocarPainelEstatisticas(3)" class="cursor-pointer ">
+                            10'
+                        </div>
+                    </div>
+                    <!-- Grid compacto 4x2 -->
+                    <div class="grid grid-cols-4 gap-1">
+                        <!--[if BLOCK]><![endif]-->                        <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-700 rounded py-0.5 px-1">
+                            <div class="flex items-center gap-1 text-xs font-bold">
+                                <span>0</span>
+                                <div class="w-3 h-3 shotontarget"></div>
+                                <span>0</span>
+                            </div>
+                        </div>
+                                                <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-700 rounded py-0.5 px-1">
+                            <div class="flex items-center gap-1 text-xs font-bold">
+                                <span>0</span>
+                                <div class="w-3 h-3 shotofftarget"></div>
+                                <span>0</span>
+                            </div>
+                        </div>
+                                                <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-700 rounded py-0.5 px-1">
+                            <div class="flex items-center gap-1 text-xs font-bold">
+                                <span>0</span>
+                                <div class="w-3 h-3 shotwoodwork"></div>
+                                <span>0</span>
+                            </div>
+                        </div>
+                                                <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-700 rounded py-0.5 px-1">
+                            <div class="flex items-center gap-1 text-xs font-bold">
+                                <span>0</span>
+                                <div class="w-3 h-3 shotblocked"></div>
+                                <span>0</span>
+                            </div>
+                        </div>
+                                                <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-700 rounded py-0.5 px-1">
+                            <div class="flex items-center gap-1 text-xs font-bold">
+                                <span>0</span>
+                                <div class="w-3 h-3 corner"></div>
+                                <span>0</span>
+                            </div>
+                        </div>
+                                                <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-700 rounded py-0.5 px-1">
+                            <div class="flex items-center gap-1 text-xs font-bold">
+                                <span>0</span>
+                                <div class="w-3 h-3 homedanger"></div>
+                                <span>0</span>
+                            </div>
+                        </div>
+                                                <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-700 rounded py-0.5 px-1">
+                            <div class="flex items-center gap-1 text-xs font-bold">
+                                <span>0</span>
+                                <div class="w-3 h-3 penaltygoal"></div>
+                                <span>0</span>
+                            </div>
+                        </div>
+                                                <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-700 rounded py-0.5 px-1">
+                            <div class="flex items-center gap-1 text-xs font-bold">
+                                <span>0</span>
+                                <div class="w-3 h-3 ballsafe"></div>
+                                <span>0</span>
+                            </div>
+                        </div>
+                        <!--[if ENDBLOCK]><![endif]-->                    </div>
+                </div>
+
+                <!-- Comentários/Lances (mobile) -->
+                <div class="w-full flex-1 overflow-y-auto hide-scrollbar space-y-1 p-2">
+                    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                </div>
+            </div>
+
+            <!-- Layout Desktop: Colunas lado a lado -->
+            <div class="hidden sm:flex flex-row w-full flex-1 bg-gray-200 text-black dark:bg-gray-900 dark:text-white overflow-hidden">
+                <!-- Comentários (com rolagem interna) -->
+                <div class="w-1/2 h-full overflow-y-auto hide-scrollbar space-y-2 p-4">
+                    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                </div>
+
+                <!-- Estatísticas (desktop) -->
+                <div class="w-1/2 h-full overflow-y-auto p-4 hide-scrollbar">
+                    <!-- Cabeçalho -->
+                    <div class="flex justify-between text-xs font-semibold border-b border-black dark:border-white pb-2 mb-4">
+                        <div wire:click.prevent="trocarPainelEstatisticas(0)" class="cursor-pointer text-yellow-500 dark:text-yellow-300">
+                            TOTAL
+                        </div>
+                        <div wire:click.prevent="trocarPainelEstatisticas(1)" class="cursor-pointer ">
+                            1ª Parte
+                        </div>
+                        <div wire:click.prevent="trocarPainelEstatisticas(2)" class="cursor-pointer ">
+                            2ª Parte
+                        </div>
+                        <div wire:click.prevent="trocarPainelEstatisticas(4)" class="cursor-pointer ">
+                            5 Min
+                        </div>
+                        <div wire:click.prevent="trocarPainelEstatisticas(3)" class="cursor-pointer ">
+                            10 Min
+                        </div>
+                    </div>
+
+                    <!-- Colunas centralizadas -->
+                    <div class="flex justify-center space-x-4 mx-auto">
+                        <!-- Coluna 1 -->
+                        <div class="flex flex-col space-y-2">
+                            <!--[if BLOCK]><![endif]-->                            <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-800 py-1">
+                                <div class="flex items-center justify-between w-40">
+                                    <span class="w-1/4 text-right font-bold text-xs">0</span>
+                                    <span class="w-1/2 flex items-center justify-center">
+                                        <div class="w-4 h-4 shotontarget"></div>
+                                    </span>
+                                    <span class="w-1/4 font-bold text-xs">0</span>
+                                </div>
+                                <div class="text-center text-xs text-gray-700 dark:text-gray-400">Chutes no Gol</div>
+                            </div>
+                                                        <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-800 py-1">
+                                <div class="flex items-center justify-between w-40">
+                                    <span class="w-1/4 text-right font-bold text-xs">0</span>
+                                    <span class="w-1/2 flex items-center justify-center">
+                                        <div class="w-4 h-4 shotofftarget"></div>
+                                    </span>
+                                    <span class="w-1/4 font-bold text-xs">0</span>
+                                </div>
+                                <div class="text-center text-xs text-gray-700 dark:text-gray-400">Chutes Fora do Gol</div>
+                            </div>
+                                                        <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-800 py-1">
+                                <div class="flex items-center justify-between w-40">
+                                    <span class="w-1/4 text-right font-bold text-xs">0</span>
+                                    <span class="w-1/2 flex items-center justify-center">
+                                        <div class="w-4 h-4 shotwoodwork"></div>
+                                    </span>
+                                    <span class="w-1/4 font-bold text-xs">0</span>
+                                </div>
+                                <div class="text-center text-xs text-gray-700 dark:text-gray-400">Chutes na Trave</div>
+                            </div>
+                                                        <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-800 py-1">
+                                <div class="flex items-center justify-between w-40">
+                                    <span class="w-1/4 text-right font-bold text-xs">0</span>
+                                    <span class="w-1/2 flex items-center justify-center">
+                                        <div class="w-4 h-4 shotblocked"></div>
+                                    </span>
+                                    <span class="w-1/4 font-bold text-xs">0</span>
+                                </div>
+                                <div class="text-center text-xs text-gray-700 dark:text-gray-400">Chutes Bloqueados</div>
+                            </div>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+
+                        <!-- Coluna 2 -->
+                        <div class="flex flex-col space-y-2">
+                            <!--[if BLOCK]><![endif]-->                            <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-800 py-1">
+                                <div class="flex items-center justify-between w-40">
+                                    <span class="w-1/4 text-right font-bold text-xs">0</span>
+                                    <span class="w-1/2 flex items-center justify-center">
+                                        <div class="w-4 h-4 corner"></div>
+                                    </span>
+                                    <span class="w-1/4 font-bold text-xs">0</span>
+                                </div>
+                                <div class="text-center text-xs text-gray-700 dark:text-gray-400">Escanteios</div>
+                            </div>
+                                                        <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-800 py-1">
+                                <div class="flex items-center justify-between w-40">
+                                    <span class="w-1/4 text-right font-bold text-xs">0</span>
+                                    <span class="w-1/2 flex items-center justify-center">
+                                        <div class="w-4 h-4 homedanger"></div>
+                                    </span>
+                                    <span class="w-1/4 font-bold text-xs">0</span>
+                                </div>
+                                <div class="text-center text-xs text-gray-700 dark:text-gray-400">Ataques Perigosos</div>
+                            </div>
+                                                        <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-800 py-1">
+                                <div class="flex items-center justify-between w-40">
+                                    <span class="w-1/4 text-right font-bold text-xs">0</span>
+                                    <span class="w-1/2 flex items-center justify-center">
+                                        <div class="w-4 h-4 penaltygoal"></div>
+                                    </span>
+                                    <span class="w-1/4 font-bold text-xs">0</span>
+                                </div>
+                                <div class="text-center text-xs text-gray-700 dark:text-gray-400">Pênaltis</div>
+                            </div>
+                                                        <div class="flex flex-col items-center bg-gray-400 dark:bg-gray-800 py-1">
+                                <div class="flex items-center justify-between w-40">
+                                    <span class="w-1/4 text-right font-bold text-xs">0</span>
+                                    <span class="w-1/2 flex items-center justify-center">
+                                        <div class="w-4 h-4 ballsafe"></div>
+                                    </span>
+                                    <span class="w-1/4 font-bold text-xs">0</span>
+                                </div>
+                                <div class="text-center text-xs text-gray-700 dark:text-gray-400">Posse de Bola</div>
+                            </div>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                    </div>
+                </div>
+            </div>
+        <!--[if ENDBLOCK]><![endif]-->    </div>
+    <div wire:snapshot="{&quot;data&quot;:{&quot;open&quot;:false},&quot;memo&quot;:{&quot;id&quot;:&quot;4DYElbAV7JhD4hxI5fLE&quot;,&quot;name&quot;:&quot;modal.assinar-oraculo&quot;,&quot;path&quot;:&quot;radar\/estudiantes-argentinos-juniors\/11352468&quot;,&quot;method&quot;:&quot;GET&quot;,&quot;release&quot;:&quot;a-a-a&quot;,&quot;children&quot;:[],&quot;scripts&quot;:[],&quot;assets&quot;:[],&quot;errors&quot;:[],&quot;locale&quot;:&quot;pt-br&quot;},&quot;checksum&quot;:&quot;1cbde8c35c4d251e2fcd5306ef2a18cdc76f2f74644f3c463d4c34b4d7b67431&quot;}" wire:effects="{&quot;listeners&quot;:[&quot;abrir-modal-assinar-oraculo&quot;]}" wire:id="4DYElbAV7JhD4hxI5fLE"
+    x-data="{ show: window.Livewire.find('4DYElbAV7JhD4hxI5fLE').entangle('open') }"
+    x-on:close.stop="show = false"
+    x-on:keydown.escape.window="show = false"
+    x-show="show"
+    id="7cef8a734855777c2a9d0caf42666e69"
+    class="jetstream-modal fixed inset-0 overflow-y-auto px-4 py-6 sm:px-0 z-50"
+    style="display: none;"
+>
+    <!-- Fundo escurecido -->
+    <div x-show="show"
+         class="fixed inset-0 transform transition-all"
+         x-on:click="show = false"
+         x-transition:enter="ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <div class="absolute inset-0 bg-gray-500 dark:bg-gray-800 opacity-75"></div>
+    </div>
+
+    <!-- Conteúdo do modal -->
+    <div x-show="show"
+         class="mb-6 bg-white dark:bg-gray-900 dark:text-gray-100 rounded-lg overflow-hidden shadow-xl transform transition-all sm:w-full sm:max-w-2xl sm:mx-auto"
+         x-trap.inert.noscroll="show"
+         x-transition:enter="ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+         x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+         x-transition:leave="ease-in duration-200"
+         x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+         x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95">
+        <div class="px-6 py-4">
+        <div class="text-lg font-medium text-gray-900 dark:text-gray-100">
+            <b>Apenas Assinantes</b>
+        </div>
+
+        <div class="mt-4 text-sm text-gray-600 dark:text-gray-300">
+            Ferramenta exclusiva para assinantes
+        </div>
+    </div>
+
+    <div class="flex flex-row justify-end px-6 py-4 bg-gray-100 dark:bg-gray-700 text-end">
+        <button
+    type="submit"
+    class="px-4 py-2 text-sm rounded-lg font-semibold text-white
+            bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500
+            transition-colors duration-150 ease-in-out
+            disabled:opacity-50 disabled:cursor-not-allowed
+         mr-2" wire:click="close" wire:loading.attr="disabled">
+    Fechar
+</button>
+
+        <button
+    type="submit"
+    class="px-4 py-2 text-sm rounded-lg font-semibold text-white
+            bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500
+            transition-colors duration-150 ease-in-out
+            disabled:opacity-50 disabled:cursor-not-allowed
+         mr-2" wire:click="assinarOraculo" wire:loading.attr="disabled">
+    Assinar
+</button>
+    </div>
+    </div>
+</div>
+    <div wire:snapshot="{&quot;data&quot;:{&quot;open&quot;:false},&quot;memo&quot;:{&quot;id&quot;:&quot;9wTjUUXEjMaDmszFheAQ&quot;,&quot;name&quot;:&quot;modal.autenticar&quot;,&quot;path&quot;:&quot;radar\/estudiantes-argentinos-juniors\/11352468&quot;,&quot;method&quot;:&quot;GET&quot;,&quot;release&quot;:&quot;a-a-a&quot;,&quot;children&quot;:[],&quot;scripts&quot;:[],&quot;assets&quot;:[],&quot;errors&quot;:[],&quot;locale&quot;:&quot;pt-br&quot;},&quot;checksum&quot;:&quot;c1073eee22250f7229fd7162f04043362609c491086ec02cae3fa0b4ff9b0b6a&quot;}" wire:effects="{&quot;listeners&quot;:[&quot;abrir-modal-autenticar&quot;]}" wire:id="9wTjUUXEjMaDmszFheAQ"
+    x-data="{ show: window.Livewire.find('9wTjUUXEjMaDmszFheAQ').entangle('open') }"
+    x-on:close.stop="show = false"
+    x-on:keydown.escape.window="show = false"
+    x-show="show"
+    id="7cef8a734855777c2a9d0caf42666e69"
+    class="jetstream-modal fixed inset-0 overflow-y-auto px-4 py-6 sm:px-0 z-50"
+    style="display: none;"
+>
+    <!-- Fundo escurecido -->
+    <div x-show="show"
+         class="fixed inset-0 transform transition-all"
+         x-on:click="show = false"
+         x-transition:enter="ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <div class="absolute inset-0 bg-gray-500 dark:bg-gray-800 opacity-75"></div>
+    </div>
+
+    <!-- Conteúdo do modal -->
+    <div x-show="show"
+         class="mb-6 bg-white dark:bg-gray-900 dark:text-gray-100 rounded-lg overflow-hidden shadow-xl transform transition-all sm:w-full sm:max-w-2xl sm:mx-auto"
+         x-trap.inert.noscroll="show"
+         x-transition:enter="ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+         x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+         x-transition:leave="ease-in duration-200"
+         x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+         x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95">
+        <div class="px-6 py-4">
+        <div class="text-lg font-medium text-gray-900 dark:text-gray-100">
+            <b>Faça Login ou Cadastre-se</b>
+        </div>
+
+        <div class="mt-4 text-sm text-gray-600 dark:text-gray-300">
+            Essa opção está habilitada apenas para quem está logado no sistema.<br/>
+        Por favor faça o <b>Login</b> ou <b>Cadastre-se</b>.<br/>
+        Caso não possua login, se cadastre-se gratuitamente.
+        </div>
+    </div>
+
+    <div class="flex flex-row justify-end px-6 py-4 bg-gray-100 dark:bg-gray-700 text-end">
+        <button
+    type="submit"
+    class="px-4 py-2 text-sm rounded-lg font-semibold text-white
+            bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500
+            transition-colors duration-150 ease-in-out
+            disabled:opacity-50 disabled:cursor-not-allowed
+         mr-2" wire:click="close" wire:loading.attr="disabled">
+    Fechar
+</button>
+
+        <button
+    type="submit"
+    class="px-4 py-2 text-sm rounded-lg font-semibold text-white
+            bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500
+            transition-colors duration-150 ease-in-out
+            disabled:opacity-50 disabled:cursor-not-allowed
+         mr-2" wire:click="fazerLogin" wire:loading.attr="disabled">
+    Login
+</button>
+
+        <button
+    type="submit"
+    class="px-4 py-2 text-sm rounded-lg font-semibold text-white
+            bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500
+            transition-colors duration-150 ease-in-out
+            disabled:opacity-50 disabled:cursor-not-allowed
+         mr-2" wire:click="fazerCadastro" wire:loading.attr="disabled">
+    Cadastrar-se
+</button>
+    </div>
+    </div>
+</div>
+</div>
+
+        <script nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M">
+    console.warn('Livewire: The published Livewire assets are out of date\n See: https://livewire.laravel.com/docs/installation#publishing-livewires-frontend-assets')
+</script>
+<script src="https://www.radarfutebol.com/vendor/livewire/livewire.min.js?id=df3a17f2" nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M"  data-csrf="mxI9rCRa7MjI4UblDfiQV5g0o4NhfKs7eby6VNdT" data-update-uri="/livewire/update" data-navigate-once="true"></script>
+        <script nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M" type="text/javascript">
+    Livewire.hook('exception', ({ statusCode, error }) => {
+        location.reload();
+    });
+
+    // Fecha dropdown de sons quando clica no iframe (click.outside do Alpine nao detecta)
+    window.addEventListener('blur', function() {
+        setTimeout(function() {
+            if (document.activeElement && document.activeElement.tagName === 'IFRAME') {
+                document.documentElement.click();
+            }
+        }, 0);
+    });
+
+    // Sons via polling do oraculo (detecta lances novos e toca som)
+    (function() {
+        var audioPrecarregado = {};
+        ['goal', 'corner', 'dangerattack', 'penalty', 'redcard'].forEach(function(tipo) {
+            var audio = new Audio('/audio/' + tipo + '.ogg');
+            audio.preload = 'auto';
+            audioPrecarregado[tipo] = audio;
+        });
+
+        // Destrava autoplay no primeiro clique do usuario (browsers bloqueiam play() programatico fora de gesture)
+        var audioDestravado = false;
+        var destravarHandler = function() {
+            document.removeEventListener('click', destravarHandler, true);
+            audioDestravado = true;
+            Object.keys(audioPrecarregado).forEach(function(tipo) {
+                var a = audioPrecarregado[tipo];
+                a.muted = true;
+                a.play().then(function() {
+                    a.pause();
+                    a.currentTime = 0;
+                    a.muted = false;
+                }).catch(function() { a.muted = false; });
+            });
+            // Esconde badge "clique para ativar" do icone de som
+            document.querySelectorAll('.badge-ativar-som').forEach(function(b) {
+                b.style.display = 'none';
+            });
+        };
+        document.addEventListener('click', destravarHandler, true);
+
+        var sonsAtivos = {"somGoal":null,"somDangerAttack":null,"somCorner":null,"somPenal":null,"somRedCard":null};
+        var lastLanceCount = null;
+        var idEvento = null;
+        var pollTimer = null;
+
+        var soundMap = {
+            'goal': 'somGoal',
+            'homedanger': 'somDangerAttack',
+            'awaydanger': 'somDangerAttack',
+            'corner': 'somCorner',
+            'penalty': 'somPenal',
+            'penaltymissed': 'somPenal',
+            'redcard': 'somRedCard',
+        };
+
+        var audioMap = {
+            'homedanger': 'dangerattack',
+            'awaydanger': 'dangerattack',
+            'penaltymissed': 'penalty',
+        };
+
+        var prioridades = ['goal', 'penalty', 'penaltymissed', 'redcard', 'corner', 'homedanger', 'awaydanger'];
+
+        function checkForSounds(lances) {
+            if (!lances || !lances.length) return;
+
+            var currentCount = lances.length;
+
+            if (lastLanceCount === null) {
+                lastLanceCount = currentCount;
+                return;
+            }
+
+            if (currentCount <= lastLanceCount) return;
+
+            var novos = currentCount - lastLanceCount;
+            lastLanceCount = currentCount;
+
+            var lancePrioritario = null;
+            for (var i = 0; i < novos && i < currentCount; i++) {
+                var icone = lances[i] && lances[i].iconeComentario;
+                if (icone && prioridades.indexOf(icone) !== -1) {
+                    if (!lancePrioritario || prioridades.indexOf(icone) < prioridades.indexOf(lancePrioritario)) {
+                        lancePrioritario = icone;
+                    }
+                }
+            }
+
+            if (!lancePrioritario) return;
+
+            var soundKey = soundMap[lancePrioritario];
+            if (soundKey && sonsAtivos[soundKey] && audioDestravado) {
+                var soundType = audioMap[lancePrioritario] || lancePrioritario;
+                var audio = audioPrecarregado[soundType];
+                if (audio) {
+                    audio.currentTime = 0;
+                    audio.play().catch(function(e){
+                        if (e && e.name !== 'NotAllowedError') console.warn('Audio play falhou:', e);
+                    });
+                }
+            }
+        }
+
+        function pollOraculo() {
+            if (!idEvento) return;
+
+            fetch('/api/oraculo/' + idEvento)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data && data.oraculo && data.oraculo.lances) {
+                        checkForSounds(data.oraculo.lances);
+                    }
+                })
+                .catch(function() {});
+        }
+
+        // Atualiza estado dos sons quando usuario clica nos toggles
+        Livewire.on('atualizarSonsRadar', function(dados) {
+            if (dados) sonsAtivos = dados;
+        });
+
+        // Inicia polling a cada 5s para detectar sons
+        pollTimer = setInterval(pollOraculo, 5000);
+        // Primeira chamada imediata
+        pollOraculo();
+
+        // Para polling quando pagina fecha
+        window.addEventListener('beforeunload', function() {
+            if (pollTimer) clearInterval(pollTimer);
+        });
+    })();
+
+    // Detecta e aplica o tema nos iframes (William Hill e Sofascore)
+    (function() {
+        function getTheme() {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            return saved === 'light' ? 'light' : (saved === 'dark' || prefersDark ? 'dark' : 'dark');
+        }
+
+        function updateIframeTheme() {
+            const theme = getTheme();
+
+            // Atualiza iframe William Hill
+            const iframeWH = document.getElementById('iframe-williamhill');
+            if (iframeWH && iframeWH.src) {
+                const url = new URL(iframeWH.src);
+                if (url.searchParams.get('theme') !== theme) {
+                    url.searchParams.set('theme', theme);
+                    iframeWH.src = url.toString();
+                }
+            }
+
+            // Atualiza iframe Sofascore (se existir)
+            const iframeSS = document.querySelector('[id^="sofascore-momentum-"]');
+            if (iframeSS && iframeSS.dataset.srcBase) {
+                const newSrc = iframeSS.dataset.srcBase + theme;
+                if (iframeSS.src !== newSrc) {
+                    iframeSS.src = newSrc;
+                }
+            }
+        }
+
+        // Aplica o tema quando a página carrega
+        document.addEventListener('DOMContentLoaded', updateIframeTheme);
+
+        // Também executa imediatamente caso o DOM já esteja pronto
+        if (document.readyState !== 'loading') {
+            updateIframeTheme();
+        }
+
+        // Observa mudanças na classe 'dark' do documento
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.attributeName === 'class') {
+                    updateIframeTheme();
+                }
+            });
+        });
+
+        observer.observe(document.documentElement, { attributes: true });
+
+        // Também escuta mudanças no localStorage (para outras abas)
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'theme') {
+                updateIframeTheme();
+            }
+        });
+    })();
+</script>
+
+        
+        <script nonce="LwNJHf2vhFwnhEg7QnNK1FqRm3QOqr2FwM0GrV9M">
+        (function() {
+            if (!window.opener) return;
+            function ajustarAltura() {
+                var chromeH = window.outerHeight - window.innerHeight;
+                // Encolhe para forcar overflow, permitindo medir scrollHeight real
+                window.resizeTo(window.outerWidth, chromeH + 100);
+                requestAnimationFrame(function() {
+                    var scrollH = document.documentElement.scrollHeight;
+                    window.resizeTo(window.outerWidth, scrollH + chromeH);
+                });
+            }
+            window.addEventListener('load', function() {
+                requestAnimationFrame(ajustarAltura);
+            });
+        })();
+        </script>
+    </body>
+</html>

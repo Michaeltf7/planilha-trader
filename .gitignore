@@ -1,0 +1,25 @@
+# Build output
+dist/
+*.zip
+*.7z
+*.rar
+
+# Dependencies and generated caches
+node_modules/
+tools/python_deps/
+tools/__pycache__/
+**/__pycache__/
+*.pyc
+sofascore_scraper-main/
+
+# Local editor / Codex state
+.agents/
+.codex/
+.vscode/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radar MOD Proprio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Outfit:wght@500;700;900&display=swap" rel="stylesheet">
+  <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    html, body { min-height: 100%; margin: 0; background: transparent; }
+    body { font-family: Inter, Arial, sans-serif; overflow: auto; }
+    .custom-wradar-modal { position: static; display: block; width: 100%; min-height: 100vh; padding: 0; background: var(--custom-radar-bg); }
+    .custom-wradar-backdrop { display: none; }
+    .custom-wradar-panel { width: 100%; max-height: none; min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; background: var(--custom-radar-bg); }
+    .custom-wradar-content { padding: 14px; }
+    #trader-highlight-button {
+      top: auto !important;
+      right: 12px !important;
+      bottom: 12px !important;
+      padding: 7px 10px !important;
+      opacity: .86;
+    }
+  </style>
+</head>
+<body>
+  <div id="custom-wradar-mod" class="custom-wradar-modal is-open" data-radar-theme="dark">
+    <section class="custom-wradar-panel">
+      <div id="custom-wradar-content" class="custom-wradar-content"></div>
+    </section>
+  </div>
+  <script src="./custom-radar-window.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pressão SofaScore | Planilha Trader</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Boxicons -->
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body.radar-body {
+            background-color: #060608 !important;
+            margin: 0;
+            padding: 10px;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .radar-container {
+            width: 100%;
+            max-width: 800px;
+            background: #0a0a0c;
+            border: 1px solid #1a1a1f;
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        }
+        #momentum-container {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body class="radar-body">
+    <div id="radar-app" class="radar-container">
+        <div id="momentum-container">
+            <div style="display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 15px; min-height: 150px;">
+                <i class='bx bx-loader-alt bx-spin' style="font-size: 40px; color: #4182f9;"></i>
+                <span style="font-weight: 700; color: rgba(255,255,255,0.6);">Sincronizando dados de pressão...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/radarView.js"></script>
+</body>
+</html>
