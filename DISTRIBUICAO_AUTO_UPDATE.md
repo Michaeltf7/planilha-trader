@@ -43,13 +43,13 @@ O auto-update usa GitHub Releases. Antes de publicar de verdade, ajuste no `pack
 "publish": [
   {
     "provider": "github",
-    "owner": "Michaeltt7",
+    "owner": "Michaelttf7",
     "repo": "planilha-trader"
   }
 ]
 ```
 
-Confirme que o repositorio existe em `https://github.com/Michaeltt7/planilha-trader`.
+Confirme que o repositorio existe em `https://github.com/Michaelttf7/planilha-trader`.
 
 Para publicar pelo terminal, voce tambem precisa configurar um token:
 
