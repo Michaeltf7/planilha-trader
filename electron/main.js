@@ -1,6 +1,6 @@
 const path = require('path');
 const { spawn } = require('child_process');
-const { app, BrowserWindow, ipcMain, Menu, shell, session, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, shell, session, nativeImage, dialog } = require('electron');
 
 const childWindows = new Set();
 const replicaWindows = new Map();
@@ -32,6 +32,46 @@ function createMainWindow() {
   });
   win.loadFile(path.join(__dirname, '..', 'index.html'));
   return win;
+}
+
+function setupAutoUpdater(win) {
+  if (!app.isPackaged || process.env.PLANILHA_TRADER_DISABLE_AUTO_UPDATE === '1') return;
+
+  let autoUpdater;
+  try {
+    autoUpdater = require('electron-updater').autoUpdater;
+  } catch (error) {
+    console.warn('Auto-update indisponivel:', error?.message || error);
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('error', error => {
+    console.warn('Falha no auto-update:', error?.message || error);
+  });
+
+  autoUpdater.on('update-downloaded', info => {
+    if (!win || win.isDestroyed()) return;
+    dialog.showMessageBox(win, {
+      type: 'info',
+      buttons: ['Reiniciar agora', 'Depois'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Atualizacao pronta',
+      message: `Planilha Trader ${info?.version || ''} foi baixado.`,
+      detail: 'Reinicie o programa para aplicar a nova versao.'
+    }).then(result => {
+      if (result.response === 0) autoUpdater.quitAndInstall(false, true);
+    }).catch(() => {});
+  });
+
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch(error => {
+      console.warn('Nao foi possivel verificar atualizacoes:', error?.message || error);
+    });
+  }, 5000);
 }
 
 function baseWebPreferences() {
@@ -1274,7 +1314,8 @@ app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
 
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(true));
-  createMainWindow();
+  const mainWindow = createMainWindow();
+  setupAutoUpdater(mainWindow);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
