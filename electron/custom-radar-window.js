@@ -88,13 +88,23 @@
     match = raw.match(/^(\d+)\s*:\s*(\d{1,2})$/);
     if (match) return (Number(match[1]) * 60) + Number(match[2]);
 
+    match = raw.match(/^(\d+)'$/);
+    if (match) return Number(match[1]) * 60;
+
     return null;
+  };
+
+  const shouldIgnoreAddedTimeComment = item => {
+    const text = normalizeMatchText(`${item?.comment || ''} ${item?.all || ''} ${item?.className || ''}`);
+    return text.includes('substituicao') || text.includes('substitution');
   };
 
   const calculateAddedTimeForHalfFromItems = items => {
     const events = [];
 
     for (const item of items) {
+      if (shouldIgnoreAddedTimeComment(item)) continue;
+
       const rawTime = commentTime(item);
       const totalSeconds = parseAddedTimeCommentSeconds(rawTime);
       if (totalSeconds === null) continue;
@@ -125,7 +135,9 @@
           secondsToAdd,
           from: current.rawTime,
           to: next.rawTime,
-          diff
+          diff,
+          currentComment: commentText(current.item?.comment || current.item?.all || ''),
+          nextComment: commentText(next.item?.comment || next.item?.all || '')
         });
       }
     }
@@ -144,6 +156,8 @@
     const secondHalf = [];
 
     for (const item of items) {
+      if (shouldIgnoreAddedTimeComment(item)) continue;
+
       const rawTime = commentTime(item);
       const totalSeconds = parseAddedTimeCommentSeconds(rawTime);
       if (totalSeconds === null) continue;
