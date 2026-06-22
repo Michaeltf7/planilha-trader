@@ -1,11 +1,34 @@
 ﻿
 const AnalisePro = {
     games: [],
-    currentPlanningDate: new Date().toISOString().split('T')[0],
+    currentPlanningDate: '',
     calendarSource: '',
     
     async init() {
-        console.log("Calendário Pro inicializado");
+        if (!this.currentPlanningDate) this.currentPlanningDate = this.getTodayKey();
+        console.log("Calendario inicializado");
+    },
+
+    getBrazilDateParts(date = new Date()) {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).formatToParts(date);
+        return Object.fromEntries(parts.map(part => [part.type, part.value]));
+    },
+
+    getTodayKey() {
+        const parts = this.getBrazilDateParts();
+        return `${parts.year}-${parts.month}-${parts.day}`;
+    },
+
+    getBrazilDateKey(timestamp) {
+        const date = new Date(Number(timestamp) * 1000);
+        if (!Number.isFinite(date.getTime())) return '';
+        const parts = this.getBrazilDateParts(date);
+        return `${parts.year}-${parts.month}-${parts.day}`;
     },
 
     async fetchSuper(url) {
@@ -41,7 +64,7 @@ const AnalisePro = {
 
     async fetchUpcomingGames() {
         try {
-            const today = new Date().toISOString().split('T')[0];
+            const today = this.getTodayKey();
             const url = `https://api.sofascore.com/api/v1/sport/football/scheduled-events/${today}`;
             const data = await this.fetchSuper(url);
             return data?.events || [];
@@ -52,22 +75,22 @@ const AnalisePro = {
     },
 
     async render() {
-        const today = new Date().toISOString().split('T')[0];
+        const today = this.getTodayKey();
         const container = document.getElementById('app-container');
         container.innerHTML = `
             <div class="analise-pro-container">
-                <div class="pro-header-card">
+                <div class="pro-header-card calendar-header-card">
                     <div class="pro-header-info">
-                        <h2><i class='bx bx-calendar-event'></i> Calendário Pro</h2>
-                        <p>Agenda e resultados em tempo real.</p>
+                        <h2><i class='bx bx-calendar-event'></i> Calendario de Jogos</h2>
+                        <p>Agenda e resultados via Radar Futebol.</p>
                     </div>
-                    <div class="pro-header-actions" style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
-                        <div class="search-wrapper" style="position: relative; flex: 1; min-width: 250px;">
-                            <i class='bx bx-search' style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text-secondary);"></i>
-                            <input type="text" id="calendar-search" placeholder="Buscar time ou campeonato..." class="filter-control" style="padding-left: 40px; width: 100%;" oninput="AnalisePro.filterGames()">
+                    <div class="pro-header-actions calendar-header-actions">
+                        <div class="calendar-search-wrapper">
+                            <i class='bx bx-search'></i>
+                            <input type="text" id="calendar-search" placeholder="Buscar time ou campeonato..." class="filter-control" oninput="AnalisePro.filterGames()">
                         </div>
                         <input type="date" id="calendar-date-filter" class="filter-control" value="${today}" onchange="AnalisePro.refreshGames()">
-                        <button id="btn-sync-calendar" class="btn-primary" style="cursor: pointer; min-width: 140px;">
+                        <button id="btn-sync-calendar" class="btn-primary">
                             <i class='bx bx-refresh'></i> Sincronizar
                         </button>
                     </div>
@@ -103,7 +126,7 @@ const AnalisePro = {
 
     async refreshGames(force = false) {
         const dateInput = document.getElementById('calendar-date-filter');
-        const selectedDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+        const selectedDate = dateInput ? dateInput.value : this.getTodayKey();
         const listContainer = document.getElementById('pro-calendar-list');
         const loader = document.getElementById('pro-loading');
         
@@ -236,7 +259,7 @@ const AnalisePro = {
         
         // Estrutura de favoritos por data
         const favData = JSON.parse(localStorage.getItem('pro_fav_games_v2')) || {};
-        const selectedDate = document.getElementById('calendar-date-filter')?.value || new Date().toISOString().split('T')[0];
+        const selectedDate = document.getElementById('calendar-date-filter')?.value || this.getTodayKey();
         const favGamesIds = favData[selectedDate] || [];
         
         listContainer.innerHTML = '';
@@ -385,11 +408,7 @@ const AnalisePro = {
     },
 
     getLocalDateKey(timestamp) {
-        const date = new Date(Number(timestamp) * 1000);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
+        return this.getBrazilDateKey(timestamp);
     },
 
     splitWRadarTeams(event) {
@@ -2178,7 +2197,7 @@ const AnalisePro = {
         const cache = JSON.parse(localStorage.getItem('pro_games_cache_history')) || {};
         if (cache[selectedDate]) {
             gamesForDate = cache[selectedDate];
-        } else if (selectedDate === new Date().toISOString().split('T')[0] && this.games.length > 0) {
+        } else if (selectedDate === this.getTodayKey() && this.games.length > 0) {
             gamesForDate = this.games;
         }
 
