@@ -1080,7 +1080,8 @@ const WorldCup = {
             this.applyExternalMatches(cache.matches);
             this.applyExternalLeaders(cache);
             this.syncState.status = 'ok';
-            this.syncState.lastSync = cache.generatedAt || null;
+            const missingPlaces = cache.matches.some(match => !String(match.venue || '').trim() && !String(match.city || '').trim());
+            this.syncState.lastSync = missingPlaces ? null : (cache.generatedAt || null);
             this.syncState.message = `${cache.source || 'Cache'} ${cache.matches.length} jogos`;
         } catch (error) {
             console.warn('Nao foi possivel carregar cache da Copa:', error);
@@ -1145,8 +1146,11 @@ const WorldCup = {
         matches.forEach(match => {
             const normalized = this.normalizeExternalMatch(match);
             if (!normalized.home || !normalized.away || !normalized.date) return;
+            const current = byKey.get(this.getMatchKey(normalized)) || {};
+            if (!String(normalized.venue || '').trim() && current.venue) normalized.venue = current.venue;
+            if (!String(normalized.city || '').trim() && current.city) normalized.city = current.city;
             byKey.set(this.getMatchKey(normalized), {
-                ...(byKey.get(this.getMatchKey(normalized)) || {}),
+                ...current,
                 ...normalized
             });
         });

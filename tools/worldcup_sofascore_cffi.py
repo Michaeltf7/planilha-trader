@@ -199,8 +199,8 @@ def normalize_event(event):
     status = normalize_status(event)
     clock_meta = live_clock_meta(event, status)
     has_score = status in ("Encerrado", "Ao vivo")
-    venue = event.get("venue") or {}
     round_info = event.get("roundInfo") or {}
+    venue = extract_venue(event)
 
     return {
         "id": f"sofa-{event.get('id')}",
@@ -215,8 +215,8 @@ def normalize_event(event):
         "away": team_name(away_team),
         "homeCode": country_code(home_team),
         "awayCode": country_code(away_team),
-        "venue": venue.get("stadium", {}).get("name") or venue.get("name") or "",
-        "city": venue.get("city", {}).get("name") or venue.get("cityName") or "",
+        "venue": venue["venue"],
+        "city": venue["city"],
         "status": status,
         "statusDetail": event.get("status", {}).get("description") or "",
         "clock": live_clock(event, status),
@@ -226,6 +226,34 @@ def normalize_event(event):
         "awayScore": int(away_score.get("current")) if has_score and away_score.get("current") is not None else None,
         "source": "Sofascore",
     }
+
+
+def extract_venue(event):
+    venue = event.get("venue") or {}
+    return {
+        "venue": venue.get("stadium", {}).get("name") or venue.get("name") or "",
+        "city": venue.get("city", {}).get("name") or venue.get("cityName") or "",
+    }
+
+
+def fetch_event_venue(event_id):
+    data = api_get(f"/event/{event_id}", timeout=20, retries=2) or {}
+    event = data.get("event") or {}
+    return extract_venue(event)
+
+
+def enrich_missing_venues(matches):
+    errors = []
+    for match in matches:
+        if match.get("venue") or match.get("city") or not match.get("sofascoreId"):
+            continue
+        try:
+            venue = fetch_event_venue(match["sofascoreId"])
+            if venue.get("venue") or venue.get("city"):
+                match.update(venue)
+        except Exception as exc:
+            errors.append({"eventId": match.get("sofascoreId"), "venueError": str(exc)})
+    return errors
 
 
 def find_worldcup_2026_season():
@@ -506,7 +534,7 @@ def fetch_match_details(event_id):
     shotmap = safe(f"/event/{event_id}/shotmap")
     h2h = safe(f"/event/{event_id}/h2h")
     pregame = safe(f"/event/{event_id}/pregame-form")
-    venue = event.get("venue") or {}
+    venue = extract_venue(event)
     referee = event.get("referee") or {}
 
     return {
@@ -526,8 +554,8 @@ def fetch_match_details(event_id):
             "clock": live_clock(event, status),
             "homeScore": home_score.get("current"),
             "awayScore": away_score.get("current"),
-            "venue": venue.get("stadium", {}).get("name") or venue.get("name") or "",
-            "city": venue.get("city", {}).get("name") or venue.get("cityName") or "",
+            "venue": venue["venue"],
+            "city": venue["city"],
             "referee": referee.get("name") or "",
         },
         "lineups": {
@@ -706,6 +734,7 @@ def main():
         raw_events, event_errors = fetch_events(season_id)
         matches = [normalize_event(event) for event in raw_events]
         matches = [match for match in matches if match.get("home") and match.get("away") and match.get("date")]
+        venue_errors = enrich_missing_venues(matches)
         matches.sort(key=lambda item: f"{item.get('date')} {item.get('time')}")
         leaders = build_leaders(matches)
         result = {
@@ -719,7 +748,7 @@ def main():
             "scorers": leaders["scorers"],
             "assists": leaders["assists"],
             "cards": leaders["cards"],
-            "errors": event_errors + leaders["leaderErrors"],
+            "errors": event_errors + venue_errors + leaders["leaderErrors"],
         }
         print(json.dumps(result, ensure_ascii=False))
     except Exception as exc:
