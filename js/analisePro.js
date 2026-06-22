@@ -648,13 +648,70 @@ const AnalisePro = {
             .sort((a, b) => a.startTimestamp - b.startTimestamp);
     },
 
+    getCalendarMatchKey(game) {
+        const home = this.normalizeMatchText(game?.homeTeam?.name || '');
+        const away = this.normalizeMatchText(game?.awayTeam?.name || '');
+        return `${home}|${away}`;
+    },
+
+    enrichSofascoreGamesWithRadar(sofascoreGames, radarGames) {
+        if (!Array.isArray(radarGames) || radarGames.length === 0) return sofascoreGames;
+
+        const radarBySofaId = new Map();
+        const radarByTeams = new Map();
+
+        radarGames.forEach(game => {
+            const sofaId = String(game.sofascoreId || game.id || '');
+            if (sofaId) radarBySofaId.set(sofaId, game);
+
+            const teamKey = this.getCalendarMatchKey(game);
+            if (teamKey !== '|') radarByTeams.set(teamKey, game);
+        });
+
+        return (sofascoreGames || []).map(game => {
+            const sofaId = String(game.sofascoreId || game.id || '');
+            const teamKey = this.getCalendarMatchKey(game);
+            const radarGame = radarBySofaId.get(sofaId) || radarByTeams.get(teamKey);
+            if (!radarGame) return game;
+
+            return {
+                ...game,
+                radarFutebolUrl: radarGame.radarFutebolUrl || game.radarFutebolUrl,
+                displayOdds: game.displayOdds || radarGame.displayOdds,
+                realOdds: game.realOdds || radarGame.realOdds,
+                radarFutebolId: radarGame.id,
+                radarMatched: true
+            };
+        });
+    },
+
     async fetchCalendarGamesByDate(dateKey, force = false) {
+        let sofascoreError = null;
+        try {
+            const sofascoreGames = await this.fetchSofascoreGamesByDate(dateKey);
+            if (sofascoreGames.length > 0) {
+                let radarGames = [];
+                try {
+                    radarGames = await this.fetchRadarFutebolGamesByDate(dateKey, force);
+                } catch (error) {
+                    console.warn('Radar Futebol indisponível para enriquecer calendário:', error);
+                }
+
+                this.calendarSource = radarGames.length > 0 ? 'Sofascore + Radar Futebol' : 'Sofascore';
+                return this.enrichSofascoreGamesWithRadar(sofascoreGames, radarGames);
+            }
+        } catch (error) {
+            sofascoreError = error;
+            console.warn('Sofascore indisponível:', error);
+        }
+
         try {
             const games = await this.fetchRadarFutebolGamesByDate(dateKey, force);
             this.calendarSource = games.length > 0 ? 'Radar Futebol' : '';
             return games;
         } catch (error) {
             this.calendarSource = '';
+            if (sofascoreError) console.warn('Fallback Radar Futebol também indisponível após falha do Sofascore:', sofascoreError);
             console.warn('Radar Futebol indisponível:', error);
             return [];
         }

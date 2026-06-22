@@ -1,6 +1,6 @@
 {
   "name": "planilha-trader",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Planilha Trader desktop",
   "main": "electron/main.js",
   "private": true,
