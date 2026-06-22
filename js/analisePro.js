@@ -2246,84 +2246,68 @@ const AnalisePro = {
         let oddsDisplay = '';
         if (game.realOdds && game.realOdds.length >= 3) {
             oddsDisplay = `
-                <div class="odds-row" style="display: flex; gap: 4px; margin-top: 6px;">
-                    <div style="background: #1e1e1e; color: #ffca28; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 800; border: 1px solid #333;">${game.realOdds[0].value}</div>
-                    <div style="background: #1e1e1e; color: #ffca28; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 800; border: 1px solid #333;">${game.realOdds[1].value}</div>
-                    <div style="background: #1e1e1e; color: #ffca28; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 800; border: 1px solid #333;">${game.realOdds[2].value}</div>
+                <div class="calendar-odds-row">
+                    <span>${game.realOdds[0].value}</span>
+                    <span>${game.realOdds[1].value}</span>
+                    <span>${game.realOdds[2].value}</span>
                 </div>
             `;
         } else if (game.displayOdds) {
              oddsDisplay = `
-                <div class="odds-row" style="display: flex; gap: 4px; margin-top: 6px;">
-                    <div style="background: #1e1e1e; color: #ffca28; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 800; border: 1px solid #333;">${game.displayOdds.home || '-'}</div>
-                    <div style="background: #1e1e1e; color: #ffca28; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 800; border: 1px solid #333;">${game.displayOdds.draw || '-'}</div>
-                    <div style="background: #1e1e1e; color: #ffca28; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 800; border: 1px solid #333;">${game.displayOdds.away || '-'}</div>
-                </div>
-            `;
-        }
-        
-        let scoreDisplay = `<div class="score-box-empty">-</div>`;
-        if (isFinished || isLive || homeScore !== '') {
-            scoreDisplay = `
-                <div class="score-box ${isLive ? 'live' : ''}" style="display: flex; gap: 5px; font-weight: 800; color: ${isLive ? '#ff4d4d' : 'var(--primary-color)'}; border: 1px solid; padding: 4px 12px; border-radius: 8px; font-size: 18px; background: var(--bg-body);">
-                    <span>${homeScore}</span>
-                    <span>-</span>
-                    <span>${awayScore}</span>
+                <div class="calendar-odds-row">
+                    <span>${game.displayOdds.home || '-'}</span>
+                    <span>${game.displayOdds.draw || '-'}</span>
+                    <span>${game.displayOdds.away || '-'}</span>
                 </div>
             `;
         }
 
         return `
             <div class="calendar-game-card ${isFav ? 'is-fav-game' : ''}" style="${isFav ? 'border-left: 4px solid #ffca28;' : ''}">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div style="display: flex; flex-direction: column; align-items: center; background: var(--bg-body); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border-color);">
-                            <div style="font-weight: 900; font-size: 14px; color: var(--primary-color); font-family: 'Outfit', sans-serif;">${time}</div>
-                            <div style="font-size: 9px; margin-top: 1px; font-weight: 800; color: ${isLive ? '#ff4d4d' : 'var(--text-secondary)'}">
+                <div class="calendar-card-top">
+                    <div class="calendar-time-pill ${isLive ? 'live' : ''}">
+                        <strong>${time}</strong>
+                        <span>
                                 ${isLive ? 'AO VIVO' : isFinished ? 'ENCERRADO' : 'AGENDADO'}
-                            </div>
-                        </div>
+                        </span>
                     </div>
-                    <button onclick="AnalisePro.toggleFavoriteGame(${game.id})" style="background: none; border: none; cursor: pointer; padding: 0; color: ${isFav ? '#ffca28' : 'var(--text-secondary)'}; font-size: 20px;">
+                    <button class="calendar-star-btn ${isFav ? 'active' : ''}" onclick="AnalisePro.toggleFavoriteGame(${game.id})" title="Favoritar jogo">
                         <i class='bx ${isFav ? 'bxs-star' : 'bx-star'}'></i>
                     </button>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                        <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                            ${this.renderTeamLogo(game.homeTeam, 22, game.source)}
-                            <span style="font-size: 13px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${game.homeTeam.name}</span>
-                        </div>
-                        <span style="font-weight: 900; font-size: 20px; color: ${isLive ? '#ff4d4d' : 'var(--primary-color)'}; flex-shrink: 0;">${homeScore !== '' ? homeScore : '-'}</span>
+
+                <div class="calendar-match-body">
+                    <div class="calendar-team-row">
+                        ${this.renderTeamLogo(game.homeTeam, 28, game.source)}
+                        <strong>${this.escapeHtml(game.homeTeam.name)}</strong>
+                        <em class="${isLive ? 'live' : ''}">${homeScore !== '' ? homeScore : '-'}</em>
                     </div>
-                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                        <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                            ${this.renderTeamLogo(game.awayTeam, 22, game.source)}
-                            <span style="font-size: 13px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${game.awayTeam.name}</span>
-                        </div>
-                        <span style="font-weight: 900; font-size: 20px; color: ${isLive ? '#ff4d4d' : 'var(--primary-color)'}; flex-shrink: 0;">${awayScore !== '' ? awayScore : '-'}</span>
+                    <div class="calendar-team-row">
+                        ${this.renderTeamLogo(game.awayTeam, 28, game.source)}
+                        <strong>${this.escapeHtml(game.awayTeam.name)}</strong>
+                        <em class="${isLive ? 'live' : ''}">${awayScore !== '' ? awayScore : '-'}</em>
                     </div>
-                    ${oddsDisplay ? `<div style="display: flex; align-items: center;">${oddsDisplay}${rankLabel}</div>` : ''}
+                    ${oddsDisplay || rankLabel ? `<div class="calendar-card-meta">${oddsDisplay}${rankLabel}</div>` : ''}
                 </div>
                 ${this.renderHistorySignals(game)}
-                <div style="display: grid; grid-template-columns: minmax(62px, 1.45fr) repeat(5, minmax(34px, .76fr)); gap: 4px;">
-                    <a href="#" onclick="AnalisePro.openCustomWRadarMod(${wradarGame}); return false;" style="cursor: pointer; text-decoration: none; background: linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(245, 158, 11, 0.14)); color: #dc2626; padding: 6px 4px; border-radius: 8px; font-size: 11px; font-weight: 900; border: 1px solid rgba(239, 68, 68, 0.42); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 3px;" title="1 - Radar MOD proprio">
-                        <i class='bx bx-crosshair' style="font-size: 14px;"></i> MOD
+                <div class="calendar-action-grid">
+                    <a class="mod" href="#" onclick="AnalisePro.openCustomWRadarMod(${wradarGame}); return false;" title="1 - Radar MOD proprio">
+                        <i class='bx bx-crosshair'></i><span>MOD</span>
                     </a>
-                    <a href="${this.escapeHtml(radarFutebolUrl)}" target="_blank" style="cursor: pointer; text-decoration: none; background: rgba(16, 185, 129, 0.14); color: #059669; padding: 6px 4px; border-radius: 8px; font-size: 11px; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.35); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 3px;" title="2 - Radar Futebol">
-                        <i class='bx bx-radar' style="font-size: 14px;"></i>
+                    <a class="radar" href="${this.escapeHtml(radarFutebolUrl)}" target="_blank" title="2 - Radar Futebol">
+                        <i class='bx bx-radar'></i>
                     </a>
-                    <a href="#" onclick="AnalisePro.openWRadarForGame(${wradarGame}, 'pack'); return false;" style="cursor: pointer; text-decoration: none; background: rgba(65, 130, 249, 0.12); color: #2563eb; padding: 6px 4px; border-radius: 8px; font-size: 11px; font-weight: 800; border: 1px solid rgba(65, 130, 249, 0.3); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 3px;" title="3 - Radar WH + Pack">
-                        <i class='bx bx-layout' style="font-size: 14px;"></i>
+                    <a class="pack" href="#" onclick="AnalisePro.openWRadarForGame(${wradarGame}, 'pack'); return false;" title="3 - Radar WH + Pack">
+                        <i class='bx bx-layout'></i>
                     </a>
-                    <a href="#" onclick="AnalisePro.openWRadarForGame(${wradarGame}, 'sport'); return false;" style="cursor: pointer; text-decoration: none; background: rgba(15, 23, 42, 0.08); color: #334155; padding: 6px 4px; border-radius: 8px; font-size: 11px; font-weight: 800; border: 1px solid rgba(15, 23, 42, 0.22); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 3px;" title="4 - Sportradar">
-                        <i class='bx bx-world' style="font-size: 14px;"></i>
+                    <a class="sport" href="#" onclick="AnalisePro.openWRadarForGame(${wradarGame}, 'sport'); return false;" title="4 - Sportradar">
+                        <i class='bx bx-world'></i>
                     </a>
-                    <a href="#" onclick="AnalisePro.open365ScoresForGame(${wradarGame}); return false;" style="cursor: pointer; text-decoration: none; background: rgba(59, 130, 246, 0.12); color: #2563eb; padding: 6px 4px; border-radius: 8px; font-size: 10px; font-weight: 900; border: 1px solid rgba(59, 130, 246, 0.32); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 3px;" title="5 - 365 Score">
+                    <a class="scores" href="#" onclick="AnalisePro.open365ScoresForGame(${wradarGame}); return false;" title="5 - 365 Score">
                         365
                     </a>
-                    <a href="${sofaUrl || '#'}" ${sofaUrl ? 'target="_blank"' : 'onclick="return false;"'} style="cursor: pointer; text-decoration: none; background: rgba(15, 150, 156, 0.1); color: var(--primary-color); padding: 6px 4px; border-radius: 8px; font-size: 11px; font-weight: 800; border: 1px solid rgba(15, 150, 156, 0.3); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 3px;" title="6 - Sofascore detalhes">
-                        <i class='bx bx-plus-circle' style="font-size: 14px;"></i>
+                    <a class="sofa" href="${sofaUrl || '#'}" ${sofaUrl ? 'target="_blank"' : 'onclick="return false;"'} title="6 - Sofascore detalhes">
+                        <i class='bx bx-plus-circle'></i>
                     </a>
                 </div>
             </div>
