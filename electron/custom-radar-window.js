@@ -126,7 +126,7 @@
       const next = events[i + 1];
       const diff = current.totalSeconds - next.totalSeconds;
 
-      if (diff >= 60) {
+      if (diff >= 70) {
         const minutesToAdd = Math.floor(diff / 60);
         const secondsToAdd = minutesToAdd * 60;
 
@@ -219,6 +219,7 @@
     if (text.includes('remate') || text.includes('chute') || text.includes('shot')) return 'shot';
     if (text.includes('escanteio') || text.includes('corner')) return 'corner';
     if (text.includes('cartao amarelo') || text.includes('yellow card')) return 'yellow-card';
+    if ((text.includes('possivel') || text.includes('possible')) && (text.includes('cartao vermelho') || text.includes('red card'))) return 'possible-red-card';
     if (text.includes('cartao vermelho') || text.includes('red card')) return 'red-card';
     if (text.includes('cartao') || text.includes('card')) return 'yellow-card';
     if (text.includes('defesa') || text.includes('defence') || text.includes('defense')) return 'defense';
@@ -236,7 +237,7 @@
       attack: directionalArrow,
       defense: directionalArrow, 'shot-on-target': 'bx-target-lock', shot: 'bx-target-lock',
       'goal-kick': 'bx-radio-circle', 'throw-in': 'bx-radio-circle',
-      corner: 'bxs-flag-alt', 'yellow-card': 'bx-square', 'red-card': 'bx-square',
+      corner: 'bxs-flag-alt', 'yellow-card': 'bx-square', 'possible-red-card': 'bx-error', 'red-card': 'bx-square',
       control: 'bx-transfer-alt', foul: 'bx-square', neutral: 'bx-radio-circle'
     };
     return `<i class='custom-radar-event-icon ${escapeHtml(type)} ${escapeHtml(side)} bx ${map[type] || map.neutral}'></i>`;

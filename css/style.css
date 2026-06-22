@@ -3958,6 +3958,12 @@ body.custom-radar-overlay-replica a {
     box-shadow: inset 4px 0 0 #ef4444;
 }
 
+.custom-radar-current-event.possible-red-card,
+.custom-radar-comment.possible-red-card {
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.28), rgba(245, 158, 11, 0.1));
+    box-shadow: inset 4px 0 0 #f59e0b;
+}
+
 .custom-radar-current-event .custom-radar-event-icon {
     width: 34px;
     height: 34px;
@@ -4067,6 +4073,12 @@ body.custom-radar-overlay-replica a {
     border-radius: 2px;
     background: #ef4444;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+
+.custom-radar-event-icon.possible-red-card {
+    color: #f59e0b !important;
+    background: rgba(245, 158, 11, 0.16) !important;
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
 }
 
 .custom-radar-event-icon.goal-kick {

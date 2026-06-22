@@ -1644,6 +1644,7 @@ const AnalisePro = {
         if (text.includes('ataque perigoso') || text.includes('dangerous attack')) return 'dangerous';
         if (text.includes('escanteio') || text.includes('corner')) return 'corner';
         if (text.includes('cartao amarelo') || text.includes('yellow card')) return 'yellow-card';
+        if ((text.includes('possivel') || text.includes('possible')) && (text.includes('cartao vermelho') || text.includes('red card'))) return 'possible-red-card';
         if (text.includes('cartao vermelho') || text.includes('red card')) return 'red-card';
         if (text.includes('cartao') || text.includes('card')) return 'yellow-card';
         if (text.includes('remate certeiro') || text.includes('chute gol') || text.includes('chutes gol') || text.includes('shot on target') || text.includes('on target')) return 'shot-on-target';
@@ -1668,6 +1669,7 @@ const AnalisePro = {
             'goal-kick': 'bx-log-out',
             corner: 'bxs-flag-alt',
             'yellow-card': 'bx-square',
+            'possible-red-card': 'bx-error',
             'red-card': 'bx-square',
             control: 'bx-transfer-alt',
             foul: 'bx-square',
