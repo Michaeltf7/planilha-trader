@@ -82,7 +82,6 @@ const AnalisePro = {
                 <div class="pro-header-card calendar-header-card">
                     <div class="pro-header-info">
                         <h2><i class='bx bx-calendar-event'></i> Calendario de Jogos</h2>
-                        <p>Agenda e resultados via Radar Futebol.</p>
                     </div>
                     <div class="pro-header-actions calendar-header-actions">
                         <div class="calendar-search-wrapper">
@@ -90,9 +89,6 @@ const AnalisePro = {
                             <input type="text" id="calendar-search" placeholder="Buscar time ou campeonato..." class="filter-control" oninput="AnalisePro.filterGames()">
                         </div>
                         <input type="date" id="calendar-date-filter" class="filter-control" value="${today}" onchange="AnalisePro.refreshGames()">
-                        <button id="btn-sync-calendar" class="btn-primary">
-                            <i class='bx bx-refresh'></i> Sincronizar
-                        </button>
                     </div>
                 </div>
 
@@ -104,22 +100,6 @@ const AnalisePro = {
                 <div id="pro-calendar-list" class="pro-calendar-list"></div>
             </div>
         `;
-
-        // Log de Debug e VinculaÃ§Ã£o de Clique
-        const syncBtn = document.getElementById('btn-sync-calendar');
-        if (syncBtn) {
-            syncBtn.onclick = async () => {
-                console.log(">>> Botão Sincronizar clicado!");
-                const icon = syncBtn.querySelector('i');
-                icon.classList.add('bx-spin');
-                
-                try {
-                    await this.refreshGames(true);
-                } finally {
-                    setTimeout(() => icon.classList.remove('bx-spin'), 600);
-                }
-            };
-        }
 
         this.refreshGames();
     },
@@ -2206,18 +2186,19 @@ const AnalisePro = {
 
         container.innerHTML = `
             <div class="planejamento-container" style="max-width: 100%; margin: 0 auto; padding-bottom: 50px;">
-                <div class="pro-header-card" style="margin-bottom: 30px; background: linear-gradient(135deg, var(--primary-color), #0a6b70); color: white; padding: 30px 35px; border-radius: 20px; box-shadow: 0 15px 30px rgba(15, 150, 156, 0.2); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+                <div class="pro-header-card calendar-header-card planning-header-card">
                     <div class="pro-header-info">
-                        <h2 style="font-size: 28px; font-weight: 900; margin-bottom: 5px; display: flex; align-items: center; gap: 12px;">
-                            <i class='bx bx-task' style="font-size: 32px; background: rgba(255,255,255,0.15); padding: 8px; border-radius: 10px;"></i> 
+                        <h2>
+                            <i class='bx bx-task'></i> 
                             Planejamento Diário
                         </h2>
-                        <p style="opacity: 0.85; font-size: 15px;">Histórico e planejamento de operações por dia.</p>
                     </div>
-                    <div style="background: rgba(255,255,255,0.15); padding: 12px 20px; border-radius: 15px; display: flex; align-items: center; gap: 15px; border: 1px solid rgba(255,255,255,0.3); position: relative; z-index: 100;">
-                        <label style="font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; white-space: nowrap; display: flex; align-items: center; gap: 6px;"><i class='bx bx-calendar'></i> Ver Outro Dia:</label>
+                    <div class="pro-header-actions calendar-header-actions planning-header-actions">
+                        <label class="planning-date-field">
+                            <span><i class='bx bx-calendar'></i> Ver outro dia</span>
                         <input type="date" id="planning-date-filter" value="${selectedDate}" 
-                               style="background: #ffffff; color: var(--primary-color); border: 2px solid transparent; font-weight: 900; padding: 10px 18px; border-radius: 10px; cursor: pointer !important; font-family: 'Outfit', sans-serif; font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); outline: none; transition: all 0.2s; min-width: 160px; -webkit-appearance: none;">
+                               class="filter-control">
+                        </label>
                     </div>
                 </div>
 

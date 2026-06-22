@@ -4,7 +4,7 @@ const Competitions = {
     leadersTab: 'scorers',
     comparison: { home: '', away: '' },
     filters: { search: '', date: 'all' },
-    syncState: { started: false, loading: false, lastSync: null, message: 'Escolha uma competicao', timer: null },
+    syncState: { started: false, loading: false, lastSync: null, message: 'Escolha uma competição', timer: null },
     cacheKey: 'competitions_cache_v4',
     syncToken: 0,
     details: {},
@@ -102,13 +102,13 @@ const Competitions = {
                     <div class="comp-title-wrap">
                         ${this.renderCompetitionLogo(data.competition?.logoData || competition.logoData || competition.logo)}
                         <div>
-                        <span class="comp-kicker"><i class='bx bx-trophy'></i> Central de Competicoes</span>
+                        <span class="comp-kicker"><i class='bx bx-trophy'></i> Central de Competições</span>
                         <h2>${competition.name} <strong>${this.getActiveSeason().label}</strong></h2>
                         <p>${competition.country} - Sofascore ${this.syncState.message}</p>
                         </div>
                     </div>
                     <div class="comp-header-actions">
-                        <button onclick="Competitions.backToCatalog()"><i class='bx bx-grid-alt'></i> Competicoes</button>
+                        <button onclick="Competitions.backToCatalog()"><i class='bx bx-grid-alt'></i> Competições</button>
                         <label class="wc-select comp-season-select"><select onchange="Competitions.setSeason(this.value)">
                             ${competition.seasons.map(season => `<option value="${season.id}" ${String(season.id) === String(competition.seasonId) ? 'selected' : ''}>${season.label}</option>`).join('')}
                         </select></label>
@@ -125,9 +125,9 @@ const Competitions = {
             <div class="competitions-page wc-cup">
                 <section class="comp-header">
                     <div>
-                        <span class="comp-kicker"><i class='bx bx-trophy'></i> Central de Competicoes</span>
-                        <h2>Competicoes <strong>Sofascore</strong></h2>
-                        <p>Escolha uma liga para carregar jogos, classificacao, times e detalhes. Nada pesado e carregado antes do clique.</p>
+                        <span class="comp-kicker"><i class='bx bx-trophy'></i> Central de Competições</span>
+                        <h2>Competições <strong>Sofascore</strong></h2>
+                        <p>Escolha uma liga para carregar jogos, classificação, times e detalhes. Nada pesado é carregado antes do clique.</p>
                     </div>
                 </section>
                 <section class="comp-catalog-grid">
@@ -148,7 +148,7 @@ const Competitions = {
         const tabs = [
             ['dashboard', 'bx-grid-alt', 'Dashboard'],
             ['jogos', 'bx-calendar', 'Jogos'],
-            ['classificacao', 'bx-table', 'Classificacao'],
+            ['classificacao', 'bx-table', 'Classificação'],
             ['ao-vivo', 'bx-pulse', 'Ao Vivo'],
             ['artilheiros', 'bx-football', 'Artilheiros'],
             ['comparador', 'bx-git-compare', 'Comparador'],
@@ -159,7 +159,7 @@ const Competitions = {
 
     renderContent(data) {
         if (this.syncState.loading && !data.matches.length) {
-            return `<section class="wc-live-empty"><i class='bx bx-loader-alt bx-spin'></i><strong>Carregando competicao...</strong><span>Buscando dados no Sofascore.</span></section>`;
+            return `<section class="wc-live-empty"><i class='bx bx-loader-alt bx-spin'></i><strong>Carregando competição...</strong><span>Buscando dados no Sofascore.</span></section>`;
         }
         if (this.activeTab === 'jogos') return this.renderGames(data);
         if (this.activeTab === 'classificacao') return this.renderStandings(data);
@@ -181,7 +181,7 @@ const Competitions = {
                 ${this.metric('Temporada', this.getActiveSeason().label, 'bx-time-five')}
             </section>
             <section class="wc-panel">
-                <div class="wc-panel-head"><h3>Proximos jogos</h3><button onclick="Competitions.setTab('jogos')">Ver todos</button></div>
+                <div class="wc-panel-head"><h3>Próximos jogos</h3><button onclick="Competitions.setTab('jogos')">Ver todos</button></div>
                 <div class="comp-next-grid">${next.map(match => this.renderCompactMatch(match)).join('') || this.empty('Sem jogos', 'Nenhum jogo encontrado na base.')}</div>
             </section>
         `;
@@ -282,7 +282,7 @@ const Competitions = {
 
     renderCompare(data) {
         const teams = this.getTeams(data);
-        if (!teams.length) return this.empty('Sem times', 'Sincronize a competicao para comparar os times.');
+        if (!teams.length) return this.empty('Sem times', 'Sincronize a competição para comparar os times.');
         const next = data.matches.find(match => match.status !== 'Encerrado');
         const home = teams.includes(this.comparison.home) ? this.comparison.home : (next?.home || teams[0]);
         const away = teams.includes(this.comparison.away) && this.comparison.away !== home
@@ -601,7 +601,7 @@ const Competitions = {
     backToCatalog() {
         this.activeCompetitionId = null;
         this.expandedMatchId = null;
-        this.syncState.message = 'Escolha uma competicao';
+        this.syncState.message = 'Escolha uma competição';
         this.render();
     },
 

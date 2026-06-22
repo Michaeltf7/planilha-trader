@@ -867,7 +867,7 @@ const App = {
             'calendario': 'Calendário de Jogos',
             'planejamento': 'Planejamento Diário',
             'copa-mundo': 'Copa do Mundo',
-            'competicoes': 'CompetiÃ§Ãµes',
+            'competicoes': 'Competições',
             'escada': 'Simulador de Escada'
         };
         
