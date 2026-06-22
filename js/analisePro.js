@@ -3,6 +3,7 @@ const AnalisePro = {
     games: [],
     currentPlanningDate: '',
     calendarSource: '',
+    activeCalendarLeagueId: 'all',
     
     async init() {
         if (!this.currentPlanningDate) this.currentPlanningDate = this.getTodayKey();
@@ -97,6 +98,7 @@ const AnalisePro = {
                     <h3>Sincronizando dados...</h3>
                 </div>
 
+                <div id="calendar-league-filters" class="calendar-league-filters"></div>
                 <div id="pro-calendar-list" class="pro-calendar-list"></div>
             </div>
         `;
@@ -227,6 +229,79 @@ const AnalisePro = {
         this.renderList(filtered);
     },
 
+    getCalendarLeagueId(game) {
+        return String(game?.tournament?.id || game?.tournament?.name || 'sem-liga');
+    },
+
+    getCalendarLeagueName(game) {
+        const category = game?.tournament?.category?.name || '';
+        const name = game?.tournament?.name || 'Competição';
+        return category ? `${category}: ${name}` : name;
+    },
+
+    renderTournamentLogo(game, size = 26) {
+        const logo = game?.tournament?.logo || '';
+        const name = game?.tournament?.name || '';
+        const dimension = Number(size) || 26;
+        if (logo) {
+            return `<img class="calendar-league-logo" src="${this.escapeHtml(logo)}" alt="${this.escapeHtml(name)}" style="width:${dimension}px;height:${dimension}px;" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="calendar-league-logo-fallback" style="display:none;width:${dimension}px;height:${dimension}px;">${this.escapeHtml(this.getTeamInitials(name))}</span>`;
+        }
+        return `<span class="calendar-league-logo-fallback" style="width:${dimension}px;height:${dimension}px;">${this.escapeHtml(this.getTeamInitials(name))}</span>`;
+    },
+
+    renderCalendarLeagueFilters(gamesList) {
+        const container = document.getElementById('calendar-league-filters');
+        if (!container) return;
+
+        const leagues = new Map();
+        (this.games || []).forEach(game => {
+            const id = this.getCalendarLeagueId(game);
+            if (!leagues.has(id)) {
+                leagues.set(id, {
+                    id,
+                    name: this.getCalendarLeagueName(game),
+                    logoHtml: this.renderTournamentLogo(game, 22),
+                    count: 0
+                });
+            }
+            leagues.get(id).count += 1;
+        });
+
+        if (leagues.size <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const activeId = this.activeCalendarLeagueId || 'all';
+        const total = this.games.length;
+        const filteredCount = gamesList.length;
+        const chips = Array.from(leagues.values())
+            .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+            .slice(0, 18)
+            .map(league => `
+                <button type="button" class="calendar-league-chip ${String(activeId) === String(league.id) ? 'active' : ''}" onclick="AnalisePro.setCalendarLeagueFilter(decodeURIComponent('${this.escapeAttr(encodeURIComponent(league.id))}'))" title="${this.escapeHtml(league.name)}">
+                    ${league.logoHtml}
+                    <span>${this.escapeHtml(league.name)}</span>
+                    <em>${league.count}</em>
+                </button>
+            `).join('');
+
+        container.innerHTML = `
+            <button type="button" class="calendar-league-chip calendar-league-all ${activeId === 'all' ? 'active' : ''}" onclick="AnalisePro.setCalendarLeagueFilter('all')">
+                <i class='bx bx-grid-alt'></i>
+                <span>Todos</span>
+                <em>${total}</em>
+            </button>
+            ${chips}
+            ${activeId !== 'all' ? `<span class="calendar-league-filter-meta">${filteredCount} jogos filtrados</span>` : ''}
+        `;
+    },
+
+    setCalendarLeagueFilter(id) {
+        this.activeCalendarLeagueId = String(id || 'all');
+        this.filterGames();
+    },
+
     renderList(gamesList) {
         const listContainer = document.getElementById('pro-calendar-list');
         const favorites = JSON.parse(localStorage.getItem('pro_fav_leagues')) || [];
@@ -242,14 +317,20 @@ const AnalisePro = {
         const selectedDate = document.getElementById('calendar-date-filter')?.value || this.getTodayKey();
         const favGamesIds = favData[selectedDate] || [];
         
+        const activeLeagueId = this.activeCalendarLeagueId || 'all';
+        const leagueFilteredGames = activeLeagueId === 'all'
+            ? gamesList
+            : gamesList.filter(game => this.getCalendarLeagueId(game) === String(activeLeagueId));
+
+        this.renderCalendarLeagueFilters(leagueFilteredGames);
         listContainer.innerHTML = '';
 
-        if (gamesList.length === 0) {
+        if (leagueFilteredGames.length === 0) {
             listContainer.innerHTML = `<div class="empty-state"><i class='bx bx-search-alt'></i><p>Nenhum jogo encontrado.</p></div>`;
             return;
         }
 
-        const favGamesList = gamesList.filter(g => favGamesIds.includes(g.id));
+        const favGamesList = leagueFilteredGames.filter(g => favGamesIds.includes(g.id));
 
         if (favGamesList.length > 0) {
             const favSection = document.createElement('div');
@@ -271,12 +352,13 @@ const AnalisePro = {
             listContainer.appendChild(favSection);
         }
 
-        const grouped = gamesList.reduce((acc, game) => {
-            const tourId = game.tournament.id;
+        const grouped = leagueFilteredGames.reduce((acc, game) => {
+            const tourId = this.getCalendarLeagueId(game);
             if (!acc[tourId]) {
                 acc[tourId] = {
                     id: tourId,
-                    name: `${game.tournament.category.name}: ${game.tournament.name}`,
+                    name: this.getCalendarLeagueName(game),
+                    logoHtml: this.renderTournamentLogo(game, 26),
                     games: []
                 };
             }
@@ -285,8 +367,8 @@ const AnalisePro = {
         }, {});
 
         const sortedIds = Object.keys(grouped).sort((a, b) => {
-            const aFav = favorites.includes(Number(a));
-            const bFav = favorites.includes(Number(b));
+            const aFav = favorites.includes(Number(a)) || favorites.includes(String(a));
+            const bFav = favorites.includes(Number(b)) || favorites.includes(String(b));
             if (aFav && !bFav) return -1;
             if (!aFav && bFav) return 1;
             return grouped[a].name.localeCompare(grouped[b].name);
@@ -294,16 +376,16 @@ const AnalisePro = {
 
         sortedIds.forEach(id => {
             const tour = grouped[id];
-            const isFav = favorites.includes(Number(id));
+            const isFav = favorites.includes(Number(id)) || favorites.includes(String(id));
             const section = document.createElement('div');
             section.className = `tournament-section ${isFav ? 'is-favorite' : ''}`;
             section.innerHTML = `
                 <div class="tournament-header">
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class='bx ${isFav ? 'bxs-star' : 'bx-world'}' style="color: ${isFav ? '#ffca28' : 'inherit'}"></i>
+                        ${isFav ? `<i class='bx bxs-star' style="color:#ffca28"></i>` : tour.logoHtml}
                         ${tour.name}
                     </div>
-                    <button class="btn-fav" onclick="AnalisePro.toggleFavorite(${id})" style="cursor: pointer; background: var(--bg-body); border: 1px solid var(--border-color); color: var(--text-secondary); padding: 5px 10px; border-radius: 8px; font-size: 10px;">
+                    <button class="btn-fav" onclick="AnalisePro.toggleFavorite(decodeURIComponent('${this.escapeAttr(encodeURIComponent(id))}'))" style="cursor: pointer; background: var(--bg-body); border: 1px solid var(--border-color); color: var(--text-secondary); padding: 5px 10px; border-radius: 8px; font-size: 10px;">
                         <i class='bx ${isFav ? 'bxs-star' : 'bx-star'}' style="color: ${isFav ? '#ffca28' : ''}"></i>
                         ${isFav ? 'Remover' : 'Favoritar'}
                     </button>
@@ -318,11 +400,13 @@ const AnalisePro = {
 
     toggleFavorite(id) {
         let favorites = JSON.parse(localStorage.getItem('pro_fav_leagues')) || [];
-        const index = favorites.indexOf(id);
+        const numericId = Number(id);
+        const favId = Number.isFinite(numericId) && String(id).trim() !== '' ? numericId : String(id);
+        const index = favorites.findIndex(item => String(item) === String(favId));
         if (index > -1) {
             favorites.splice(index, 1);
         } else {
-            favorites.push(id);
+            favorites.push(favId);
         }
         localStorage.setItem('pro_fav_leagues', JSON.stringify(favorites));
         this.renderList(this.games);
@@ -2006,6 +2090,10 @@ const AnalisePro = {
             '"': '&quot;',
             "'": '&#039;'
         }[char]));
+    },
+
+    escapeAttr(value) {
+        return this.escapeHtml(String(value ?? '')).replace(/`/g, '&#096;');
     },
 
     summarizeTrades(trades) {
