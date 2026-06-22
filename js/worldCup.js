@@ -1,5 +1,6 @@
 const WorldCup = {
     activeTab: 'jogos',
+    knockoutView: 'cards',
     activeGroup: 'A',
     leaderTab: 'goals',
     simulatedScores: {},
@@ -279,15 +280,136 @@ const WorldCup = {
                 </div>
                 <span>${qualified.thirds.length}/8 melhores terceiros</span>
             </section>
-            <section class="wc-knockout-grid">
-                ${rounds.map(round => `
-                    <article class="wc-knockout-round">
-                        <h3>${round.name}</h3>
-                        ${round.matches.map(match => this.renderKnockoutMatch(match)).join('')}
+            <div class="wc-knockout-viewbar">
+                <button class="${this.knockoutView === 'cards' ? 'active' : ''}" onclick="WorldCup.setKnockoutView('cards')"><i class='bx bx-grid-alt'></i> Cards</button>
+                <button class="${this.knockoutView === 'bracket' ? 'active' : ''}" onclick="WorldCup.setKnockoutView('bracket')"><i class='bx bx-git-branch'></i> Chaveamento</button>
+            </div>
+            ${this.knockoutView === 'bracket' ? this.renderKnockoutBracket(rounds) : this.renderKnockoutCards(rounds)}
+        `;
+    },
+
+    renderKnockoutCards(rounds) {
+        const matchesByDate = rounds.flatMap(round => round.matches.map(match => ({ ...match, stage: round.name })))
+            .reduce((acc, match) => {
+                const meta = this.getKnockoutMatchMeta(match.number);
+                acc[meta.date] = acc[meta.date] || [];
+                acc[meta.date].push(match);
+                return acc;
+            }, {});
+        return `
+            <section class="wc-knockout-days">
+                ${Object.keys(matchesByDate).sort((a, b) => this.knockoutDateSortValue(a) - this.knockoutDateSortValue(b)).map(date => `
+                    <article class="wc-knockout-day">
+                        <h3><i class='bx bx-calendar'></i>${date}<span>${matchesByDate[date].length} jogos</span></h3>
+                        <div class="wc-knockout-grid">${matchesByDate[date]
+                            .sort((a, b) => this.knockoutMatchSortValue(a) - this.knockoutMatchSortValue(b))
+                            .map(match => this.renderKnockoutMatch(match)).join('')}</div>
                     </article>
                 `).join('')}
             </section>
         `;
+    },
+
+    knockoutDateSortValue(value) {
+        const [day, month] = String(value || '').split('/').map(Number);
+        return (month || 0) * 100 + (day || 0);
+    },
+
+    knockoutMatchSortValue(match) {
+        const meta = this.getKnockoutMatchMeta(match.number);
+        const [hour, minute] = String(meta.time || '00:00').split(':').map(Number);
+        return this.knockoutDateSortValue(meta.date) * 1440 + (hour || 0) * 60 + (minute || 0);
+    },
+
+    renderKnockoutBracket(rounds) {
+        const finalRound = rounds.find(round => round.name === 'Final');
+        const thirdRound = rounds.find(round => round.name === '3o Lugar');
+        const bracketRounds = rounds.filter(round => !['Final', '3o Lugar'].includes(round.name));
+        if (finalRound || thirdRound) {
+            bracketRounds.push({
+                name: 'Final',
+                finalColumn: true,
+                matches: [
+                    ...(finalRound?.matches || []).map(match => ({ ...match, bracketLabel: 'Final' })),
+                    ...(thirdRound?.matches || []).map(match => ({ ...match, bracketLabel: '3o Lugar' }))
+                ]
+            });
+        }
+        return `
+            <section class="wc-bracket-shell">
+                <div class="wc-bracket">
+                    ${bracketRounds.map(round => `
+                        <div class="wc-bracket-round ${round.finalColumn ? 'is-final-round' : ''}">
+                            <h3>${round.name}</h3>
+                            <div class="wc-bracket-stack">
+                                ${round.matches.map(match => this.renderBracketMatch({ ...match, stage: round.name })).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </section>
+        `;
+    },
+
+    renderBracketMatch(match) {
+        const meta = this.getKnockoutMatchMeta(match.number);
+        const home = typeof match.home === 'string' ? { label: match.home, pending: true } : match.home;
+        const away = typeof match.away === 'string' ? { label: match.away, pending: true } : match.away;
+        const place = [meta.venue, meta.city].filter(Boolean).join(' - ');
+        return `
+            <article class="wc-bracket-match" ${place ? `title="${place}"` : ''}>
+                ${match.bracketLabel ? `<span class="wc-bracket-match-label">${match.bracketLabel}</span>` : ''}
+                <div class="wc-bracket-card">
+                    <div class="wc-bracket-card-teams">
+                        ${this.bracketCardTeamHtml(home)}
+                        ${this.bracketCardTeamHtml(away)}
+                    </div>
+                    <time class="wc-bracket-card-time">
+                        <small>Jogo ${match.number}</small>
+                        <span>${this.knockoutWeekdayLabel(meta.date)}</span>
+                        <strong>${meta.time || '-'}</strong>
+                        <em>${this.knockoutShortDate(meta.date)}</em>
+                    </time>
+                </div>
+            </article>
+        `;
+    },
+
+    bracketCardTeamHtml(slot) {
+        if (!slot) {
+            return `<div class="wc-bracket-card-team pending"><i class='bx bx-shield-quarter'></i><strong>A definir</strong></div>`;
+        }
+        if (slot.team) {
+            return `
+                <div class="wc-bracket-card-team">
+                    <span>${this.getFlag(slot.team, 40)}</span>
+                    <strong>${slot.team}</strong>
+                    ${slot.seed ? `<em>${slot.seed}</em>` : ''}
+                </div>
+            `;
+        }
+        const label = slot.label || 'A definir';
+        return `
+            <div class="wc-bracket-card-team pending">
+                <i class='bx bx-shield-quarter'></i>
+                <strong>${label}</strong>
+                ${slot.candidates?.length ? `<em>${slot.candidates.map(item => `${this.getFlag(item.team)} ${item.team}`).join(' / ')}</em>` : ''}
+            </div>
+        `;
+    },
+
+    knockoutWeekdayLabel(value) {
+        const [day, month] = String(value || '').split('/').map(Number);
+        if (!day || !month) return '';
+        const date = new Date(2026, month - 1, day, 12);
+        const labels = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
+        return labels[date.getDay()] || '';
+    },
+
+    knockoutShortDate(value) {
+        const [day, month] = String(value || '').split('/').map(Number);
+        const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+        return `${String(day || '').padStart(2, '0')} ${months[(month || 1) - 1] || ''}`.trim();
     },
 
     renderKnockoutMatch(match) {
@@ -298,8 +420,8 @@ const WorldCup = {
         return `
             <div class="wc-knockout-match">
                 <header>
-                    <span>Jogo ${match.number}</span>
-                    <em>${meta.date}${meta.time ? ` - ${meta.time} BRT` : ''}</em>
+                    <span><strong>${match.stage || 'Mata-Mata'}</strong><small>Jogo ${match.number}</small></span>
+                    <em><i class='bx bx-calendar-event'></i>${meta.date}${meta.time ? ` - ${meta.time} BRT` : ''}</em>
                 </header>
                 <div class="wc-ko-team ${home.pending ? 'pending' : ''}">${this.knockoutTeamHtml(home)}</div>
                 <b>vs</b>
@@ -313,8 +435,10 @@ const WorldCup = {
     knockoutTeamHtml(slot) {
         if (!slot) return '<strong>A definir</strong>';
         const label = slot.label || slot.team || 'A definir';
-        if (slot.team) return `<strong>${this.getFlag(slot.team)} ${slot.team}</strong><em>${slot.seed || ''}</em>`;
-        return `<strong>${label}</strong>${slot.candidates?.length ? `<em>${slot.candidates.map(item => `${this.getFlag(item.team)} ${item.team}`).join(' / ')}</em>` : ''}`;
+        if (slot.team) {
+            return `<span class="wc-ko-flag">${this.getFlag(slot.team, 80)}</span><span class="wc-ko-info"><strong>${slot.team}</strong><em>${slot.seed || ''}</em></span>`;
+        }
+        return `<span class="wc-ko-flag pending"><i class='bx bx-shield-quarter'></i></span><span class="wc-ko-info"><strong>${label}</strong>${slot.candidates?.length ? `<em>${slot.candidates.map(item => `${this.getFlag(item.team)} ${item.team}`).join(' / ')}</em>` : ''}</span>`;
     },
 
     renderLive() {
@@ -819,27 +943,28 @@ const WorldCup = {
     },
 
     getKnockoutRounds(qualified) {
+        const thirdAssignments = this.resolveThirdPlaceAssignments(qualified);
         const r32 = [
             [73, this.runnerSlot(qualified, 'A'), this.runnerSlot(qualified, 'B')],
-            [74, this.winnerSlot(qualified, 'E'), this.thirdSlot(qualified, ['A', 'B', 'C', 'D', 'F'])],
+            [74, this.winnerSlot(qualified, 'E'), this.thirdSlot(qualified, ['A', 'B', 'C', 'D', 'F'], thirdAssignments, 74)],
             [75, this.winnerSlot(qualified, 'F'), this.runnerSlot(qualified, 'C')],
             [76, this.winnerSlot(qualified, 'C'), this.runnerSlot(qualified, 'F')],
-            [77, this.winnerSlot(qualified, 'I'), this.thirdSlot(qualified, ['C', 'D', 'F', 'G', 'H'])],
+            [77, this.winnerSlot(qualified, 'I'), this.thirdSlot(qualified, ['C', 'D', 'F', 'G', 'H'], thirdAssignments, 77)],
             [78, this.runnerSlot(qualified, 'E'), this.runnerSlot(qualified, 'I')],
-            [79, this.winnerSlot(qualified, 'A'), this.thirdSlot(qualified, ['C', 'E', 'F', 'H', 'I'])],
-            [80, this.winnerSlot(qualified, 'L'), this.thirdSlot(qualified, ['E', 'H', 'I', 'J', 'K'])],
-            [81, this.winnerSlot(qualified, 'D'), this.thirdSlot(qualified, ['B', 'E', 'F', 'I', 'J'])],
-            [82, this.winnerSlot(qualified, 'G'), this.thirdSlot(qualified, ['A', 'E', 'H', 'I', 'J'])],
+            [79, this.winnerSlot(qualified, 'A'), this.thirdSlot(qualified, ['C', 'E', 'F', 'H', 'I'], thirdAssignments, 79)],
+            [80, this.winnerSlot(qualified, 'L'), this.thirdSlot(qualified, ['E', 'H', 'I', 'J', 'K'], thirdAssignments, 80)],
+            [81, this.winnerSlot(qualified, 'D'), this.thirdSlot(qualified, ['B', 'E', 'F', 'I', 'J'], thirdAssignments, 81)],
+            [82, this.winnerSlot(qualified, 'G'), this.thirdSlot(qualified, ['A', 'E', 'H', 'I', 'J'], thirdAssignments, 82)],
             [83, this.runnerSlot(qualified, 'K'), this.runnerSlot(qualified, 'L')],
             [84, this.winnerSlot(qualified, 'H'), this.runnerSlot(qualified, 'J')],
-            [85, this.winnerSlot(qualified, 'B'), this.thirdSlot(qualified, ['E', 'F', 'G', 'I', 'J'])],
+            [85, this.winnerSlot(qualified, 'B'), this.thirdSlot(qualified, ['E', 'F', 'G', 'I', 'J'], thirdAssignments, 85)],
             [86, this.winnerSlot(qualified, 'J'), this.runnerSlot(qualified, 'H')],
-            [87, this.winnerSlot(qualified, 'K'), this.thirdSlot(qualified, ['D', 'E', 'I', 'J', 'L'])],
+            [87, this.winnerSlot(qualified, 'K'), this.thirdSlot(qualified, ['D', 'E', 'I', 'J', 'L'], thirdAssignments, 87)],
             [88, this.runnerSlot(qualified, 'D'), this.runnerSlot(qualified, 'G')]
         ].map(([number, home, away]) => ({ number, home, away }));
 
         return [
-            { name: 'Fase de 32', matches: r32 },
+            { name: '16 avos de final', matches: r32 },
             { name: 'Oitavas', matches: [
                 this.futureMatch(89, 73, 75),
                 this.futureMatch(90, 74, 77),
@@ -877,11 +1002,39 @@ const WorldCup = {
         return this.groupSlot(qualified.runners[group], `2o Grupo ${group}`);
     },
 
+    resolveThirdPlaceAssignments(qualified) {
+        const groupsKey = (qualified.thirds || [])
+            .filter(row => row?.team)
+            .map(row => row.group)
+            .sort()
+            .join('');
+        const row = this.getThirdPlaceCombinationMap()[groupsKey];
+        if (!row) return {};
+
+        const thirdsByGroup = Object.fromEntries((qualified.thirds || []).map(item => [item.group, item]));
+        const matchesByColumn = [79, 85, 81, 74, 82, 77, 87, 80];
+        return Object.fromEntries(row.map((group, index) => [matchesByColumn[index], thirdsByGroup[group]]).filter(([, team]) => team?.team));
+    },
+
+    getThirdPlaceCombinationMap() {
+        if (this.thirdPlaceCombinationMap) return this.thirdPlaceCombinationMap;
+        const raw = `EFGHIJKL:EJIFHGLK\nDFGHIJKL:HGIDJFLK\nDEGHIJKL:EJIDHGLK\nDEFHIJKL:EJIDHFLK\nDEFGIJKL:EGIDJFLK\nDEFGHJKL:EGJDHFLK\nDEFGHIKL:EGIDHFLK\nDEFGHIJL:EGJDHFLI\nDEFGHIJK:EGJDHFIK\nCFGHIJKL:HGICJFLK\nCEGHIJKL:EJICHGLK\nCEFHIJKL:EJICHFLK\nCEFGIJKL:EGICJFLK\nCEFGHJKL:EGJCHFLK\nCEFGHIKL:EGICHFLK\nCEFGHIJL:EGJCHFLI\nCEFGHIJK:EGJCHFIK\nCDGHIJKL:HGICJDLK\nCDFHIJKL:CJIDHFLK\nCDFGIJKL:CGIDJFLK\nCDFGHJKL:CGJDHFLK\nCDFGHIKL:CGIDHFLK\nCDFGHIJL:CGJDHFLI\nCDFGHIJK:CGJDHFIK\nCDEHIJKL:EJICHDLK\nCDEGIJKL:EGICJDLK\nCDEGHJKL:EGJCHDLK\nCDEGHIKL:EGICHDLK\nCDEGHIJL:EGJCHDLI\nCDEGHIJK:EGJCHDIK\nCDEFIJKL:CJEDIFLK\nCDEFHJKL:CJEDHFLK\nCDEFHIKL:CEIDHFLK\nCDEFHIJL:CJEDHFLI\nCDEFHIJK:CJEDHFIK\nCDEFGJKL:CGEDJFLK\nCDEFGIKL:CGEDIFLK\nCDEFGIJL:CGEDJFLI\nCDEFGIJK:CGEDJFIK\nCDEFGHKL:CGEDHFLK\nCDEFGHJL:CGJDHFLE\nCDEFGHJK:CGJDHFEK\nCDEFGHIL:CGEDHFLI\nCDEFGHIK:CGEDHFIK\nCDEFGHIJ:CGJDHFEI\nBFGHIJKL:HJBFIGLK\nBEGHIJKL:EJIBHGLK\nBEFHIJKL:EJBFIHLK\nBEFGIJKL:EJBFIGLK\nBEFGHJKL:EJBFHGLK\nBEFGHIKL:EGBFIHLK\nBEFGHIJL:EJBFHGLI\nBEFGHIJK:EJBFHGIK\nBDGHIJKL:HJBDIGLK\nBDFHIJKL:HJBDIFLK\nBDFGIJKL:IGBDJFLK\nBDFGHJKL:HGBDJFLK\nBDFGHIKL:HGBDIFLK\nBDFGHIJL:HGBDJFLI\nBDFGHIJK:HGBDJFIK\nBDEHIJKL:EJBDIHLK\nBDEGIJKL:EJBDIGLK\nBDEGHJKL:EJBDHGLK\nBDEGHIKL:EGBDIHLK\nBDEGHIJL:EJBDHGLI\nBDEGHIJK:EJBDHGIK\nBDEFIJKL:EJBDIFLK\nBDEFHJKL:EJBDHFLK\nBDEFHIKL:EIBDHFLK\nBDEFHIJL:EJBDHFLI\nBDEFHIJK:EJBDHFIK\nBDEFGJKL:EGBDJFLK\nBDEFGIKL:EGBDIFLK\nBDEFGIJL:EGBDJFLI\nBDEFGIJK:EGBDJFIK\nBDEFGHKL:EGBDHFLK\nBDEFGHJL:HGBDJFLE\nBDEFGHJK:HGBDJFEK\nBDEFGHIL:EGBDHFLI\nBDEFGHIK:EGBDHFIK\nBDEFGHIJ:HGBDJFEI\nBCGHIJKL:HJBCIGLK\nBCFHIJKL:HJBCIFLK\nBCFGIJKL:IGBCJFLK\nBCFGHJKL:HGBCJFLK\nBCFGHIKL:HGBCIFLK\nBCFGHIJL:HGBCJFLI\nBCFGHIJK:HGBCJFIK\nBCEHIJKL:EJBCIHLK\nBCEGIJKL:EJBCIGLK\nBCEGHJKL:EJBCHGLK\nBCEGHIKL:EGBCIHLK\nBCEGHIJL:EJBCHGLI\nBCEGHIJK:EJBCHGIK\nBCEFIJKL:EJBCIFLK\nBCEFHJKL:EJBCHFLK\nBCEFHIKL:EIBCHFLK\nBCEFHIJL:EJBCHFLI\nBCEFHIJK:EJBCHFIK\nBCEFGJKL:EGBCJFLK\nBCEFGIKL:EGBCIFLK\nBCEFGIJL:EGBCJFLI\nBCEFGIJK:EGBCJFIK\nBCEFGHKL:EGBCHFLK\nBCEFGHJL:HGBCJFLE\nBCEFGHJK:HGBCJFEK\nBCEFGHIL:EGBCHFLI\nBCEFGHIK:EGBCHFIK\nBCEFGHIJ:HGBCJFEI\nBCDHIJKL:HJBCIDLK\nBCDGIJKL:IGBCJDLK\nBCDGHJKL:HGBCJDLK\nBCDGHIKL:HGBCIDLK\nBCDGHIJL:HGBCJDLI\nBCDGHIJK:HGBCJDIK\nBCDFIJKL:CJBDIFLK\nBCDFHJKL:CJBDHFLK\nBCDFHIKL:CIBDHFLK\nBCDFHIJL:CJBDHFLI\nBCDFHIJK:CJBDHFIK\nBCDFGJKL:CGBDJFLK\nBCDFGIKL:CGBDIFLK\nBCDFGIJL:CGBDJFLI\nBCDFGIJK:CGBDJFIK\nBCDFGHKL:CGBDHFLK\nBCDFGHJL:CGBDHFLJ\nBCDFGHJK:HGBCJFDK\nBCDFGHIL:CGBDHFLI\nBCDFGHIK:CGBDHFIK\nBCDFGHIJ:HGBCJFDI\nBCDEIJKL:EJBCIDLK\nBCDEHJKL:EJBCHDLK\nBCDEHIKL:EIBCHDLK\nBCDEHIJL:EJBCHDLI\nBCDEHIJK:EJBCHDIK\nBCDEGJKL:EGBCJDLK\nBCDEGIKL:EGBCIDLK\nBCDEGIJL:EGBCJDLI\nBCDEGIJK:EGBCJDIK\nBCDEGHKL:EGBCHDLK\nBCDEGHJL:HGBCJDLE\nBCDEGHJK:HGBCJDEK\nBCDEGHIL:EGBCHDLI\nBCDEGHIK:EGBCHDIK\nBCDEGHIJ:HGBCJDEI\nBCDEFJKL:CJBDEFLK\nBCDEFIKL:CEBDIFLK\nBCDEFIJL:CJBDEFLI\nBCDEFIJK:CJBDEFIK\nBCDEFHKL:CEBDHFLK\nBCDEFHJL:CJBDHFLE\nBCDEFHJK:CJBDHFEK\nBCDEFHIL:CEBDHFLI\nBCDEFHIK:CEBDHFIK\nBCDEFHIJ:CJBDHFEI\nBCDEFGKL:CGBDEFLK\nBCDEFGJL:CGBDJFLE\nBCDEFGJK:CGBDJFEK\nBCDEFGIL:CGBDEFLI\nBCDEFGIK:CGBDEFIK\nBCDEFGIJ:CGBDJFEI\nBCDEFGHL:CGBDHFLE\nBCDEFGHK:CGBDHFEK\nBCDEFGHJ:HGBCJFDE\nBCDEFGHI:CGBDHFEI\nAFGHIJKL:HJIFAGLK\nAEGHIJKL:EJIAHGLK\nAEFHIJKL:EJIFAHLK\nAEFGIJKL:EJIFAGLK\nAEFGHJKL:EGJFAHLK\nAEFGHIKL:EGIFAHLK\nAEFGHIJL:EGJFAHLI\nAEFGHIJK:EGJFAHIK\nADGHIJKL:HJIDAGLK\nADFHIJKL:HJIDAFLK\nADFGIJKL:IGJDAFLK\nADFGHJKL:HGJDAFLK\nADFGHIKL:HGIDAFLK\nADFGHIJL:HGJDAFLI\nADFGHIJK:HGJDAFIK\nADEHIJKL:EJIDAHLK\nADEGIJKL:EJIDAGLK\nADEGHJKL:EGJDAHLK\nADEGHIKL:EGIDAHLK\nADEGHIJL:EGJDAHLI\nADEGHIJK:EGJDAHIK\nADEFIJKL:EJIDAFLK\nADEFHJKL:HJEDAFLK\nADEFHIKL:HEIDAFLK\nADEFHIJL:HJEDAFLI\nADEFHIJK:HJEDAFIK\nADEFGJKL:EGJDAFLK\nADEFGIKL:EGIDAFLK\nADEFGIJL:EGJDAFLI\nADEFGIJK:EGJDAFIK\nADEFGHKL:HGEDAFLK\nADEFGHJL:HGJDAFLE\nADEFGHJK:HGJDAFEK\nADEFGHIL:HGEDAFLI\nADEFGHIK:HGEDAFIK\nADEFGHIJ:HGJDAFEI\nACGHIJKL:HJICAGLK\nACFHIJKL:HJICAFLK\nACFGIJKL:IGJCAFLK\nACFGHJKL:HGJCAFLK\nACFGHIKL:HGICAFLK\nACFGHIJL:HGJCAFLI\nACFGHIJK:HGJCAFIK\nACEHIJKL:EJICAHLK\nACEGIJKL:EJICAGLK\nACEGHJKL:EGJCAHLK\nACEGHIKL:EGICAHLK\nACEGHIJL:EGJCAHLI\nACEGHIJK:EGJCAHIK\nACEFIJKL:EJICAFLK\nACEFHJKL:HJECAFLK\nACEFHIKL:HEICAFLK\nACEFHIJL:HJECAFLI\nACEFHIJK:HJECAFIK\nACEFGJKL:EGJCAFLK\nACEFGIKL:EGICAFLK\nACEFGIJL:EGJCAFLI\nACEFGIJK:EGJCAFIK\nACEFGHKL:HGECAFLK\nACEFGHJL:HGJCAFLE\nACEFGHJK:HGJCAFEK\nACEFGHIL:HGECAFLI\nACEFGHIK:HGECAFIK\nACEFGHIJ:HGJCAFEI\nACDHIJKL:HJICADLK\nACDGIJKL:IGJCADLK\nACDGHJKL:HGJCADLK\nACDGHIKL:HGICADLK\nACDGHIJL:HGJCADLI\nACDGHIJK:HGJCADIK\nACDFIJKL:CJIDAFLK\nACDFHJKL:HJFCADLK\nACDFHIKL:HFICADLK\nACDFHIJL:HJFCADLI\nACDFHIJK:HJFCADIK\nACDFGJKL:CGJDAFLK\nACDFGIKL:CGIDAFLK\nACDFGIJL:CGJDAFLI\nACDFGIJK:CGJDAFIK\nACDFGHKL:HGFCADLK\nACDFGHJL:CGJDAFLH\nACDFGHJK:HGJCAFDK\nACDFGHIL:HGFCADLI\nACDFGHIK:HGFCADIK\nACDFGHIJ:HGJCAFDI\nACDEIJKL:EJICADLK\nACDEHJKL:HJECADLK\nACDEHIKL:HEICADLK\nACDEHIJL:HJECADLI\nACDEHIJK:HJECADIK\nACDEGJKL:EGJCADLK\nACDEGIKL:EGICADLK\nACDEGIJL:EGJCADLI\nACDEGIJK:EGJCADIK\nACDEGHKL:HGECADLK\nACDEGHJL:HGJCADLE\nACDEGHJK:HGJCADEK\nACDEGHIL:HGECADLI\nACDEGHIK:HGECADIK\nACDEGHIJ:HGJCADEI\nACDEFJKL:CJEDAFLK\nACDEFIKL:CEIDAFLK\nACDEFIJL:CJEDAFLI\nACDEFIJK:CJEDAFIK\nACDEFHKL:HEFCADLK\nACDEFHJL:HJFCADLE\nACDEFHJK:HJECAFDK\nACDEFHIL:HEFCADLI\nACDEFHIK:HEFCADIK\nACDEFHIJ:HJECAFDI\nACDEFGKL:CGEDAFLK\nACDEFGJL:CGJDAFLE\nACDEFGJK:CGJDAFEK\nACDEFGIL:CGEDAFLI\nACDEFGIK:CGEDAFIK\nACDEFGIJ:CGJDAFEI\nACDEFGHL:HGFCADLE\nACDEFGHK:HGECAFDK\nACDEFGHJ:HGJCAFDE\nACDEFGHI:HGECAFDI\nABGHIJKL:HJBAIGLK\nABFHIJKL:HJBAIFLK\nABFGIJKL:IJBFAGLK\nABFGHJKL:HJBFAGLK\nABFGHIKL:HGBAIFLK\nABFGHIJL:HJBFAGLI\nABFGHIJK:HJBFAGIK\nABEHIJKL:EJBAIHLK\nABEGIJKL:EJBAIGLK\nABEGHJKL:EJBAHGLK\nABEGHIKL:EGBAIHLK\nABEGHIJL:EJBAHGLI\nABEGHIJK:EJBAHGIK\nABEFIJKL:EJBAIFLK\nABEFHJKL:EJBFAHLK\nABEFHIKL:EIBFAHLK\nABEFHIJL:EJBFAHLI\nABEFHIJK:EJBFAHIK\nABEFGJKL:EJBFAGLK\nABEFGIKL:EGBAIFLK\nABEFGIJL:EJBFAGLI\nABEFGIJK:EJBFAGIK\nABEFGHKL:EGBFAHLK\nABEFGHJL:HJBFAGLE\nABEFGHJK:HJBFAGEK\nABEFGHIL:EGBFAHLI\nABEFGHIK:EGBFAHIK\nABEFGHIJ:HJBFAGEI\nABDHIJKL:IJBDAHLK\nABDGIJKL:IJBDAGLK\nABDGHJKL:HJBDAGLK\nABDGHIKL:IGBDAHLK\nABDGHIJL:HJBDAGLI\nABDGHIJK:HJBDAGIK\nABDFIJKL:IJBDAFLK\nABDFHJKL:HJBDAFLK\nABDFHIKL:HIBDAFLK\nABDFHIJL:HJBDAFLI\nABDFHIJK:HJBDAFIK\nABDFGJKL:FJBDAGLK\nABDFGIKL:IGBDAFLK\nABDFGIJL:FJBDAGLI\nABDFGIJK:FJBDAGIK\nABDFGHKL:HGBDAFLK\nABDFGHJL:HGBDAFLJ\nABDFGHJK:HGBDAFJK\nABDFGHIL:HGBDAFLI\nABDFGHIK:HGBDAFIK\nABDFGHIJ:HGBDAFIJ\nABDEIJKL:EJBAIDLK\nABDEHJKL:EJBDAHLK\nABDEHIKL:EIBDAHLK\nABDEHIJL:EJBDAHLI\nABDEHIJK:EJBDAHIK\nABDEGJKL:EJBDAGLK\nABDEGIKL:EGBAIDLK\nABDEGIJL:EJBDAGLI\nABDEGIJK:EJBDAGIK\nABDEGHKL:EGBDAHLK\nABDEGHJL:HJBDAGLE\nABDEGHJK:HJBDAGEK\nABDEGHIL:EGBDAHLI\nABDEGHIK:EGBDAHIK\nABDEGHIJ:HJBDAGEI\nABDEFJKL:EJBDAFLK\nABDEFIKL:EIBDAFLK\nABDEFIJL:EJBDAFLI\nABDEFIJK:EJBDAFIK\nABDEFHKL:HEBDAFLK\nABDEFHJL:HJBDAFLE\nABDEFHJK:HJBDAFEK\nABDEFHIL:HEBDAFLI\nABDEFHIK:HEBDAFIK\nABDEFHIJ:HJBDAFEI\nABDEFGKL:EGBDAFLK\nABDEFGJL:EGBDAFLJ\nABDEFGJK:EGBDAFJK\nABDEFGIL:EGBDAFLI\nABDEFGIK:EGBDAFIK\nABDEFGIJ:EGBDAFIJ\nABDEFGHL:HGBDAFLE\nABDEFGHK:HGBDAFEK\nABDEFGHJ:HGBDAFEJ\nABDEFGHI:HGBDAFEI\nABCHIJKL:IJBCAHLK\nABCGIJKL:IJBCAGLK\nABCGHJKL:HJBCAGLK\nABCGHIKL:IGBCAHLK\nABCGHIJL:HJBCAGLI\nABCGHIJK:HJBCAGIK\nABCFIJKL:IJBCAFLK\nABCFHJKL:HJBCAFLK\nABCFHIKL:HIBCAFLK\nABCFHIJL:HJBCAFLI\nABCFHIJK:HJBCAFIK\nABCFGJKL:CJBFAGLK\nABCFGIKL:IGBCAFLK\nABCFGIJL:CJBFAGLI\nABCFGIJK:CJBFAGIK\nABCFGHKL:HGBCAFLK\nABCFGHJL:HGBCAFLJ\nABCFGHJK:HGBCAFJK\nABCFGHIL:HGBCAFLI\nABCFGHIK:HGBCAFIK\nABCFGHIJ:HGBCAFIJ\nABCEIJKL:EJBAICLK\nABCEHJKL:EJBCAHLK\nABCEHIKL:EIBCAHLK\nABCEHIJL:EJBCAHLI\nABCEHIJK:EJBCAHIK\nABCEGJKL:EJBCAGLK\nABCEGIKL:EGBAICLK\nABCEGIJL:EJBCAGLI\nABCEGIJK:EJBCAGIK\nABCEGHKL:EGBCAHLK\nABCEGHJL:HJBCAGLE\nABCEGHJK:HJBCAGEK\nABCEGHIL:EGBCAHLI\nABCEGHIK:EGBCAHIK\nABCEGHIJ:HJBCAGEI\nABCEFJKL:EJBCAFLK\nABCEFIKL:EIBCAFLK\nABCEFIJL:EJBCAFLI\nABCEFIJK:EJBCAFIK\nABCEFHKL:HEBCAFLK\nABCEFHJL:HJBCAFLE\nABCEFHJK:HJBCAFEK\nABCEFHIL:HEBCAFLI\nABCEFHIK:HEBCAFIK\nABCEFHIJ:HJBCAFEI\nABCEFGKL:EGBCAFLK\nABCEFGJL:EGBCAFLJ\nABCEFGJK:EGBCAFJK\nABCEFGIL:EGBCAFLI\nABCEFGIK:EGBCAFIK\nABCEFGIJ:EGBCAFIJ\nABCEFGHL:HGBCAFLE\nABCEFGHK:HGBCAFEK\nABCEFGHJ:HGBCAFEJ\nABCEFGHI:HGBCAFEI\nABCDIJKL:IJBCADLK\nABCDHJKL:HJBCADLK\nABCDHIKL:HIBCADLK\nABCDHIJL:HJBCADLI\nABCDHIJK:HJBCADIK\nABCDGJKL:CJBDAGLK\nABCDGIKL:IGBCADLK\nABCDGIJL:CJBDAGLI\nABCDGIJK:CJBDAGIK\nABCDGHKL:HGBCADLK\nABCDGHJL:HGBCADLJ\nABCDGHJK:HGBCADJK\nABCDGHIL:HGBCADLI\nABCDGHIK:HGBCADIK\nABCDGHIJ:HGBCADIJ\nABCDFJKL:CJBDAFLK\nABCDFIKL:CIBDAFLK\nABCDFIJL:CJBDAFLI\nABCDFIJK:CJBDAFIK\nABCDFHKL:HFBCADLK\nABCDFHJL:CJBDAFLH\nABCDFHJK:HJBCAFDK\nABCDFHIL:HFBCADLI\nABCDFHIK:HFBCADIK\nABCDFHIJ:HJBCAFDI\nABCDFGKL:CGBDAFLK\nABCDFGJL:CGBDAFLJ\nABCDFGJK:CGBDAFJK\nABCDFGIL:CGBDAFLI\nABCDFGIK:CGBDAFIK\nABCDFGIJ:CGBDAFIJ\nABCDFGHL:CGBDAFLH\nABCDFGHK:HGBCAFDK\nABCDFGHJ:HGBCAFDJ\nABCDFGHI:HGBCAFDI\nABCDEJKL:EJBCADLK\nABCDEIKL:EIBCADLK\nABCDEIJL:EJBCADLI\nABCDEIJK:EJBCADIK\nABCDEHKL:HEBCADLK\nABCDEHJL:HJBCADLE\nABCDEHJK:HJBCADEK\nABCDEHIL:HEBCADLI\nABCDEHIK:HEBCADIK\nABCDEHIJ:HJBCADEI\nABCDEGKL:EGBCADLK\nABCDEGJL:EGBCADLJ\nABCDEGJK:EGBCADJK\nABCDEGIL:EGBCADLI\nABCDEGIK:EGBCADIK\nABCDEGIJ:EGBCADIJ\nABCDEGHL:HGBCADLE\nABCDEGHK:HGBCADEK\nABCDEGHJ:HGBCADEJ\nABCDEGHI:HGBCADEI\nABCDEFKL:CEBDAFLK\nABCDEFJL:CJBDAFLE\nABCDEFJK:CJBDAFEK\nABCDEFIL:CEBDAFLI\nABCDEFIK:CEBDAFIK\nABCDEFIJ:CJBDAFEI\nABCDEFHL:HFBCADLE\nABCDEFHK:HEBCAFDK\nABCDEFHJ:HJBCAFDE\nABCDEFHI:HEBCAFDI\nABCDEFGL:CGBDAFLE\nABCDEFGK:CGBDAFEK\nABCDEFGJ:CGBDAFEJ\nABCDEFGI:CGBDAFEI\nABCDEFGH:HGBCAFDE`;
+        this.thirdPlaceCombinationMap = Object.fromEntries(raw.split('\n').map(line => {
+            const [key, value] = line.split(':');
+            return [key, value.split('')];
+        }));
+        return this.thirdPlaceCombinationMap;
+    },
+
     groupSlot(row, label) {
         return row?.team ? { team: row.team, seed: label } : { label, pending: true };
     },
 
-    thirdSlot(qualified, groups) {
+    thirdSlot(qualified, groups, assignments = {}, matchNumber = null) {
+        if (matchNumber && assignments[matchNumber]) {
+            const assigned = assignments[matchNumber];
+            return this.groupSlot(assigned, `3o Grupo ${assigned.group}`);
+        }
         const candidates = qualified.thirds.filter(row => groups.includes(row.group));
         if (candidates.length === 1) return { team: candidates[0].team, seed: `3o Grupo ${candidates[0].group}` };
         return { label: `3o Grupo ${groups.join('/')}`, pending: true, candidates };
@@ -1270,10 +1423,11 @@ const WorldCup = {
         return this.teamRatings[team] || 50;
     },
 
-    getFlag(team) {
+    getFlag(team, size = 20) {
         const code = this.flags[team];
         if (!code) return `<span class="wc-flag wc-flag-empty"></span>`;
-        return `<span class="wc-flag"><img src="https://flagcdn.com/w20/${code}.png" alt="${team}"></span>`;
+        const height = Math.max(10, Math.round(Number(size) * 0.75));
+        return `<span class="wc-flag"><img src="https://flagcdn.com/w${size}/${code}.png" alt="${team}" width="${size}" height="${height}" loading="lazy" decoding="async"></span>`;
     },
 
     getPowerPosition(team) {
@@ -1436,6 +1590,11 @@ const WorldCup = {
 
     setTab(tab) {
         this.activeTab = tab;
+        this.render();
+    },
+
+    setKnockoutView(view) {
+        this.knockoutView = view;
         this.render();
     },
 
