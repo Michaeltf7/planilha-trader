@@ -1124,11 +1124,11 @@ const WorldCup = {
             }
 
             this.syncState.status = 'local';
-            this.syncState.message = 'Base local';
+            this.syncState.message = result?.error ? `Falha Sofascore: ${result.error}` : 'Base local';
         } catch (error) {
             console.warn('Falha na sincronizacao automatica da Copa:', error);
             this.syncState.status = 'local';
-            this.syncState.message = 'Base local';
+            this.syncState.message = `Falha Sofascore: ${error.message || String(error)}`;
         }
     },
 

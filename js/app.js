@@ -15,10 +15,12 @@ const App = {
     sofascoreEventsCache: {},
     desempenhoMonth: null,
     desempenhoSelectedDay: '',
+    appVersion: '',
 
     async init() {
         this.cacheDOM();
         this.bindEvents();
+        await this.loadAppInfo();
         await this.loadTheme();
         await this.loadData();
         if (typeof AnalisePro !== 'undefined') await AnalisePro.init();
@@ -31,10 +33,24 @@ const App = {
         this.navLinks = document.querySelectorAll('.nav-links a');
         this.csvInput = document.getElementById('csvFileInput');
         this.themeToggle = document.getElementById('theme-toggle');
+        this.versionLabel = document.getElementById('app-version');
     },
     
     bindEvents() {
     },
+
+    async loadAppInfo() {
+        try {
+            const info = await window.traderAppInfo?.get?.();
+            this.appVersion = info?.version || '';
+        } catch (error) {
+            this.appVersion = '';
+        }
+        if (this.versionLabel) {
+            this.versionLabel.textContent = this.appVersion ? `v${this.appVersion}` : 'DEV';
+        }
+    },
+
     initialDicionario: {
         "Flamengo": "Brasileirão",
         "Palmeiras": "Brasileirão",

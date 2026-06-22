@@ -137,4 +137,8 @@ contextBridge.exposeInMainWorld('traderCompetitionData', {
   matchDetails: (payload) => ipcRenderer.invoke('competitions:match-details', payload)
 });
 
+contextBridge.exposeInMainWorld('traderAppInfo', {
+  get: () => ipcRenderer.invoke('app:info')
+});
+
 ipcRenderer.on('highlight:start-selection', () => startSelection());

@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const { app, BrowserWindow, ipcMain, Menu, shell, session, nativeImage, dialog } = require('electron');
 
@@ -726,6 +727,13 @@ ipcMain.handle('worldcup:espn-sync', async () => {
   return syncWorldCupEspn();
 });
 
+ipcMain.handle('app:info', async () => {
+  return {
+    version: app.getVersion(),
+    packaged: app.isPackaged
+  };
+});
+
 ipcMain.handle('worldcup:sync', async () => {
   return syncWorldCupData();
 });
@@ -1108,6 +1116,8 @@ async function syncWorldCupEspn(options = {}) {
 function getPythonCandidates() {
   const candidates = [];
   if (process.env.PLANILHA_TRADER_PYTHON) candidates.push({ command: process.env.PLANILHA_TRADER_PYTHON, args: [] });
+  const bundledPython = getAppResourcePath('tools', 'python_runtime', process.platform === 'win32' ? 'python.exe' : 'python');
+  if (fs.existsSync(bundledPython)) candidates.push({ command: bundledPython, args: [] });
   candidates.push({ command: 'python', args: [] });
   if (process.platform === 'win32') candidates.push({ command: 'py', args: ['-3'] });
   return candidates;
@@ -1126,10 +1136,14 @@ function runPythonJsonScript(scriptPath, timeoutMs = 90000, extraArgs = []) {
       }
 
       const child = spawn(candidate.command, [...candidate.args, scriptPath, ...extraArgs], {
-        cwd: path.join(__dirname, '..'),
+        cwd: path.resolve(path.dirname(scriptPath), '..'),
         windowsHide: true,
         env: {
           ...process.env,
+          PYTHONPATH: [
+            getAppResourcePath('tools', 'python_deps'),
+            process.env.PYTHONPATH || ''
+          ].filter(Boolean).join(path.delimiter),
           PYTHONIOENCODING: 'utf-8'
         }
       });
