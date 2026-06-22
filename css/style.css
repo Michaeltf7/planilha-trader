@@ -2306,13 +2306,12 @@ tr:hover td {
 }
 
 .calendar-league-filters {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     align-items: center;
     gap: 10px;
     margin-top: 18px;
-    padding: 4px 2px 10px;
-    overflow-x: auto;
-    scrollbar-width: thin;
+    padding: 4px 2px 2px;
 }
 
 .calendar-league-chip {
@@ -2320,13 +2319,14 @@ tr:hover td {
     background: var(--bg-surface);
     color: var(--text-primary);
     min-height: 42px;
-    max-width: 250px;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
     padding: 8px 10px;
     border-radius: 12px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    flex: 0 0 auto;
     cursor: pointer;
     box-shadow: var(--shadow-sm);
     transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
@@ -2341,6 +2341,17 @@ tr:hover td {
     border-color: var(--primary-color);
     background: rgba(15, 150, 156, 0.12);
     color: var(--primary-color);
+}
+
+.calendar-league-chip.is-favorite {
+    border-color: rgba(255, 202, 40, 0.55);
+}
+
+.calendar-league-chip.is-favorite::before {
+    content: "\2605";
+    color: #ffca28;
+    font-size: 11px;
+    line-height: 1;
 }
 
 .calendar-league-chip span {
@@ -2388,6 +2399,12 @@ tr:hover td {
     font-size: 12px;
     font-weight: 800;
     white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+    .calendar-league-filters {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
 }
 
 .tournament-section {

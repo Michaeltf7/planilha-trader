@@ -4,6 +4,7 @@ import random
 import sys
 import time
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 try:
@@ -630,12 +631,14 @@ def normalize_competition_event(event):
     }
 
 
-def normalize_calendar_event(event, odds_by_event=None):
+def normalize_calendar_event(event, odds_by_event=None, image_cache=None):
     odds_by_event = odds_by_event or {}
+    image_cache = image_cache if image_cache is not None else {}
     home_team = event.get("homeTeam") or {}
     away_team = event.get("awayTeam") or {}
     tournament = event.get("tournament") or {}
     category = tournament.get("category") or {}
+    unique_tournament_id = tournament.get("uniqueTournament", {}).get("id") or tournament.get("id")
     status = normalize_status(event)
     status_map = {
         "Encerrado": "finished",
@@ -651,6 +654,11 @@ def normalize_calendar_event(event, odds_by_event=None):
     odds = odds_by_event.get(str(event_id)) or odds_by_event.get(event_id) or {}
     choices = odds.get("choices") if isinstance(odds, dict) else None
 
+    def cached_image(key, url):
+        if not url:
+            return ""
+        return image_cache.get(key) or url
+
     return {
         "id": int(event_id) if event_id else f"sofa-{event_id}",
         "sofascoreId": int(event_id) if event_id else None,
@@ -664,12 +672,12 @@ def normalize_calendar_event(event, odds_by_event=None):
         "homeTeam": {
             "id": home_id,
             "name": team_name(home_team),
-            "imageUrl": logo_url(home_id),
+            "imageUrl": cached_image(f"team:{home_id}", logo_url(home_id)),
         },
         "awayTeam": {
             "id": away_id,
             "name": team_name(away_team),
-            "imageUrl": logo_url(away_id),
+            "imageUrl": cached_image(f"team:{away_id}", logo_url(away_id)),
         },
         "homeScore": {"current": int(home_score.get("current"))} if has_score and home_score.get("current") is not None else None,
         "awayScore": {"current": int(away_score.get("current"))} if has_score and away_score.get("current") is not None else None,
@@ -679,7 +687,10 @@ def normalize_calendar_event(event, odds_by_event=None):
             "category": {
                 "name": category.get("name") or "",
             },
-            "logo": f"https://api.sofascore.app/api/v1/unique-tournament/{tournament.get('uniqueTournament', {}).get('id') or tournament.get('id')}/image" if (tournament.get("uniqueTournament", {}).get("id") or tournament.get("id")) else "",
+            "logo": cached_image(
+                f"tournament:{unique_tournament_id}",
+                f"https://api.sofascore.app/api/v1/unique-tournament/{unique_tournament_id}/image" if unique_tournament_id else "",
+            ),
         },
         "realOdds": choices if isinstance(choices, list) and len(choices) >= 3 else None,
         "source": "sofascore",
@@ -697,8 +708,9 @@ def fetch_calendar_date(date_key):
     odds_by_event = odds_data.get("odds") or {}
     if not isinstance(odds_by_event, dict):
         odds_by_event = {}
+    image_cache = fetch_calendar_images(events)
     matches = [
-        normalize_calendar_event(event, odds_by_event)
+        normalize_calendar_event(event, odds_by_event, image_cache)
         for event in events
         if event.get("homeTeam") and event.get("awayTeam") and event.get("startTimestamp")
     ]
@@ -712,6 +724,41 @@ def fetch_calendar_date(date_key):
         "count": len(matches),
         "matches": matches,
     }
+
+
+def fetch_calendar_images(events):
+    targets = {}
+    for event in events or []:
+        home_id = (event.get("homeTeam") or {}).get("id")
+        away_id = (event.get("awayTeam") or {}).get("id")
+        tournament = event.get("tournament") or {}
+        unique_tournament_id = tournament.get("uniqueTournament", {}).get("id") or tournament.get("id")
+        if home_id:
+            targets[f"team:{home_id}"] = logo_url(home_id)
+        if away_id:
+            targets[f"team:{away_id}"] = logo_url(away_id)
+        if unique_tournament_id:
+            targets[f"tournament:{unique_tournament_id}"] = f"https://api.sofascore.app/api/v1/unique-tournament/{unique_tournament_id}/image"
+
+    if not targets:
+        return {}
+
+    cache = {}
+    with ThreadPoolExecutor(max_workers=min(12, len(targets))) as pool:
+        futures = {
+            pool.submit(fetch_image_data_url, url, 10, 1): key
+            for key, url in targets.items()
+            if url
+        }
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                value = future.result()
+            except Exception:
+                value = ""
+            if value:
+                cache[key] = value
+    return cache
 
 
 def normalize_standing_row(row):

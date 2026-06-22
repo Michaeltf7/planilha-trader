@@ -252,6 +252,7 @@ const AnalisePro = {
     renderCalendarLeagueFilters(gamesList) {
         const container = document.getElementById('calendar-league-filters');
         if (!container) return;
+        const favorites = JSON.parse(localStorage.getItem('pro_fav_leagues')) || [];
 
         const leagues = new Map();
         (this.games || []).forEach(game => {
@@ -276,10 +277,16 @@ const AnalisePro = {
         const total = this.games.length;
         const filteredCount = gamesList.length;
         const chips = Array.from(leagues.values())
-            .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-            .slice(0, 18)
+            .sort((a, b) => {
+                const aFav = favorites.some(item => String(item) === String(a.id));
+                const bFav = favorites.some(item => String(item) === String(b.id));
+                if (aFav && !bFav) return -1;
+                if (!aFav && bFav) return 1;
+                return b.count - a.count || a.name.localeCompare(b.name);
+            })
+            .slice(0, 24)
             .map(league => `
-                <button type="button" class="calendar-league-chip ${String(activeId) === String(league.id) ? 'active' : ''}" onclick="AnalisePro.setCalendarLeagueFilter(decodeURIComponent('${this.escapeAttr(encodeURIComponent(league.id))}'))" title="${this.escapeHtml(league.name)}">
+                <button type="button" class="calendar-league-chip ${String(activeId) === String(league.id) ? 'active' : ''} ${favorites.some(item => String(item) === String(league.id)) ? 'is-favorite' : ''}" onclick="AnalisePro.setCalendarLeagueFilter(decodeURIComponent('${this.escapeAttr(encodeURIComponent(league.id))}'))" title="${this.escapeHtml(league.name)}">
                     ${league.logoHtml}
                     <span>${this.escapeHtml(league.name)}</span>
                     <em>${league.count}</em>
