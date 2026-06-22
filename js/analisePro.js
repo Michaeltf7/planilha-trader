@@ -110,6 +110,7 @@ const AnalisePro = {
         const dateInput = document.getElementById('calendar-date-filter');
         const selectedDate = dateInput ? dateInput.value : this.getTodayKey();
         const listContainer = document.getElementById('pro-calendar-list');
+        const filtersContainer = document.getElementById('calendar-league-filters');
         const loader = document.getElementById('pro-loading');
         
         if (!localStorage.getItem('pro_fav_leagues')) localStorage.setItem('pro_fav_leagues', JSON.stringify([]));
@@ -119,6 +120,11 @@ const AnalisePro = {
             return;
         }
         
+        this.activeCalendarLeagueId = 'all';
+        if (filtersContainer) {
+            filtersContainer.innerHTML = '';
+            filtersContainer.style.display = 'none';
+        }
         listContainer.innerHTML = '';
         loader.style.display = 'flex';
 
@@ -131,7 +137,7 @@ const AnalisePro = {
             let cacheHistory = JSON.parse(localStorage.getItem('pro_games_cache_history')) || {};
             const cachedGames = Array.isArray(cacheHistory[selectedDate]) ? cacheHistory[selectedDate] : [];
             this.games = this.mergeRadarDailyGames(fetchedGames, [...cachedGames, ...gamesInMemory]);
-            if (this.games.length > 0) this.calendarSource = 'Radar Futebol';
+            if (this.games.length > 0 && !this.calendarSource) this.calendarSource = 'Sofascore';
             
             // Cleanup cacheHistory para evitar QuotaExceededError
             const dates = Object.keys(cacheHistory).sort();
@@ -270,9 +276,11 @@ const AnalisePro = {
 
         if (leagues.size <= 1) {
             container.innerHTML = '';
+            container.style.display = 'none';
             return;
         }
 
+        container.style.display = '';
         const activeId = this.activeCalendarLeagueId || 'all';
         const total = this.games.length;
         const filteredCount = gamesList.length;
