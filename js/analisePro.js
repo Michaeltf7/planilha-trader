@@ -500,6 +500,19 @@ const AnalisePro = {
     },
 
     async fetchSofascoreGamesByDate(dateKey) {
+        if (window.traderCalendarData?.byDate) {
+            const result = await window.traderCalendarData.byDate({ date: dateKey });
+            if (!result?.ok) throw new Error(result?.error || 'Sofascore nao retornou jogos.');
+            return (result.matches || []).filter(game =>
+                this.getLocalDateKey(game.startTimestamp) === dateKey
+            ).map(game => ({
+                ...game,
+                source: 'sofascore',
+                sourceLabel: 'Sofascore',
+                sofascoreId: Number(game.sofascoreId || game.id) || null
+            }));
+        }
+
         const ts = Date.now();
         const eventsUrl = `https://api.sofascore.app/api/v1/sport/football/scheduled-events/${dateKey}?_ts=${ts}`;
         const oddsUrl = `https://api.sofascore.app/api/v1/sport/football/odds/1x2/${dateKey}?_ts=${ts}`;

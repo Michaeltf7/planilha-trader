@@ -750,6 +750,10 @@ ipcMain.handle('competitions:match-details', async (_event, payload = {}) => {
   return fetchWorldCupMatchDetails(payload);
 });
 
+ipcMain.handle('calendar:by-date', async (_event, payload = {}) => {
+  return fetchCalendarSofascoreDate(payload);
+});
+
 ipcMain.on('replica:show-menu', (event) => {
   const item = getReplicaBySender(event.sender);
   if (!item) return;
@@ -1213,6 +1217,15 @@ async function syncCompetitionData(payload = {}) {
   }
   const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
   return runPythonJsonScript(scriptPath, 120000, ['competition', String(uniqueTournamentId), String(seasonId), name]);
+}
+
+async function fetchCalendarSofascoreDate(payload = {}) {
+  const dateKey = String(payload.date || payload.dateKey || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    return { ok: false, source: 'Sofascore', error: 'Data invalida para o calendario.' };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  return runPythonJsonScript(scriptPath, 90000, ['calendar', dateKey]);
 }
 
 function normalizeWorldCupName(value) {

@@ -630,6 +630,90 @@ def normalize_competition_event(event):
     }
 
 
+def normalize_calendar_event(event, odds_by_event=None):
+    odds_by_event = odds_by_event or {}
+    home_team = event.get("homeTeam") or {}
+    away_team = event.get("awayTeam") or {}
+    tournament = event.get("tournament") or {}
+    category = tournament.get("category") or {}
+    status = normalize_status(event)
+    status_map = {
+        "Encerrado": "finished",
+        "Ao vivo": "inprogress",
+        "Agendado": "notstarted",
+    }
+    has_score = status in ("Encerrado", "Ao vivo")
+    home_score = event.get("homeScore") or {}
+    away_score = event.get("awayScore") or {}
+    home_id = home_team.get("id")
+    away_id = away_team.get("id")
+    event_id = event.get("id")
+    odds = odds_by_event.get(str(event_id)) or odds_by_event.get(event_id) or {}
+    choices = odds.get("choices") if isinstance(odds, dict) else None
+
+    return {
+        "id": int(event_id) if event_id else f"sofa-{event_id}",
+        "sofascoreId": int(event_id) if event_id else None,
+        "customId": event.get("customId") or "",
+        "slug": event.get("slug") or "",
+        "startTimestamp": int(event.get("startTimestamp") or 0),
+        "status": {
+            "type": status_map.get(status, "notstarted"),
+            "description": event.get("status", {}).get("description") or status,
+        },
+        "homeTeam": {
+            "id": home_id,
+            "name": team_name(home_team),
+            "imageUrl": logo_url(home_id),
+        },
+        "awayTeam": {
+            "id": away_id,
+            "name": team_name(away_team),
+            "imageUrl": logo_url(away_id),
+        },
+        "homeScore": {"current": int(home_score.get("current"))} if has_score and home_score.get("current") is not None else None,
+        "awayScore": {"current": int(away_score.get("current"))} if has_score and away_score.get("current") is not None else None,
+        "tournament": {
+            "id": tournament.get("id") or tournament.get("uniqueTournament", {}).get("id") or 0,
+            "name": tournament.get("name") or "Competicao",
+            "category": {
+                "name": category.get("name") or "",
+            },
+            "logo": f"https://api.sofascore.app/api/v1/unique-tournament/{tournament.get('uniqueTournament', {}).get('id') or tournament.get('id')}/image" if (tournament.get("uniqueTournament", {}).get("id") or tournament.get("id")) else "",
+        },
+        "realOdds": choices if isinstance(choices, list) and len(choices) >= 3 else None,
+        "source": "sofascore",
+        "sourceLabel": "Sofascore",
+    }
+
+
+def fetch_calendar_date(date_key):
+    events_data = api_get(f"/sport/football/scheduled-events/{date_key}", timeout=30, retries=3) or {}
+    try:
+        odds_data = api_get(f"/sport/football/odds/1x2/{date_key}", timeout=20, retries=2) or {}
+    except Exception:
+        odds_data = {}
+    events = events_data.get("events") or []
+    odds_by_event = odds_data.get("odds") or {}
+    if not isinstance(odds_by_event, dict):
+        odds_by_event = {}
+    matches = [
+        normalize_calendar_event(event, odds_by_event)
+        for event in events
+        if event.get("homeTeam") and event.get("awayTeam") and event.get("startTimestamp")
+    ]
+    matches = [match for match in matches if br_datetime_from_timestamp(match.get("startTimestamp"))[0] == date_key]
+    matches.sort(key=lambda item: item.get("startTimestamp") or 0)
+    return {
+        "ok": True,
+        "source": "Sofascore",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "date": date_key,
+        "count": len(matches),
+        "matches": matches,
+    }
+
+
 def normalize_standing_row(row):
     team = row.get("team") or {}
     team_id = team.get("id")
@@ -728,6 +812,9 @@ def main():
         if len(sys.argv) >= 4 and sys.argv[1] == "competition":
             name = sys.argv[4] if len(sys.argv) >= 5 else "Competicao"
             print(json.dumps(fetch_competition(int(sys.argv[2]), int(sys.argv[3]), name), ensure_ascii=False))
+            return
+        if len(sys.argv) >= 3 and sys.argv[1] == "calendar":
+            print(json.dumps(fetch_calendar_date(sys.argv[2]), ensure_ascii=False))
             return
 
         season_id = find_worldcup_2026_season()
