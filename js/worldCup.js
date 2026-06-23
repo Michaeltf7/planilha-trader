@@ -354,8 +354,8 @@ const WorldCup = {
 
     sortKnockoutBracketMatches(roundName, matches) {
         const orders = {
-            '16 avos de final': [73, 75, 74, 77, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87],
-            'Oitavas': [89, 90, 93, 94, 91, 92, 95, 96],
+            '16 avos de final': [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87],
+            'Oitavas': [90, 89, 93, 94, 91, 92, 95, 96],
             'Quartas': [97, 98, 99, 100],
             'Semifinais': [101, 102],
             'Final + 3o Lugar': [104, 103]
