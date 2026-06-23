@@ -342,13 +342,31 @@ const WorldCup = {
                         <div class="wc-bracket-round ${round.finalColumn ? 'is-final-round' : ''}">
                             <h3>${round.name}</h3>
                             <div class="wc-bracket-stack">
-                                ${round.matches.map(match => this.renderBracketMatch({ ...match, stage: round.name })).join('')}
+                                ${this.sortKnockoutBracketMatches(round.name, round.matches)
+                                    .map(match => this.renderBracketMatch({ ...match, stage: round.name })).join('')}
                             </div>
                         </div>
                     `).join('')}
                 </div>
             </section>
         `;
+    },
+
+    sortKnockoutBracketMatches(roundName, matches) {
+        const orders = {
+            '16 avos de final': [73, 75, 74, 77, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87],
+            'Oitavas': [89, 90, 93, 94, 91, 92, 95, 96],
+            'Quartas': [97, 98, 99, 100],
+            'Semifinais': [101, 102],
+            'Final + 3o Lugar': [104, 103]
+        };
+        const order = orders[roundName];
+        if (!order) return matches || [];
+        return [...(matches || [])].sort((a, b) => {
+            const left = order.indexOf(Number(a.number));
+            const right = order.indexOf(Number(b.number));
+            return (left === -1 ? 999 : left) - (right === -1 ? 999 : right);
+        });
     },
 
     renderBracketMatch(match) {
