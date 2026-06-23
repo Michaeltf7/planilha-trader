@@ -156,9 +156,9 @@ function createExternalWindow(url) {
 function createCustomWRadarWindow(payload) {
   const child = new BrowserWindow({
     width: 1220,
-    height: 260,
+    height: 460,
     minWidth: 520,
-    minHeight: 150,
+    minHeight: 260,
     title: 'Radar MOD Proprio',
     backgroundColor: '#f8fafc',
     transparent: false,

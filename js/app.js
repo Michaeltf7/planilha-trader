@@ -13,6 +13,7 @@ const App = {
     ignoredEntryIds: new Set(),
     ignoredBetIds: new Set(),
     sofascoreEventsCache: {},
+    competitionIdentificationCache: {},
     desempenhoMonth: null,
     desempenhoSelectedDay: '',
     appVersion: '',
@@ -395,6 +396,34 @@ const App = {
         if (this.ligas.length === 0) {
             this.ligas = ['Brasileirão', 'Libertadores', 'Copa do Brasil', 'Champions League', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Argentino', 'Copa do Brasil', 'Copa Libertadores', 'Copa America', 'Euro'];
         }
+        await this.normalizeSavedCompetitionNames();
+    },
+
+    async normalizeSavedCompetitionNames() {
+        let changed = false;
+
+        Object.entries(this.excecoesJogos || {}).forEach(([gameId, league]) => {
+            const canonical = this.canonicalLeagueName(league);
+            if (canonical && canonical !== league) {
+                this.excecoesJogos[gameId] = canonical;
+                changed = true;
+            }
+        });
+
+        const normalizedLigas = [];
+        (this.ligas || []).forEach(league => {
+            const canonical = this.canonicalLeagueName(league);
+            if (canonical && !normalizedLigas.includes(canonical)) {
+                normalizedLigas.push(canonical);
+            }
+            if (canonical !== league) changed = true;
+        });
+
+        this.ligas = normalizedLigas;
+        if (changed) {
+            await DB.set('planilhaExcecoesJogos', this.excecoesJogos);
+            await DB.set('planilhaLigas', this.ligas);
+        }
     },
 
     normalizeStoredArray(value) {
@@ -525,7 +554,7 @@ const App = {
         const gameId = `${game}_${dateStr.split(' ')[0]}`;
         
         if (this.excecoesJogos[gameId]) {
-            return this.excecoesJogos[gameId];
+            return this.canonicalLeagueName(this.excecoesJogos[gameId]);
         }
         
         const leagueA = this.dicionarioTimes[teamA] || '';
@@ -550,7 +579,7 @@ const App = {
     },
 
     normalizeMatchName(value) {
-        return (value || '')
+        const normalized = (value || '')
             .toString()
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
@@ -559,6 +588,118 @@ const App = {
             .replace(/[^a-z0-9]+/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
+
+        return this.countryNameAliases[normalized] || normalized;
+    },
+
+    countryNameAliases: {
+        'brasil': 'brazil',
+        'brazil': 'brazil',
+        'haiti': 'haiti',
+        'escocia': 'scotland',
+        'scotland': 'scotland',
+        'marrocos': 'morocco',
+        'morocco': 'morocco',
+        'estados unidos': 'usa',
+        'eua': 'usa',
+        'usa': 'usa',
+        'united states': 'usa',
+        'us': 'usa',
+        'australia': 'australia',
+        'canada': 'canada',
+        'catar': 'qatar',
+        'qatar': 'qatar',
+        'mexico': 'mexico',
+        'africa sul': 'south africa',
+        'africa do sul': 'south africa',
+        'south africa': 'south africa',
+        'coreia sul': 'south korea',
+        'coreia do sul': 'south korea',
+        'south korea': 'south korea',
+        'republica tcheca': 'czech republic',
+        'republica checa': 'czech republic',
+        'czech republic': 'czech republic',
+        'chequia': 'czechia',
+        'czechia': 'czechia',
+        'franca': 'france',
+        'france': 'france',
+        'iraque': 'iraq',
+        'iraq': 'iraq',
+        'noruega': 'norway',
+        'norway': 'norway',
+        'senegal': 'senegal',
+        'argentina': 'argentina',
+        'argelia': 'algeria',
+        'algeria': 'algeria',
+        'austria': 'austria',
+        'alemanha': 'germany',
+        'germany': 'germany',
+        'espanha': 'spain',
+        'spain': 'spain',
+        'italia': 'italy',
+        'italy': 'italy',
+        'inglaterra': 'england',
+        'england': 'england',
+        'portugal': 'portugal',
+        'holanda': 'netherlands',
+        'paises baixos': 'netherlands',
+        'netherlands': 'netherlands',
+        'belgica': 'belgium',
+        'belgium': 'belgium',
+        'uruguai': 'uruguay',
+        'uruguay': 'uruguay',
+        'nova zelandia': 'new zealand',
+        'new zealand': 'new zealand',
+        'egito': 'egypt',
+        'egypt': 'egypt',
+        'cabo verde': 'cape verde',
+        'cape verde': 'cape verde',
+        'colombia': 'colombia',
+        'chile': 'chile',
+        'equador': 'ecuador',
+        'ecuador': 'ecuador',
+        'paraguai': 'paraguay',
+        'paraguay': 'paraguay',
+        'japao': 'japan',
+        'japan': 'japan',
+        'croacia': 'croatia',
+        'croatia': 'croatia',
+        'suica': 'switzerland',
+        'switzerland': 'switzerland',
+        'dinamarca': 'denmark',
+        'denmark': 'denmark',
+        'polonia': 'poland',
+        'poland': 'poland',
+        'servia': 'serbia',
+        'serbia': 'serbia',
+        'gana': 'ghana',
+        'ghana': 'ghana',
+        'camaroes': 'cameroon',
+        'cameroon': 'cameroon',
+        'tunisia': 'tunisia',
+        'tunez': 'tunisia',
+        'arabia saudita': 'saudi arabia',
+        'saudi arabia': 'saudi arabia',
+        'ira': 'iran',
+        'iran': 'iran',
+        'jordania': 'jordan',
+        'jordan': 'jordan',
+        'turquia': 'turkey',
+        'turkey': 'turkey',
+        'curacao': 'curacao',
+        'costa do marfim': 'ivory coast',
+        'ivory coast': 'ivory coast',
+        'suecia': 'sweden',
+        'sweden': 'sweden',
+        'bosnia herzegovina': 'bosnia herzegovina',
+        'bosnia e herzegovina': 'bosnia herzegovina',
+        'bosnia & herzegovina': 'bosnia herzegovina',
+        'uzbequistao': 'uzbekistan',
+        'uzbekistan': 'uzbekistan',
+        'republica democratica congo': 'dr congo',
+        'rd congo': 'dr congo',
+        'dr congo': 'dr congo',
+        'panama': 'panama'
     },
 
     getBetfairDateKey(dateStr, dayOffset = 0) {
@@ -593,7 +734,28 @@ const App = {
     },
 
     canonicalLeagueName(rawName) {
+        const rawNormalized = (rawName || '')
+            .toString()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (rawNormalized.includes('club world cup')) {
+            return 'Mundial de Clubes';
+        }
+
         const normalized = this.normalizeMatchName(rawName);
+        if (normalized.includes('fifa world cup')) {
+            return 'Copa do Mundo FIFA 2026';
+        }
+        if (/^(fifa )?world cup(?: group [a-l])?$/.test(normalized)) {
+            return 'Copa do Mundo FIFA 2026';
+        }
+        if (/^world championship(?: group [a-l])?$/.test(normalized)) {
+            return 'Copa do Mundo FIFA 2026';
+        }
         const aliases = {
             'conmebol libertadores': 'Libertadores',
             'copa libertadores': 'Libertadores',
@@ -618,6 +780,10 @@ const App = {
             'eredivisie': 'Eredivisie',
             'mls': 'MLS',
             'copa america': 'Copa America',
+            'fifa world cup': 'Copa do Mundo FIFA 2026',
+            'world cup': 'Copa do Mundo FIFA 2026',
+            'world championship': 'Copa do Mundo FIFA 2026',
+            'fifa world cup qualification': 'Eliminatórias Copa do Mundo',
             'fifa club world cup': 'Mundial de Clubes',
             'club world cup': 'Mundial de Clubes'
         };
@@ -653,13 +819,73 @@ const App = {
         return [];
     },
 
+    getWorldCupIdentificationEvents(dateKey = null) {
+        if (typeof WorldCup === 'undefined' || !Array.isArray(WorldCup.matches)) return [];
+
+        return WorldCup.matches
+            .filter(match => !dateKey || match.date === dateKey)
+            .map(match => ({
+                id: match.id,
+                startTimestamp: match.date ? Math.floor(new Date(`${match.date}T${match.time || '12:00'}:00-03:00`).getTime() / 1000) : 0,
+                homeTeam: { name: match.home },
+                awayTeam: { name: match.away },
+                tournament: {
+                    name: `FIFA World Cup${match.group ? `, Group ${match.group}` : ''}`,
+                    uniqueTournament: { name: 'FIFA World Cup' },
+                    category: { name: 'World' }
+                },
+                source: 'worldcup-local'
+            }));
+    },
+
+    getWorldCupGroupForTeams(teams) {
+        if (typeof WorldCup === 'undefined' || !WorldCup.groups || teams.length < 2) return '';
+
+        const normalizedTeams = teams.map(team => this.normalizeMatchName(team));
+        for (const [group, groupTeams] of Object.entries(WorldCup.groups)) {
+            const normalizedGroupTeams = groupTeams.map(team => this.normalizeMatchName(team));
+            if (normalizedTeams.every(team => normalizedGroupTeams.includes(team))) {
+                return group;
+            }
+        }
+
+        return '';
+    },
+
+    async fetchCalendarIdentificationEventsByDate(dateKey) {
+        if (this.competitionIdentificationCache[dateKey]) {
+            return this.competitionIdentificationCache[dateKey];
+        }
+
+        let events = [];
+        if (window.traderCalendarData?.byDate) {
+            try {
+                const result = await window.traderCalendarData.byDate({ date: dateKey });
+                if (result?.ok && Array.isArray(result.matches)) {
+                    events = result.matches;
+                }
+            } catch (error) {
+                console.warn('Calendario Sofascore indisponivel para identificar competicao:', error);
+            }
+        }
+
+        if (!events.length) {
+            events = await this.fetchSofascoreEventsByDate(dateKey);
+        }
+
+        const worldCupEvents = this.getWorldCupIdentificationEvents(dateKey);
+        const merged = [...events, ...worldCupEvents];
+        this.competitionIdentificationCache[dateKey] = merged;
+        return merged;
+    },
+
     async findCompetitionForTrade(trade) {
         const teams = this.parseGameTeams(trade.game);
         if (teams.length < 2) return null;
 
-        for (const offset of [0, -1, 1]) {
+        for (const offset of [0, -1, 1, -2, 2, -3, 3]) {
             const dateKey = this.getBetfairDateKey(trade.dateStr, offset);
-            const events = await this.fetchSofascoreEventsByDate(dateKey);
+            const events = await this.fetchCalendarIdentificationEventsByDate(dateKey);
             const event = events.find(item => this.eventMatchesTrade(item, teams));
             if (!event) continue;
 
@@ -669,11 +895,17 @@ const App = {
             }
         }
 
+        const worldCupEvent = this.getWorldCupIdentificationEvents()
+            .find(item => this.eventMatchesTrade(item, teams));
+        if (worldCupEvent) return 'Copa do Mundo FIFA 2026';
+
+        if (this.getWorldCupGroupForTeams(teams)) return 'Copa do Mundo FIFA 2026';
+
         return null;
     },
 
-    getCompetitionIdentificationCandidates() {
-        const candidates = this.data
+    getCompetitionIdentificationCandidates(sourceData = this.data) {
+        const candidates = (sourceData || [])
             .filter(d => !d.isDepositOrWithdrawal)
             .filter(d => {
                 const gameId = this.getGameId(d.game, d.dateStr);
@@ -689,16 +921,22 @@ const App = {
         return Array.from(uniqueByGame.entries());
     },
 
-    async autoIdentificarCompeticoes(btnEl = null) {
+    async autoIdentificarCompeticoes(btnEl = null, options = {}) {
+        const {
+            sourceData = this.data,
+            silent = false,
+            renderAfter = true,
+            delayMs = silent ? 80 : 350
+        } = options;
         const originalHTML = btnEl ? btnEl.innerHTML : '';
         const setProgress = (msg) => { if (btnEl) btnEl.innerHTML = msg; };
         if (btnEl) btnEl.disabled = true;
 
-        const games = this.getCompetitionIdentificationCandidates();
+        const games = this.getCompetitionIdentificationCandidates(sourceData);
         if (games.length === 0) {
-            alert('Nenhum jogo pendente de identificação automática.');
+            if (!silent) alert('Nenhum jogo pendente de identificação automática.');
             if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = originalHTML; }
-            return;
+            return { found: 0, notFound: 0, total: 0, notFoundNames: [] };
         }
 
         let found = 0;
@@ -720,7 +958,7 @@ const App = {
             }
 
             if (found > 0 && found % 10 === 0) await this.saveData();
-            await new Promise(r => setTimeout(r, 350));
+            if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
         }
 
         await this.saveData();
@@ -729,10 +967,11 @@ const App = {
         if (notFound > 0) {
             msg += `\n${notFound} não encontrado(s): ${notFoundNames.slice(0, 8).join(', ')}${notFoundNames.length > 8 ? '...' : ''}`;
         }
-        alert(msg);
+        if (!silent) alert(msg);
 
         if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = originalHTML; }
-        this.render();
+        if (renderAfter) this.render();
+        return { found, notFound, total: games.length, notFoundNames };
     },
     
     async handleFileUpload(e) {
@@ -773,11 +1012,24 @@ const App = {
                 });
 
                 await this.saveData();
-                alert(`${uniqueNewData.length} novas entradas importadas com sucesso!`);
-                const pendingCompetitions = this.getCompetitionIdentificationCandidates().length;
-                if (pendingCompetitions > 0 && confirm(`${pendingCompetitions} jogo(s) estão sem liga ou como Confronto Misto. Deseja identificar as competições automaticamente pelo Sofascore agora?`)) {
-                    await this.autoIdentificarCompeticoes();
+                const identificationSourceData = uniqueNewData.length > 0 ? uniqueNewData : newData;
+                const newPendingCompetitions = this.getCompetitionIdentificationCandidates(identificationSourceData).length;
+                let autoResult = { found: 0, notFound: 0, total: 0 };
+                if (newPendingCompetitions > 0) {
+                    autoResult = await this.autoIdentificarCompeticoes(null, {
+                        sourceData: identificationSourceData,
+                        silent: true,
+                        renderAfter: false
+                    });
                 }
+                let importMessage = `${uniqueNewData.length} novas entradas importadas com sucesso!`;
+                if (autoResult.found > 0) {
+                    importMessage += `\n${autoResult.found} jogo(s) tiveram a competicao identificada automaticamente.`;
+                }
+                if (autoResult.notFound > 0) {
+                    importMessage += `\n${autoResult.notFound} jogo(s) ainda ficaram pendentes em Excecoes.`;
+                }
+                alert(importMessage);
             } else {
                 let matchCount = 0;
                 parsed.forEach(bet => {

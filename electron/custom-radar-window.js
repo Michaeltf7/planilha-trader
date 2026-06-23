@@ -11,6 +11,8 @@
     overlayReplica: false,
     showOdds: localStorage.getItem('custom_wradar_mod_show_odds') !== '0',
     showMeta: localStorage.getItem('custom_wradar_mod_show_meta') !== '0',
+    heatmapMode: localStorage.getItem('custom_wradar_mod_heatmap_mode') || (localStorage.getItem('custom_wradar_mod_show_heatmap') === '1' ? 'match' : 'off'),
+    heatmapMenuOpen: false,
     pinnedKey: '',
     pinnedIndex: null,
     lastSignature: '',
@@ -216,6 +218,7 @@
     if (text.includes('gol') || text.includes('goal')) return 'goal';
     if (text.includes('ataque perigoso') || text.includes('dangerous attack')) return 'dangerous';
     if (text.includes('remate certeiro') || text.includes('chute gol') || text.includes('shot on target') || text.includes('on target')) return 'shot-on-target';
+    if (text.includes('remate bloqueado') || text.includes('chute bloqueado') || text.includes('blocked shot') || text.includes('shot blocked')) return 'blocked-shot';
     if (text.includes('remate') || text.includes('chute') || text.includes('shot')) return 'shot';
     if (text.includes('escanteio') || text.includes('corner')) return 'corner';
     if (text.includes('cartao amarelo') || text.includes('yellow card')) return 'yellow-card';
@@ -235,7 +238,7 @@
     const map = {
       goal: 'bx-football', dangerous: directionalArrow,
       attack: directionalArrow,
-      defense: directionalArrow, 'shot-on-target': 'bx-target-lock', shot: 'bx-target-lock',
+      defense: directionalArrow, 'shot-on-target': 'bx-target-lock', 'blocked-shot': 'bx-block', shot: 'bx-target-lock',
       'goal-kick': 'bx-radio-circle', 'throw-in': 'bx-radio-circle',
       corner: 'bxs-flag-alt', 'yellow-card': 'bx-square', 'possible-red-card': 'bx-error', 'red-card': 'bx-square',
       control: 'bx-transfer-alt', foul: 'bx-square', neutral: 'bx-radio-circle'
@@ -303,6 +306,167 @@
     const row = (className, icon, label, stat) => `<span class="custom-radar-pressure-item ${className}"><i class='bx ${icon}'></i><strong>${label}</strong><b>${stat.home}-${stat.away}</b></span>`;
     return `<div class="custom-radar-pressure ${leader}" title="Eventos dos ultimos 5 minutos"><small>5m</small>${row('dangerous', 'bxs-bolt-circle', 'AP', recent.dangerous)}${row('on-target', 'bx-target-lock', 'CG', recent.onTarget)}</div>`;
   };
+  const heatEventScore = item => {
+    const text = normalizeMatchText(`${item?.comment || ''} ${item?.all || ''} ${item?.className || ''}`);
+    const type = eventType(item);
+    if (type === 'dangerous') return { type, label: 'Ataques perigosos', score: 5, offensive: true };
+    if (type === 'shot-on-target') return { type, label: 'Remates certeiros', score: 10, offensive: true };
+    if (type === 'blocked-shot') return { type, label: 'Remates bloqueados', score: 3, offensive: true };
+    if (type === 'shot') return { type, label: 'Remates', score: 6, offensive: true };
+    if (type === 'corner') return { type, label: 'Escanteios', score: 4, offensive: true };
+    if (type === 'attack') return { type, label: 'Ataques', score: 1 };
+    if (type === 'goal-kick') return { type, label: 'Tiros de meta', score: -1 };
+    if (type === 'foul' || text.includes('falta') || text.includes('free kick')) return { type: 'foul', label: 'Faltas', score: -0.5 };
+    return null;
+  };
+  const heatTimeMultiplier = seconds => {
+    const minute = Math.max(0, Math.floor((Number(seconds) || 0) / 60));
+    if (minute >= 80) return 1.3;
+    if (minute >= 70) return 1.15;
+    return 1;
+  };
+  const heatLevel = value => {
+    const score = Math.max(0, Number(value) || 0);
+    if (score >= 46) return { key: 'very-hot', label: 'Muito perigoso', icon: 'bx-burst' };
+    if (score >= 26) return { key: 'hot', label: 'Quente', icon: 'bxs-flame' };
+    if (score >= 11) return { key: 'watch', label: 'Atencao', icon: 'bx-error-circle' };
+    return { key: 'cold', label: 'Frio', icon: 'bx-check-circle' };
+  };
+  const heatWindowLabel = index => {
+    const start = index * 5;
+    return `${String(start).padStart(2, '0')}-${String(start + 5).padStart(2, '0')}`;
+  };
+  const summarizeHeatRange = (windows, latestSeconds, minutes) => {
+    if (!windows.length || !Number.isFinite(latestSeconds)) return { score: 0, level: heatLevel(0) };
+    const startSeconds = Math.max(0, latestSeconds - (minutes * 60));
+    const relevant = windows.filter(item => item.endSeconds > startSeconds && item.startSeconds <= latestSeconds);
+    const total = relevant.reduce((sum, item) => sum + item.score, 0);
+    const normalized = total / Math.max(1, minutes / 5);
+    return { score: normalized, level: heatLevel(normalized) };
+  };
+  const heatTrend = windows => {
+    const recent = windows.filter(item => item.events > 0).slice(-4);
+    if (recent.length < 2) return { key: 'stable', label: 'Estavel' };
+    const last = recent[recent.length - 1].score;
+    const prev = recent.slice(0, -1).reduce((sum, item) => sum + item.score, 0) / (recent.length - 1);
+    if (last >= prev + 8) return { key: 'up', label: 'Subindo' };
+    if (last <= prev - 8) return { key: 'down', label: 'Caindo' };
+    return { key: 'stable', label: 'Estavel' };
+  };
+  const heatmapPanelHtml = (items, clock, title, extraClass = '') => {
+    if (!items.length) {
+      return `<div class="custom-radar-heatmap ${extraClass} is-empty"><div class="custom-radar-heatmap-head"><strong><i class='bx bxs-flame'></i> ${escapeHtml(title)}</strong><span>Aguardando eventos</span></div></div>`;
+    }
+
+    const parsedItems = items
+      .map(item => {
+        const seconds = parseGameSeconds(commentTime(item));
+        const heat = heatEventScore(item);
+        const multiplier = heatTimeMultiplier(seconds);
+        return { item, seconds, heat, multiplier };
+      })
+      .filter(entry => entry.seconds !== null && entry.heat);
+    if (!parsedItems.length) {
+      return `<div class="custom-radar-heatmap ${extraClass} is-empty"><div class="custom-radar-heatmap-head"><strong><i class='bx bxs-flame'></i> ${escapeHtml(title)}</strong><span>Sem eventos de pressao ainda</span></div></div>`;
+    }
+
+    const period = clockPeriodInfo(clock);
+    let latest = parseGameSeconds(clock);
+    if (latest === null) latest = Math.max(...parsedItems.map(entry => entry.seconds), 0);
+    if (period.period === 'second' && latest < 45 * 60) latest += 45 * 60;
+    const maxWindow = Math.max(0, Math.floor(latest / 300));
+    const windows = Array.from({ length: maxWindow + 1 }, (_, index) => ({
+      index,
+      label: heatWindowLabel(index),
+      startSeconds: index * 300,
+      endSeconds: (index + 1) * 300,
+      score: 0,
+      events: 0,
+      details: {}
+    }));
+
+    parsedItems.forEach(({ seconds, heat, multiplier }) => {
+      const index = Math.max(0, Math.min(maxWindow, Math.floor(seconds / 300)));
+      const windowItem = windows[index];
+      windowItem.score += heat.score * multiplier;
+      windowItem.events += 1;
+      windowItem.details[heat.label] = (windowItem.details[heat.label] || 0) + 1;
+      if (multiplier > 1) windowItem.details[`Peso ${multiplier.toFixed(2)}x`] = (windowItem.details[`Peso ${multiplier.toFixed(2)}x`] || 0) + 1;
+    });
+
+    parsedItems
+      .filter(entry => entry.heat.offensive)
+      .sort((a, b) => a.seconds - b.seconds)
+      .forEach((entry, index, offensiveEvents) => {
+        const pressureCount = offensiveEvents
+          .slice(0, index + 1)
+          .filter(previous => entry.seconds - previous.seconds <= 120).length;
+        if (pressureCount < 3) return;
+
+        const windowIndex = Math.max(0, Math.min(maxWindow, Math.floor(entry.seconds / 300)));
+        const windowItem = windows[windowIndex];
+        if (windowItem.sequenceBonus) return;
+
+        const multiplier = heatTimeMultiplier(entry.seconds);
+        windowItem.sequenceBonus = true;
+        windowItem.score += 5 * multiplier;
+        windowItem.details['Bonus pressao continua'] = 1;
+    });
+
+    windows.forEach(item => {
+      item.score = Math.max(0, Math.round(item.score * 10) / 10);
+      item.level = heatLevel(item.score);
+    });
+
+    const visible = windows.slice(-18);
+    const range5 = summarizeHeatRange(windows, latest, 5);
+    const range10 = summarizeHeatRange(windows, latest, 10);
+    const range15 = summarizeHeatRange(windows, latest, 15);
+    const trend = heatTrend(windows);
+    const summary = (label, range) => `<span class="custom-radar-heat-summary ${range.level.key}"><small>${label}</small><strong><i class='bx ${range.level.icon}'></i>${range.level.label}</strong></span>`;
+    const block = item => {
+      const title = [
+        `${item.label} min`,
+        `Intensidade: ${item.score}`,
+        item.level.label,
+        ...Object.entries(item.details).map(([name, count]) => `${name}: ${count}`)
+      ].join(' | ');
+      return `<span class="custom-radar-heat-point-wrap" title="${escapeHtml(title)}"><b>${escapeHtml(item.label)}</b><i class="custom-radar-heat-point ${item.level.key}"></i></span>`;
+    };
+
+    return `
+      <div class="custom-radar-heatmap ${extraClass}">
+        <div class="custom-radar-heatmap-head">
+          <strong><i class='bx bxs-flame'></i> ${escapeHtml(title)}</strong>
+          <span class="custom-radar-heat-trend ${trend.key}">Tendencia: ${escapeHtml(trend.label)}</span>
+        </div>
+        <div class="custom-radar-heat-summary-row">
+          ${summary('5m', range5)}
+          ${summary('10m', range10)}
+          ${summary('15m', range15)}
+        </div>
+        <div class="custom-radar-heat-track">${visible.map(block).join('')}</div>
+      </div>
+    `;
+  };
+  const heatmapHtml = (data, clock, mode, names) => {
+    const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
+    if (mode === 'home') {
+      return heatmapPanelHtml(items.filter(item => item?.side === 'home'), clock, `Calor ${names.home || 'Casa'}`, 'is-team');
+    }
+    if (mode === 'away') {
+      return heatmapPanelHtml(items.filter(item => item?.side === 'away'), clock, `Calor ${names.away || 'Visitante'}`, 'is-team');
+    }
+    if (mode === 'teams') {
+      return `
+        <div class="custom-radar-heatmap-split">
+          ${heatmapPanelHtml(items.filter(item => item?.side === 'home'), clock, names.home || 'Casa', 'is-team')}
+          ${heatmapPanelHtml(items.filter(item => item?.side === 'away'), clock, names.away || 'Visitante', 'is-team')}
+        </div>
+      `;
+    }
+    return heatmapPanelHtml(items, clock, 'Temperatura do jogo');
+  };
   const listHtml = data => {
     const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
     const focusedKey = commentKey(getFocusedComment(data) || getLastComment(data));
@@ -356,11 +520,32 @@
     const idBolsa = event?.odds?.idBolsa || event?.idBolsa || '';
     const whUrl = event?.id ? `https://wradar.com.br/radar?eventId=${encodeURIComponent(event.id)}&title=${encodeURIComponent(event.name || '')}&mod=true` : '#';
     const sportUrl = idBolsa ? `https://bolsadeaposta.bet.br/widget/mradar?id=${encodeURIComponent(idBolsa)}` : '';
+    const heatmapMode = ['off', 'match', 'home', 'away', 'teams'].includes(state.heatmapMode) ? state.heatmapMode : 'off';
+    const heatmapActive = heatmapMode !== 'off';
+    const heatmapLabels = { off: 'Desligado', match: 'Partida', home: 'Casa', away: 'Visitante', teams: 'Times separados' };
+    const heatmapMenu = `
+      <div class="custom-radar-heat-menu ${state.heatmapMenuOpen ? 'is-open' : ''}">
+        ${[
+          ['match', 'Partida', 'bx-football'],
+          ['home', names.home || 'Casa', 'bx-home-alt'],
+          ['away', names.away || 'Visitante', 'bx-plane'],
+          ['teams', 'Times separados', 'bx-columns'],
+          ['off', 'Desligado', 'bx-hide']
+        ].map(([mode, label, icon]) => `<button type="button" class="${heatmapMode === mode ? 'active' : ''}" data-action="heatmap-mode" data-mode="${mode}"><i class='bx ${icon}'></i><span>${escapeHtml(label)}</span></button>`).join('')}
+      </div>
+    `;
+    const heatmapTopButton = `
+      <span class="custom-radar-heat-menu-wrap">
+        <button type="button" class="custom-radar-icon-btn ${heatmapActive ? 'active' : ''}" data-action="heatmap-menu" title="Mapa de calor: ${escapeHtml(heatmapLabels[heatmapMode] || 'Desligado')}"><i class='bx bxs-flame'></i></button>
+        ${heatmapMenu}
+      </span>
+    `;
     content.innerHTML = `
       <div class="custom-radar-window-toolbar">
         <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="overlay" title="Alternar fundo limpo/painel"><i class='bx bx-layer'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
+        ${heatmapTopButton}
         <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="close" title="Fechar"><i class='bx bx-x'></i></button>
       </div>
@@ -370,6 +555,7 @@
           <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="overlay" title="Alternar fundo limpo/painel"><i class='bx bx-layer'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
+          ${heatmapTopButton}
           <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="close" title="Fechar"><i class='bx bx-x'></i></button>
         </div>
@@ -386,10 +572,10 @@
             <div class="custom-radar-current-event ${escapeHtml(current?.side || '')} ${escapeHtml(type)} ${pinned ? 'is-highlighted' : ''}"><span>${escapeHtml(current?.time || clock || '--')}</span>${eventIcon(current)}<strong>${escapeHtml(currentText)}</strong></div>
             ${listHtml(data)}
           </div>
-          <div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}</div>
+          <div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${heatmapActive ? heatmapHtml(data, clock, heatmapMode, names) : ''}</div>
         </div>
         <aside class="custom-radar-side custom-radar-tools">
-          <div class="custom-radar-controls"><button type="button" class="${state.showOdds ? 'active' : ''}" data-action="odds"><i class='bx bx-money'></i> Odds</button><button type="button" class="${state.showMeta ? 'active' : ''}" data-action="meta"><i class='bx bx-data'></i> IDs</button><button type="button" class="custom-radar-highlight-action" data-action="highlight"><i class='bx bx-crop'></i> Destacar</button></div>
+          <div class="custom-radar-controls"><button type="button" class="${state.showOdds ? 'active' : ''}" data-action="odds"><i class='bx bx-money'></i> Odds</button><button type="button" class="${state.showMeta ? 'active' : ''}" data-action="meta"><i class='bx bx-data'></i> IDs</button><button type="button" class="${heatmapActive ? 'active' : ''}" data-action="heatmap-menu"><i class='bx bxs-flame'></i> ${escapeHtml(heatmapLabels[heatmapMode] || 'Calor')}</button><button type="button" class="custom-radar-highlight-action" data-action="highlight"><i class='bx bx-crop'></i> Destacar</button></div>
           ${state.showOdds ? `<div class="custom-radar-card"><h3><i class='bx bx-line-chart'></i> William Hill</h3><div class="custom-radar-odds-grid">${odds(event).map(item => `<div class="custom-radar-odd"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`).join('') || '<p class="custom-radar-muted">Odds indisponiveis para este evento.</p>'}</div></div>` : ''}
           ${state.showMeta ? `<div class="custom-radar-card"><h3><i class='bx bx-fingerprint'></i> Fontes</h3><dl class="custom-radar-meta"><dt>Event ID</dt><dd>${escapeHtml(event.id || '-')}</dd><dt>WH Entity</dt><dd>${escapeHtml(event.rawEntityId || '-')}</dd><dt>ID Bolsa</dt><dd>${escapeHtml(idBolsa || '-')}</dd><dt>Sofascore</dt><dd>${escapeHtml(event.sofascoreId || '-')}</dd><dt>365Scores</dt><dd>${escapeHtml(event.scores365PartnerId || event.matchId || '-')}</dd></dl></div>` : ''}
           <div class="custom-radar-links">${sportUrl ? `<a href="${escapeHtml(sportUrl)}" target="_blank"><i class='bx bx-world'></i> Widget mRadar</a>` : ''}<a href="${escapeHtml(whUrl)}" target="_blank"><i class='bx bx-crosshair'></i> WRadar original</a>${event.packLink ? `<a href="${escapeHtml(event.packLink)}" target="_blank"><i class='bx bx-football'></i> Packball</a>` : ''}</div>
@@ -495,6 +681,11 @@
       state.payload = {};
     }
     state.event = state.payload.event || {};
+    if (state.payload.settings?.heatmapMode) {
+      state.heatmapMode = state.payload.settings.heatmapMode;
+    } else if (state.payload.settings && typeof state.payload.settings.showHeatmap === 'boolean') {
+      state.heatmapMode = state.payload.settings.showHeatmap ? 'match' : 'off';
+    }
     state.overlayReplica = !!state.payload.overlayReplica;
     if (state.overlayReplica) {
       state.density = 'compact';
@@ -531,7 +722,8 @@
   });
 
   document.addEventListener('click', event => {
-    const action = event.target.closest('[data-action]')?.getAttribute('data-action');
+    const target = event.target;
+    const action = target.closest('[data-action]')?.getAttribute('data-action');
     if (action === 'theme') {
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       localStorage.setItem('custom_wradar_mod_theme', state.theme);
@@ -572,6 +764,20 @@
     if (action === 'meta') {
       state.showMeta = !state.showMeta;
       localStorage.setItem('custom_wradar_mod_show_meta', state.showMeta ? '1' : '0');
+      render();
+      return;
+    }
+    if (action === 'heatmap-menu') {
+      state.heatmapMenuOpen = !state.heatmapMenuOpen;
+      render();
+      return;
+    }
+    if (action === 'heatmap-mode') {
+      const mode = target.closest('[data-mode]')?.dataset?.mode || 'off';
+      state.heatmapMode = ['off', 'match', 'home', 'away', 'teams'].includes(mode) ? mode : 'off';
+      state.heatmapMenuOpen = false;
+      localStorage.setItem('custom_wradar_mod_heatmap_mode', state.heatmapMode);
+      localStorage.setItem('custom_wradar_mod_show_heatmap', state.heatmapMode === 'off' ? '0' : '1');
       render();
       return;
     }

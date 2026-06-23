@@ -1363,13 +1363,17 @@ const AnalisePro = {
 
     getCustomRadarSettings() {
         try {
+            const heatmapMode = localStorage.getItem('custom_wradar_mod_heatmap_mode')
+                || (localStorage.getItem('custom_wradar_mod_show_heatmap') === '1' ? 'match' : 'off');
             return {
                 theme: localStorage.getItem('custom_wradar_mod_theme') || document.documentElement.getAttribute('data-theme') || 'dark',
                 showOdds: localStorage.getItem('custom_wradar_mod_show_odds') !== '0',
-                showMeta: localStorage.getItem('custom_wradar_mod_show_meta') !== '0'
+                showMeta: localStorage.getItem('custom_wradar_mod_show_meta') !== '0',
+                showHeatmap: heatmapMode !== 'off',
+                heatmapMode
             };
         } catch (_) {
-            return { theme: 'dark', showOdds: true, showMeta: true };
+            return { theme: 'dark', showOdds: true, showMeta: true, showHeatmap: false, heatmapMode: 'off' };
         }
     },
 
@@ -1380,7 +1384,7 @@ const AnalisePro = {
             if (!event) throw new Error('Jogo nao encontrado no WRadar para este Sofascore ID.');
 
             if (window.traderWRadarRealMod?.openWindow) {
-                await window.traderWRadarRealMod.openWindow({ event, gameInfo });
+                await window.traderWRadarRealMod.openWindow({ event, gameInfo, settings: this.getCustomRadarSettings() });
                 return;
             }
 
@@ -1607,6 +1611,9 @@ const AnalisePro = {
                         </button>
                         <button type="button" class="${settings.showMeta ? 'active' : ''}" onclick="AnalisePro.toggleCustomRadarOption('showMeta')">
                             <i class='bx bx-data'></i> IDs
+                        </button>
+                        <button type="button" class="${settings.showHeatmap ? 'active' : ''}" onclick="AnalisePro.toggleCustomRadarOption('showHeatmap')">
+                            <i class='bx bxs-flame'></i> Calor
                         </button>
                         <button type="button" class="custom-radar-highlight-action" onclick="AnalisePro.openCustomRadarDesktopHighlight()">
                             <i class='bx bx-crop'></i> Destacar
@@ -1991,8 +1998,19 @@ const AnalisePro = {
 
     toggleCustomRadarOption(option) {
         const settings = this.getCustomRadarSettings();
-        const key = option === 'showMeta' ? 'custom_wradar_mod_show_meta' : 'custom_wradar_mod_show_odds';
-        localStorage.setItem(key, settings[option] ? '0' : '1');
+        const keys = {
+            showMeta: 'custom_wradar_mod_show_meta',
+            showOdds: 'custom_wradar_mod_show_odds',
+            showHeatmap: 'custom_wradar_mod_heatmap_mode'
+        };
+        const key = keys[option] || keys.showOdds;
+        if (option === 'showHeatmap') {
+            const nextMode = settings.showHeatmap ? 'off' : 'match';
+            localStorage.setItem(key, nextMode);
+            localStorage.setItem('custom_wradar_mod_show_heatmap', nextMode === 'off' ? '0' : '1');
+        } else {
+            localStorage.setItem(key, settings[option] ? '0' : '1');
+        }
         if (this.customWRadarEvent) this.renderCustomWRadarMod(this.customWRadarEvent);
     },
 

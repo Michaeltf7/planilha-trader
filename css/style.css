@@ -3296,6 +3296,73 @@ body.custom-radar-overlay-replica a {
     font-size: 20px;
 }
 
+.custom-radar-icon-btn.active {
+    border-color: rgba(249, 115, 22, 0.56);
+    background: rgba(249, 115, 22, 0.2);
+    color: #fed7aa;
+    box-shadow: 0 0 16px rgba(249, 115, 22, 0.18);
+}
+
+.custom-radar-heat-menu-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+.custom-radar-heat-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 30;
+    display: none;
+    min-width: 190px;
+    padding: 6px;
+    border: 1px solid var(--custom-radar-border);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.96);
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(12px);
+}
+
+.custom-radar-window-toolbar .custom-radar-heat-menu {
+    top: auto;
+    right: 0;
+    bottom: calc(100% + 8px);
+}
+
+.custom-radar-heat-menu.is-open {
+    display: grid;
+    gap: 4px;
+}
+
+.custom-radar-heat-menu button {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 9px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #e2e8f0;
+    font: 900 12px/1 'Outfit', sans-serif;
+    text-align: left;
+    cursor: pointer;
+}
+
+.custom-radar-heat-menu button:hover,
+.custom-radar-heat-menu button.active {
+    background: rgba(249, 115, 22, 0.18);
+    color: #fed7aa;
+}
+
+.custom-radar-heat-menu button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .custom-radar-scorebar {
     padding: 14px;
     margin-bottom: 18px;
@@ -3843,6 +3910,7 @@ body.custom-radar-overlay-replica a {
     border-radius: 12px;
     background: rgba(2, 6, 23, 0.62);
     backdrop-filter: blur(8px);
+    overflow: visible;
 }
 
 .custom-wradar-modal[data-radar-density="wide"] .custom-radar-window-toolbar {
@@ -4115,6 +4183,222 @@ body.custom-radar-overlay-replica a {
 
 .custom-radar-pressure-item.attacks i {
     color: #facc15;
+}
+
+.custom-radar-heatmap {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid var(--custom-radar-border);
+    border-radius: 10px;
+    background: rgba(2, 6, 23, 0.48);
+    color: var(--custom-radar-text);
+    font-family: 'Outfit', sans-serif;
+}
+
+.custom-radar-heatmap-split {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: stretch;
+}
+
+.custom-radar-heatmap.is-team {
+    margin-top: 0;
+    padding: 8px 10px;
+    gap: 6px;
+}
+
+.custom-radar-heatmap-head,
+.custom-radar-heat-summary-row,
+.custom-radar-heat-track {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.custom-radar-heatmap-head {
+    justify-content: space-between;
+}
+
+.custom-radar-heatmap-head strong,
+.custom-radar-heat-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 1000;
+    line-height: 1;
+}
+
+.custom-radar-heat-trend {
+    color: var(--custom-radar-muted);
+    white-space: nowrap;
+}
+
+.custom-radar-heat-trend.up { color: #fb7185; }
+.custom-radar-heat-trend.down { color: #22c55e; }
+
+.custom-radar-heat-summary-row {
+    flex-wrap: wrap;
+}
+
+.custom-radar-heat-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 7px;
+    border-radius: 8px;
+    border: 1px solid var(--custom-radar-border);
+    background: var(--custom-radar-panel);
+    line-height: 1;
+}
+
+.custom-radar-heat-summary small {
+    color: var(--custom-radar-muted);
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.custom-radar-heat-summary strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--custom-radar-text);
+    font-size: 11px;
+    font-weight: 1000;
+}
+
+.custom-radar-heat-track {
+    align-items: stretch;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+}
+
+.custom-radar-heatmap.is-team .custom-radar-heat-track {
+    gap: 6px;
+    min-height: 28px;
+    align-items: center;
+    padding-bottom: 0;
+}
+
+.custom-radar-heat-point-wrap {
+    display: inline-grid;
+    place-items: center;
+    gap: 4px;
+    flex: 0 0 38px;
+    min-width: 38px;
+    padding: 1px 0;
+    line-height: 1;
+}
+
+.custom-radar-heat-point-wrap b {
+    font-size: 10px;
+    font-weight: 1000;
+    color: #f8fafc;
+    white-space: nowrap;
+    text-shadow: 0 0 6px rgba(248, 250, 252, 0.72), 0 1px 3px rgba(0, 0, 0, 0.72);
+}
+
+.custom-radar-heat-point {
+    display: block;
+    width: 13px;
+    height: 13px;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.78);
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.34), 0 0 14px currentColor;
+}
+
+.custom-radar-heat-summary.cold,
+.custom-radar-heat-point.cold {
+    background: #16a34a;
+    border-color: #86efac;
+    color: #16a34a;
+}
+
+.custom-radar-heat-summary.watch,
+.custom-radar-heat-point.watch {
+    background: #facc15;
+    border-color: #fef08a;
+    color: #facc15;
+}
+
+.custom-radar-heat-summary.hot,
+.custom-radar-heat-point.hot {
+    background: #f97316;
+    border-color: #fed7aa;
+    color: #f97316;
+}
+
+.custom-radar-heat-summary.very-hot,
+.custom-radar-heat-point.very-hot {
+    background: #dc2626;
+    border-color: #fecaca;
+    box-shadow: 0 0 0 2px rgba(127, 29, 29, 0.32), 0 0 18px rgba(220, 38, 38, 0.9);
+    color: #dc2626;
+}
+
+.custom-radar-heat-point.watch {
+    box-shadow: 0 0 0 2px rgba(113, 63, 18, 0.28), 0 0 16px rgba(250, 204, 21, 0.84);
+}
+
+.custom-radar-heat-point.hot {
+    box-shadow: 0 0 0 2px rgba(124, 45, 18, 0.3), 0 0 17px rgba(249, 115, 22, 0.9);
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heatmap {
+    padding: 7px;
+    gap: 6px;
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heat-point-wrap {
+    flex-basis: 34px;
+    min-width: 34px;
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heat-point {
+    width: 11px;
+    height: 11px;
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heatmap.is-team {
+    padding: 6px 8px;
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heatmap.is-team .custom-radar-heatmap-head {
+    align-items: center;
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heatmap.is-team .custom-radar-heat-summary-row {
+    display: none;
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heatmap.is-team .custom-radar-heat-track {
+    min-height: 24px;
+}
+
+.custom-wradar-modal[data-radar-overlay="clean"] .custom-radar-heatmap,
+.custom-wradar-modal[data-radar-overlay="clean"] .custom-radar-heatmap-split {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    margin-top: 4px;
+}
+
+.custom-wradar-modal[data-radar-overlay="clean"] .custom-radar-heatmap-split > .custom-radar-heatmap {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    margin-top: 0;
+}
+
+.custom-wradar-modal[data-radar-overlay="clean"][data-radar-density="compact"] .custom-radar-heat-summary-row {
+    display: none;
 }
 
 .custom-radar-mini-info {
