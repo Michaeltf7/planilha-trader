@@ -2662,6 +2662,12 @@ tr:hover td {
     cursor: pointer;
 }
 
+#odds-test-btn.danger {
+    background: #dc2626;
+    color: white;
+    box-shadow: 0 10px 22px rgba(220, 38, 38, 0.22);
+}
+
 .odds-url-wrapper {
     min-width: 0;
 }
@@ -2744,10 +2750,11 @@ tr:hover td {
 
 .odds-score-item strong {
     color: #facc15;
-    font-size: 32px;
+    font-size: 25px;
     line-height: 1;
     font-weight: 950;
     letter-spacing: 0;
+    white-space: nowrap;
 }
 
 .odds-market-panel,

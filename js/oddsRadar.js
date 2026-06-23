@@ -2,6 +2,8 @@ const OddsRadar = {
     currentGame: null,
     lastResult: null,
     loading: false,
+    liveFeedId: null,
+    unsubscribeFeed: null,
 
     open(gameInfo = {}) {
         this.currentGame = gameInfo || {};
@@ -10,6 +12,11 @@ const OddsRadar = {
     },
 
     close() {
+        this.stopLiveFeed();
+        if (this.unsubscribeFeed) {
+            this.unsubscribeFeed();
+            this.unsubscribeFeed = null;
+        }
         const modal = document.getElementById('odds-radar-modal');
         if (modal) modal.remove();
         this.loading = false;
@@ -55,8 +62,8 @@ const OddsRadar = {
                             Buscar
                         </button>
                         <button id="odds-test-btn" class="btn-primary">
-                            <i class='bx bx-search-alt'></i>
-                            Ler odds
+                            <i class='bx bx-broadcast'></i>
+                            Conectar
                         </button>
                     </div>
 
@@ -116,12 +123,12 @@ const OddsRadar = {
         const btn = document.getElementById('odds-test-btn');
         const findBtn = document.getElementById('odds-find-btn');
         const input = document.getElementById('odds-url');
-        if (btn) btn.addEventListener('click', () => this.testRead());
+        if (btn) btn.addEventListener('click', () => this.toggleLiveFeed());
         if (findBtn) findBtn.addEventListener('click', () => this.findMatchUrl());
         if (input) {
             input.focus();
             input.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') this.testRead();
+                if (event.key === 'Enter') this.toggleLiveFeed();
                 if (event.key === 'Escape') this.close();
             });
         }
@@ -141,7 +148,7 @@ const OddsRadar = {
                 this.setStatus('Partida encontrada. Agora vou ler as odds.', 'success');
                 this.loading = false;
                 this.setButtonLoading(false, 'find');
-                await this.testRead();
+                await this.startLiveFeed();
                 return;
             }
             this.renderDebug({ source: 'betfair-search', samples: result?.matches || [], error: 'Nenhum link exato encontrado.' });
@@ -163,7 +170,30 @@ const OddsRadar = {
         status.innerHTML = `<i class='bx ${icon}'></i><span>${this.escapeHtml(message)}</span>`;
     },
 
-    async testRead() {
+    ensureFeedListener() {
+        if (this.unsubscribeFeed || !window.traderOddsRadar?.onUpdate) return;
+        this.unsubscribeFeed = window.traderOddsRadar.onUpdate((payload) => {
+            if (!payload || payload.feedId !== this.liveFeedId) return;
+            if (payload.error) {
+                this.setStatus(payload.error, 'error');
+                return;
+            }
+            this.lastResult = payload.data || null;
+            this.renderResult(this.lastResult);
+            this.setStatus(`Odds ao vivo atualizadas ${this.formatClock(new Date())}.`, 'success');
+        });
+    },
+
+    async toggleLiveFeed() {
+        if (this.liveFeedId) {
+            await this.stopLiveFeed();
+            this.setStatus('Leitura ao vivo parada.', 'info');
+            return;
+        }
+        await this.startLiveFeed();
+    },
+
+    async startLiveFeed() {
         if (this.loading) return;
 
         const urlInput = document.getElementById('odds-url');
@@ -175,25 +205,34 @@ const OddsRadar = {
         }
 
         this.loading = true;
-        this.setStatus('Abrindo Betfair Exchange escondida e procurando mercados...', 'info');
+        this.setStatus('Abrindo Betfair Exchange escondida e conectando leitura ao vivo...', 'info');
         this.setButtonLoading(true, 'read');
 
         try {
-            const result = await window.traderOddsRadar?.read?.({
+            this.ensureFeedListener();
+            const result = await window.traderOddsRadar?.startFeed?.({
                 url,
                 source: 'betfair-exchange',
                 game: this.currentGame
             });
-            this.lastResult = result;
-            this.renderResult(result);
-            const total = (result?.matchOdds?.length || 0) + (result?.goalLines?.length || 0);
-            this.setStatus(total ? `Leitura concluida. ${total} possiveis odds encontradas.` : 'Leitura concluida, mas nenhuma odd dos mercados alvo foi encontrada.', total ? 'success' : 'info');
+            this.liveFeedId = result?.feedId || null;
+            this.setStatus('Conectado. A página da Betfair fica aberta escondida e atualizando.', 'success');
+            this.setLiveButtonState(true);
         } catch (error) {
             this.setStatus(error?.message || 'Falha ao ler odds.', 'error');
             this.renderDebug({ error: error?.message || String(error) });
         } finally {
             this.loading = false;
             this.setButtonLoading(false, 'read');
+        }
+    },
+
+    async stopLiveFeed() {
+        const feedId = this.liveFeedId;
+        this.liveFeedId = null;
+        this.setLiveButtonState(false);
+        if (feedId && window.traderOddsRadar?.stopFeed) {
+            await window.traderOddsRadar.stopFeed(feedId).catch(() => {});
         }
     },
 
@@ -208,8 +247,18 @@ const OddsRadar = {
             return;
         }
         btn.innerHTML = isLoading
-            ? `<i class='bx bx-loader-alt bx-spin'></i> Lendo`
-            : `<i class='bx bx-search-alt'></i> Ler odds`;
+            ? `<i class='bx bx-loader-alt bx-spin'></i> Conectando`
+            : `<i class='bx bx-broadcast'></i> Conectar`;
+    },
+
+    setLiveButtonState(isLive) {
+        const btn = document.getElementById('odds-test-btn');
+        if (!btn) return;
+        btn.disabled = false;
+        btn.classList.toggle('danger', Boolean(isLive));
+        btn.innerHTML = isLive
+            ? `<i class='bx bx-stop-circle'></i> Parar`
+            : `<i class='bx bx-broadcast'></i> Conectar`;
     },
 
     renderResult(result) {
@@ -228,9 +277,9 @@ const OddsRadar = {
             const el = document.getElementById(id);
             if (el) el.textContent = value || '-';
         };
-        setPrice('odds-home-price', match.home?.price);
-        setPrice('odds-draw-price', match.draw?.price);
-        setPrice('odds-away-price', match.away?.price);
+        setPrice('odds-home-price', this.formatPair(match.home));
+        setPrice('odds-draw-price', this.formatPair(match.draw));
+        setPrice('odds-away-price', this.formatPair(match.away));
 
         const goals = Array.isArray(summary?.goalLines) ? summary.goalLines : [];
         const list = document.getElementById('odds-goals-list');
@@ -242,11 +291,11 @@ const OddsRadar = {
                 <strong>${this.escapeHtml(line.line)}</strong>
                 <div>
                     <span>Mais</span>
-                    <em>${this.escapeHtml(line.over || '-')}</em>
+                    <em>${this.escapeHtml(this.formatPair(line.over))}</em>
                 </div>
                 <div>
                     <span>Menos</span>
-                    <em>${this.escapeHtml(line.under || '-')}</em>
+                    <em>${this.escapeHtml(this.formatPair(line.under))}</em>
                 </div>
             </div>
         `).join('');
@@ -268,9 +317,21 @@ const OddsRadar = {
                     <strong>${this.escapeHtml(item.label || item.market || 'Mercado')}</strong>
                     <span>${this.escapeHtml(item.context || item.market || '')}</span>
                 </div>
-                <em>${this.escapeHtml(item.price || '-')}</em>
+                <em>${this.escapeHtml(this.formatPair(item))}</em>
             </div>
         `).join('');
+    },
+
+    formatPair(value) {
+        if (!value) return '-';
+        if (typeof value === 'string') return value;
+        const back = value.back || value.price || '-';
+        const lay = value.lay || '-';
+        return lay && lay !== '-' ? `${back} / ${lay}` : back;
+    },
+
+    formatClock(date) {
+        return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     },
 
     renderDebug(result) {

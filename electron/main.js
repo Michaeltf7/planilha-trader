@@ -7,6 +7,7 @@ const childWindows = new Set();
 const replicaWindows = new Map();
 const nativeReplicaProcesses = new Set();
 const wradarRealModFeeds = new Map();
+const oddsRadarFeeds = new Map();
 
 if (process.env.PLANILHA_TRADER_PORTABLE_DATA) {
   app.setPath('userData', path.resolve(process.env.PLANILHA_TRADER_PORTABLE_DATA));
@@ -807,11 +808,22 @@ function scrapeOddsRadarScript(game = {}) {
     const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
     const pricePattern = '(?<![\\\\dR$])(?:[1-9]\\\\d?|1)[\\\\.,]\\\\d{1,2}(?!\\\\d)';
     const priceRe = new RegExp(pricePattern);
+    const priceGlobalRe = new RegExp(pricePattern, 'g');
     const marketMatchRe = /match odds|resultado final|vencedor da partida|resultado da partida|1x2|empate|draw|home|away/i;
     const goalLineRe = /limite de gols|total goals|total de gols|over\\/?under|mais de|menos de|over|under|gols/i;
     const normalizePrice = value => clean(value).replace(',', '.');
     const escapeRegex = value => String(value || '').replace(/[|\\\\{}()[\\]^$+*?.]/g, '\\\\$&');
     const pageText = clean(document.body?.innerText || '');
+    const pricesFromText = text => Array.from(clean(text).matchAll(priceGlobalRe))
+      .map(match => normalizePrice(match[0]))
+      .filter((value, index, array) => array.indexOf(value) === index)
+      .filter(value => Number(value) > 1 && Number(value) < 1000);
+    const bestPairFromPrices = prices => {
+      if (!Array.isArray(prices) || !prices.length) return { back: '-', lay: '-' };
+      if (prices.length >= 6) return { back: prices[2] || '-', lay: prices[3] || '-' };
+      if (prices.length >= 2) return { back: prices[0] || '-', lay: prices[1] || '-' };
+      return { back: prices[0] || '-', lay: '-' };
+    };
 
     const compactContext = text => clean(text).slice(0, 240);
     const readAround = node => {
@@ -839,35 +851,54 @@ function scrapeOddsRadarScript(game = {}) {
     };
 
     const readMatchSummary = () => {
-      const home = findSelectionPrice(game.home);
-      const draw = findSelectionPrice('Empate') || findSelectionPrice('Draw');
-      const away = findSelectionPrice(game.away);
-      if (!home && !draw && !away && matchOdds.length >= 3) {
+      const rowForLabel = label => {
+        if (!label) return null;
+        const normalizedLabel = clean(label).toLowerCase();
+        const rows = Array.from(document.querySelectorAll('tr, [class*="runner"], [data-selection-id], [class*="selection"]'));
+        return rows.find(row => {
+          const text = clean(row.innerText || row.textContent || '');
+          return text.length < 900 && text.toLowerCase().includes(normalizedLabel) && pricesFromText(text).length >= 2;
+        }) || null;
+      };
+      const pairForLabel = label => {
+        const row = rowForLabel(label);
+        if (row) return bestPairFromPrices(pricesFromText(row.innerText || row.textContent || ''));
+        const price = findSelectionPrice(label);
+        return price ? { back: price, lay: '-' } : { back: '-', lay: '-' };
+      };
+      const home = pairForLabel(game.home);
+      const draw = pairForLabel('Empate');
+      const away = pairForLabel(game.away);
+      if ([home, draw, away].every(item => item.back === '-' && item.lay === '-') && matchOdds.length >= 3) {
         return {
-          home: { label: game.home || matchOdds[0].label || 'Casa', price: matchOdds[0].price || '-' },
-          draw: { label: 'Empate', price: matchOdds[1].price || '-' },
-          away: { label: game.away || matchOdds[2].label || 'Fora', price: matchOdds[2].price || '-' }
+          home: { label: game.home || matchOdds[0].label || 'Casa', ...bestPairFromPrices([matchOdds[0].price, matchOdds[0].lay].filter(Boolean)) },
+          draw: { label: 'Empate', ...bestPairFromPrices([matchOdds[1].price, matchOdds[1].lay].filter(Boolean)) },
+          away: { label: game.away || matchOdds[2].label || 'Fora', ...bestPairFromPrices([matchOdds[2].price, matchOdds[2].lay].filter(Boolean)) }
         };
       }
-      if (!home && !draw && !away) return null;
       return {
-        home: { label: game.home || 'Casa', price: home || '-' },
-        draw: { label: 'Empate', price: draw || '-' },
-        away: { label: game.away || 'Fora', price: away || '-' }
+        home: { label: game.home || 'Casa', ...home },
+        draw: { label: 'Empate', ...draw },
+        away: { label: game.away || 'Fora', ...away }
       };
     };
 
     const readGoalLines = () => {
       const lines = new Map();
-      const rx = new RegExp('(Mais|Menos|Over|Under)\\\\s+(?:de\\\\s+)?(\\\\d+[\\\\.,]\\\\d+)\\\\s*(?:gols|goals)?[\\\\s\\\\S]{0,100}?(' + pricePattern + ')', 'ig');
-      let match;
-      while ((match = rx.exec(pageText))) {
-        const side = /mais|over/i.test(match[1]) ? 'over' : 'under';
-        const line = match[2].replace(',', '.');
-        const price = normalizePrice(match[3]);
+      const rows = Array.from(document.querySelectorAll('tr, [class*="runner"], [data-selection-id], [class*="selection"]'));
+      for (const row of rows) {
+        const text = clean(row.innerText || row.textContent || '');
+        if (!text || text.length > 900) continue;
+        const labelMatch = text.match(/(Mais|Menos|Over|Under)\\s+(?:de\\s+)?(\\d+[\\.,]\\d+)\\s*(?:gols|goals)?/i);
+        if (!labelMatch) continue;
+        const prices = pricesFromText(text);
+        if (!prices.length) continue;
+        const side = /mais|over/i.test(labelMatch[1]) ? 'over' : 'under';
+        const line = labelMatch[2].replace(',', '.');
+        const pair = bestPairFromPrices(prices);
         if (!lines.has(line)) lines.set(line, { line, over: null, under: null });
         const entry = lines.get(line);
-        if (!entry[side]) entry[side] = price;
+        if (!entry[side]) entry[side] = pair;
       }
       return Array.from(lines.values())
         .filter(item => item.over || item.under)
@@ -902,6 +933,7 @@ function scrapeOddsRadarScript(game = {}) {
 
       const entry = {
         price: normalizePrice(price),
+        lay: bestPairFromPrices(pricesFromText(context)).lay,
         label: getLabel(context, price),
         context
       };
@@ -979,6 +1011,86 @@ ipcMain.handle('odds-radar:read', async (_event, rawPayload) => {
   } finally {
     if (!win.isDestroyed()) win.close();
   }
+});
+
+async function pollOddsRadarFeed(feedId) {
+  const feed = oddsRadarFeeds.get(feedId);
+  if (!feed || !feed.window || feed.window.isDestroyed() || feed.owner.isDestroyed()) {
+    cleanupOddsRadarFeed(feedId);
+    return;
+  }
+
+  try {
+    const data = await feed.window.webContents.executeJavaScript(scrapeOddsRadarScript(feed.game), true);
+    const signature = JSON.stringify(data?.summary || {});
+    if (signature !== feed.lastSignature) {
+      feed.lastSignature = signature;
+      feed.owner.send('odds-radar:update', {
+        feedId,
+        data: {
+          ...data,
+          source: feed.source
+        }
+      });
+    }
+  } catch (error) {
+    feed.owner.send('odds-radar:update', {
+      feedId,
+      error: error?.message || 'Falha ao ler odds ao vivo.'
+    });
+  } finally {
+    const active = oddsRadarFeeds.get(feedId);
+    if (active) {
+      clearTimeout(active.timer);
+      active.timer = setTimeout(() => pollOddsRadarFeed(feedId), 900);
+    }
+  }
+}
+
+function cleanupOddsRadarFeed(feedId) {
+  const feed = oddsRadarFeeds.get(feedId);
+  if (!feed) return;
+  clearTimeout(feed.timer);
+  if (feed.window && !feed.window.isDestroyed()) feed.window.close();
+  oddsRadarFeeds.delete(feedId);
+}
+
+ipcMain.handle('odds-radar:start', async (event, rawPayload) => {
+  const payload = normalizeOddsRadarPayload(rawPayload);
+  const owner = event.sender;
+  const feedId = `${owner.id}:odds:${Date.now()}`;
+  const win = createOddsRadarWindow();
+
+  const feed = {
+    id: feedId,
+    owner,
+    window: win,
+    timer: null,
+    lastSignature: '',
+    source: payload.source,
+    game: payload.game || {}
+  };
+  oddsRadarFeeds.set(feedId, feed);
+
+  win.on('closed', () => cleanupOddsRadarFeed(feedId));
+  owner.once('destroyed', () => cleanupOddsRadarFeed(feedId));
+
+  const loadWait = waitForOddsRadarLoad(win);
+  win.loadURL(payload.url).catch(() => {});
+  await loadWait;
+  await new Promise(resolve => setTimeout(resolve, 3500));
+
+  if (oddsRadarFeeds.has(feedId)) {
+    clearTimeout(feed.timer);
+    feed.timer = setTimeout(() => pollOddsRadarFeed(feedId), 0);
+  }
+
+  return { feedId, source: payload.source };
+});
+
+ipcMain.handle('odds-radar:stop', async (_event, feedId) => {
+  cleanupOddsRadarFeed(String(feedId || ''));
+  return true;
 });
 
 ipcMain.handle('odds-radar:find', async (_event, rawPayload) => {
