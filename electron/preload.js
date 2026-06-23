@@ -141,19 +141,6 @@ contextBridge.exposeInMainWorld('traderCalendarData', {
   byDate: (payload) => ipcRenderer.invoke('calendar:by-date', payload)
 });
 
-contextBridge.exposeInMainWorld('traderOddsRadar', {
-  read: (payload) => ipcRenderer.invoke('odds-radar:read', payload),
-  find: (payload) => ipcRenderer.invoke('odds-radar:find', payload),
-  startFeed: (payload) => ipcRenderer.invoke('odds-radar:start', payload),
-  stopFeed: (feedId) => ipcRenderer.invoke('odds-radar:stop', feedId),
-  onUpdate: (callback) => {
-    if (typeof callback !== 'function') return () => {};
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('odds-radar:update', listener);
-    return () => ipcRenderer.removeListener('odds-radar:update', listener);
-  }
-});
-
 contextBridge.exposeInMainWorld('traderAppInfo', {
   get: () => ipcRenderer.invoke('app:info')
 });
