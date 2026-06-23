@@ -2606,6 +2606,12 @@ tr:hover td {
     border: 1px solid rgba(16, 185, 129, 0.35);
 }
 
+.calendar-action-grid .odds {
+    color: #92400e;
+    background: rgba(250, 204, 21, 0.16);
+    border: 1px solid rgba(245, 158, 11, 0.38);
+}
+
 .calendar-action-grid .pack,
 .calendar-action-grid .scores {
     color: #2563eb;
@@ -2641,6 +2647,13 @@ tr:hover td {
     align-items: center;
     flex: 1;
     max-width: 820px;
+}
+
+.odds-radar-actions.modal-actions {
+    grid-template-columns: minmax(320px, 1fr) 130px;
+    max-width: none;
+    width: 100%;
+    margin: 8px 0 12px;
 }
 
 .odds-url-wrapper {
@@ -2787,6 +2800,15 @@ tr:hover td {
     .odds-radar-grid {
         grid-template-columns: 1fr;
     }
+}
+
+.odds-radar-panel {
+    max-width: 980px;
+}
+
+.odds-radar-content {
+    display: grid;
+    gap: 14px;
 }
 
 .history-signal-row {

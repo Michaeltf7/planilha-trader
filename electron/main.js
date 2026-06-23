@@ -738,6 +738,7 @@ function normalizeOddsRadarPayload(payload = {}) {
   const allowedHosts = [
     'betfair.com',
     'betfair.com.br',
+    'betfair.bet.br',
     'bet365.com',
     'bet365.com.br'
   ];
@@ -746,7 +747,7 @@ function normalizeOddsRadarPayload(payload = {}) {
     throw new Error('Use uma URL da Betfair ou Bet365.');
   }
 
-  const source = /bet365/i.test(host) ? 'bet365' : 'betfair';
+  const source = /bet365/i.test(host) ? 'bet365' : 'betfair-exchange';
   return {
     url: parsed.toString(),
     source
@@ -790,9 +791,9 @@ function waitForOddsRadarLoad(win, timeoutMs = 25000) {
 function scrapeOddsRadarScript() {
   return `(() => {
     const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
-    const priceRe = /(?<!\\d)(?:[1-9]\\d?|1)\\.\\d{2}(?!\\d)/;
-    const marketMatchRe = /match odds|resultado final|vencedor da partida|1x2|empate|draw|home|away/i;
-    const goalLineRe = /limite de gols|total goals|over\\/?under|mais de|menos de|over|under|gols/i;
+    const priceRe = /(?<!\\d)(?:[1-9]\\d?|1)[\\.,]\\d{2}(?!\\d)/;
+    const marketMatchRe = /match odds|resultado final|vencedor da partida|resultado da partida|1x2|empate|draw|home|away/i;
+    const goalLineRe = /limite de gols|total goals|total de gols|over\\/?under|mais de|menos de|over|under|gols/i;
 
     const compactContext = text => clean(text).slice(0, 240);
     const readAround = node => {
@@ -808,7 +809,7 @@ function scrapeOddsRadarScript() {
 
     const getLabel = (context, price) => {
       const cleaned = clean(context.replace(price, ' '));
-      const parts = cleaned.split(/\\s(?=\\d+\\.\\d{2})|\\s{2,}|\\|/).map(clean).filter(Boolean);
+      const parts = cleaned.split(/\\s(?=\\d+[\\.,]\\d{2})|\\s{2,}|\\|/).map(clean).filter(Boolean);
       return parts.find(part => !priceRe.test(part) && part.length <= 60) || cleaned.slice(0, 60) || 'Odd';
     };
 

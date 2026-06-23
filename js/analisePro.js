@@ -2302,6 +2302,9 @@ const AnalisePro = {
                     <a class="mod" href="#" onclick="AnalisePro.openCustomWRadarMod(${wradarGame}); return false;" title="1 - Radar MOD proprio">
                         <i class='bx bx-crosshair'></i><span>MOD</span>
                     </a>
+                    <a class="odds" href="#" onclick="OddsRadar.open(${wradarGame}); return false;" title="Betfair Exchange - Match Odds e Limite de Gols">
+                        <i class='bx bx-pulse'></i><span>ODDS</span>
+                    </a>
                     <a class="radar" href="${this.escapeHtml(radarFutebolUrl)}" target="_blank" title="2 - Radar Futebol">
                         <i class='bx bx-radar'></i>
                     </a>
