@@ -142,7 +142,8 @@ contextBridge.exposeInMainWorld('traderCalendarData', {
 });
 
 contextBridge.exposeInMainWorld('traderOddsRadar', {
-  read: (payload) => ipcRenderer.invoke('odds-radar:read', payload)
+  read: (payload) => ipcRenderer.invoke('odds-radar:read', payload),
+  find: (payload) => ipcRenderer.invoke('odds-radar:find', payload)
 });
 
 contextBridge.exposeInMainWorld('traderAppInfo', {

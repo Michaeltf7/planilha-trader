@@ -750,8 +750,16 @@ function normalizeOddsRadarPayload(payload = {}) {
   const source = /bet365/i.test(host) ? 'bet365' : 'betfair-exchange';
   return {
     url: parsed.toString(),
-    source
+    source,
+    game: payload.game || {}
   };
+}
+
+function normalizeOddsSearchPayload(payload = {}) {
+  const home = String(payload.game?.home || payload.home || '').trim();
+  const away = String(payload.game?.away || payload.away || '').trim();
+  if (!home || !away) throw new Error('Times obrigatorios para buscar na Betfair.');
+  return { home, away };
 }
 
 function createOddsRadarWindow() {
@@ -788,12 +796,22 @@ function waitForOddsRadarLoad(win, timeoutMs = 25000) {
   });
 }
 
-function scrapeOddsRadarScript() {
+function scrapeOddsRadarScript(game = {}) {
+  const gameJson = JSON.stringify({
+    home: String(game?.home || ''),
+    away: String(game?.away || '')
+  }).replace(/</g, '\\u003c');
+
   return `(() => {
+    const game = ${gameJson};
     const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
-    const priceRe = /(?<!\\d)(?:[1-9]\\d?|1)[\\.,]\\d{2}(?!\\d)/;
+    const pricePattern = '(?<![\\\\dR$])(?:[1-9]\\\\d?|1)[\\\\.,]\\\\d{1,2}(?!\\\\d)';
+    const priceRe = new RegExp(pricePattern);
     const marketMatchRe = /match odds|resultado final|vencedor da partida|resultado da partida|1x2|empate|draw|home|away/i;
     const goalLineRe = /limite de gols|total goals|total de gols|over\\/?under|mais de|menos de|over|under|gols/i;
+    const normalizePrice = value => clean(value).replace(',', '.');
+    const escapeRegex = value => String(value || '').replace(/[|\\\\{}()[\\]^$+*?.]/g, '\\\\$&');
+    const pageText = clean(document.body?.innerText || '');
 
     const compactContext = text => clean(text).slice(0, 240);
     const readAround = node => {
@@ -811,6 +829,50 @@ function scrapeOddsRadarScript() {
       const cleaned = clean(context.replace(price, ' '));
       const parts = cleaned.split(/\\s(?=\\d+[\\.,]\\d{2})|\\s{2,}|\\|/).map(clean).filter(Boolean);
       return parts.find(part => !priceRe.test(part) && part.length <= 60) || cleaned.slice(0, 60) || 'Odd';
+    };
+
+    const findSelectionPrice = label => {
+      if (!label) return null;
+      const rx = new RegExp(escapeRegex(label) + '[\\\\s\\\\S]{0,140}?(' + pricePattern + ')', 'i');
+      const match = pageText.match(rx);
+      return match ? normalizePrice(match[1]) : null;
+    };
+
+    const readMatchSummary = () => {
+      const home = findSelectionPrice(game.home);
+      const draw = findSelectionPrice('Empate') || findSelectionPrice('Draw');
+      const away = findSelectionPrice(game.away);
+      if (!home && !draw && !away && matchOdds.length >= 3) {
+        return {
+          home: { label: game.home || matchOdds[0].label || 'Casa', price: matchOdds[0].price || '-' },
+          draw: { label: 'Empate', price: matchOdds[1].price || '-' },
+          away: { label: game.away || matchOdds[2].label || 'Fora', price: matchOdds[2].price || '-' }
+        };
+      }
+      if (!home && !draw && !away) return null;
+      return {
+        home: { label: game.home || 'Casa', price: home || '-' },
+        draw: { label: 'Empate', price: draw || '-' },
+        away: { label: game.away || 'Fora', price: away || '-' }
+      };
+    };
+
+    const readGoalLines = () => {
+      const lines = new Map();
+      const rx = new RegExp('(Mais|Menos|Over|Under)\\\\s+(?:de\\\\s+)?(\\\\d+[\\\\.,]\\\\d+)\\\\s*(?:gols|goals)?[\\\\s\\\\S]{0,100}?(' + pricePattern + ')', 'ig');
+      let match;
+      while ((match = rx.exec(pageText))) {
+        const side = /mais|over/i.test(match[1]) ? 'over' : 'under';
+        const line = match[2].replace(',', '.');
+        const price = normalizePrice(match[3]);
+        if (!lines.has(line)) lines.set(line, { line, over: null, under: null });
+        const entry = lines.get(line);
+        if (!entry[side]) entry[side] = price;
+      }
+      return Array.from(lines.values())
+        .filter(item => item.over || item.under)
+        .sort((a, b) => Number(a.line) - Number(b.line))
+        .slice(0, 8);
     };
 
     const nodes = Array.from(document.querySelectorAll('button, [role="button"], a, span, div'))
@@ -839,7 +901,7 @@ function scrapeOddsRadarScript() {
       seen.add(key);
 
       const entry = {
-        price,
+        price: normalizePrice(price),
         label: getLabel(context, price),
         context
       };
@@ -854,11 +916,49 @@ function scrapeOddsRadarScript() {
       url: location.href,
       title: document.title,
       sourceTextLength: clean(document.body?.innerText || '').length,
+      summary: {
+        matchOdds: readMatchSummary(),
+        goalLines: readGoalLines()
+      },
       matchOdds: matchOdds.slice(0, 24),
       goalLines: goalLines.slice(0, 24),
       samples: samples.slice(0, 20),
       capturedAt: new Date().toISOString()
     };
+  })()`;
+}
+
+function normalizeBetfairSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function scrapeBetfairSearchScript(game) {
+  const gameJson = JSON.stringify(game).replace(/</g, '\\u003c');
+  return `(() => {
+    const game = ${gameJson};
+    const normalize = value => String(value || '')
+      .normalize('NFD')
+      .replace(/[\\u0300-\\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    const home = normalize(game.home);
+    const away = normalize(game.away);
+    const anchors = Array.from(document.querySelectorAll('a[href]'));
+    const matches = anchors.map(anchor => {
+      const href = anchor.href || '';
+      const text = normalize(anchor.innerText || anchor.textContent || href);
+      const haystack = normalize(text + ' ' + href);
+      const score = (haystack.includes(home) ? 1 : 0) + (haystack.includes(away) ? 1 : 0);
+      return { href, text: (anchor.innerText || anchor.textContent || '').trim(), score };
+    }).filter(item => item.score > 0 && /exchange\\/plus/i.test(item.href))
+      .sort((a, b) => b.score - a.score);
+    return { matches: matches.slice(0, 10), title: document.title, url: location.href };
   })()`;
 }
 
@@ -871,10 +971,33 @@ ipcMain.handle('odds-radar:read', async (_event, rawPayload) => {
     win.loadURL(payload.url).catch(() => {});
     await loadWait;
     await new Promise(resolve => setTimeout(resolve, 3500));
-    const data = await win.webContents.executeJavaScript(scrapeOddsRadarScript(), true);
+    const data = await win.webContents.executeJavaScript(scrapeOddsRadarScript(payload.game), true);
     return {
       ...data,
       source: payload.source
+    };
+  } finally {
+    if (!win.isDestroyed()) win.close();
+  }
+});
+
+ipcMain.handle('odds-radar:find', async (_event, rawPayload) => {
+  const payload = normalizeOddsSearchPayload(rawPayload);
+  const win = createOddsRadarWindow();
+
+  try {
+    const loadWait = waitForOddsRadarLoad(win, 18000);
+    win.loadURL('https://www.betfair.bet.br/exchange/plus/pt/futebol').catch(() => {});
+    await loadWait;
+    await new Promise(resolve => setTimeout(resolve, 4500));
+    const data = await win.webContents.executeJavaScript(scrapeBetfairSearchScript(payload), true);
+    const best = Array.isArray(data?.matches) ? data.matches.find(item => item.score >= 2) : null;
+    return {
+      ok: Boolean(best),
+      url: best?.href || '',
+      matches: data?.matches || [],
+      title: data?.title || '',
+      searched: payload
     };
   } finally {
     if (!win.isDestroyed()) win.close();
