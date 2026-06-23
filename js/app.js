@@ -866,6 +866,7 @@ const App = {
             'configuracoes': 'Configurações do Sistema',
             'calendario': 'Calendário de Jogos',
             'planejamento': 'Planejamento Diário',
+            'odds-radar': 'Radar de Odds',
             'copa-mundo': 'Copa do Mundo',
             'competicoes': 'Competições',
             'escada': 'Simulador de Escada'
@@ -1130,7 +1131,7 @@ const App = {
     
     render() {
         // Permitir que certas views funcionem sem dados de entradas
-        const viewsIndependentes = ['calendario', 'planejamento', 'copa-mundo', 'competicoes', 'escudos', 'configuracoes', 'escada'];
+        const viewsIndependentes = ['calendario', 'odds-radar', 'planejamento', 'copa-mundo', 'competicoes', 'escudos', 'configuracoes', 'escada'];
         
         if (!viewsIndependentes.includes(this.currentView) && (!this.data || this.data.length === 0)) {
             this.appContainer.innerHTML = `
@@ -1179,6 +1180,9 @@ const App = {
                 break;
             case 'calendario':
                 if (typeof AnalisePro !== 'undefined') AnalisePro.render();
+                break;
+            case 'odds-radar':
+                if (typeof OddsRadar !== 'undefined') OddsRadar.render();
                 break;
             case 'planejamento':
                 if (typeof AnalisePro !== 'undefined') AnalisePro.renderPlanejamento();

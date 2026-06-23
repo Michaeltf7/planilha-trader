@@ -723,6 +723,163 @@ ipcMain.handle('wradar-real-mod:stop', async (_event, feedId) => {
   return true;
 });
 
+function normalizeOddsRadarPayload(payload = {}) {
+  const rawUrl = String(payload.url || '').trim();
+  if (!rawUrl) throw new Error('URL obrigatoria para ler odds.');
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (_error) {
+    throw new Error('URL invalida para o Radar de Odds.');
+  }
+
+  const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+  const allowedHosts = [
+    'betfair.com',
+    'betfair.com.br',
+    'bet365.com',
+    'bet365.com.br'
+  ];
+
+  if (!allowedHosts.some(allowed => host === allowed || host.endsWith(`.${allowed}`))) {
+    throw new Error('Use uma URL da Betfair ou Bet365.');
+  }
+
+  const source = /bet365/i.test(host) ? 'bet365' : 'betfair';
+  return {
+    url: parsed.toString(),
+    source
+  };
+}
+
+function createOddsRadarWindow() {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 900,
+    show: false,
+    title: 'Radar de Odds',
+    backgroundColor: '#f4f7fe',
+    autoHideMenuBar: true,
+    webPreferences: {
+      ...baseWebPreferences(),
+      backgroundThrottling: false
+    }
+  });
+
+  win.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+  return win;
+}
+
+function waitForOddsRadarLoad(win, timeoutMs = 25000) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const timer = setTimeout(finish, timeoutMs);
+    win.webContents.once('did-finish-load', finish);
+    win.webContents.once('did-fail-load', finish);
+  });
+}
+
+function scrapeOddsRadarScript() {
+  return `(() => {
+    const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
+    const priceRe = /(?<!\\d)(?:[1-9]\\d?|1)\\.\\d{2}(?!\\d)/;
+    const marketMatchRe = /match odds|resultado final|vencedor da partida|1x2|empate|draw|home|away/i;
+    const goalLineRe = /limite de gols|total goals|over\\/?under|mais de|menos de|over|under|gols/i;
+
+    const compactContext = text => clean(text).slice(0, 240);
+    const readAround = node => {
+      const chunks = [];
+      let current = node;
+      for (let i = 0; i < 4 && current; i += 1) {
+        const txt = clean(current.innerText || current.textContent || '');
+        if (txt) chunks.push(txt);
+        current = current.parentElement;
+      }
+      return compactContext(chunks.sort((a, b) => b.length - a.length)[0] || clean(node.textContent));
+    };
+
+    const getLabel = (context, price) => {
+      const cleaned = clean(context.replace(price, ' '));
+      const parts = cleaned.split(/\\s(?=\\d+\\.\\d{2})|\\s{2,}|\\|/).map(clean).filter(Boolean);
+      return parts.find(part => !priceRe.test(part) && part.length <= 60) || cleaned.slice(0, 60) || 'Odd';
+    };
+
+    const nodes = Array.from(document.querySelectorAll('button, [role="button"], a, span, div'))
+      .filter(node => {
+        const text = clean(node.innerText || node.textContent || '');
+        if (!priceRe.test(text)) return false;
+        if (text.length > 260) return false;
+        const rect = node.getBoundingClientRect?.();
+        return !rect || rect.width > 0 || rect.height > 0;
+      });
+
+    const seen = new Set();
+    const matchOdds = [];
+    const goalLines = [];
+    const samples = [];
+
+    for (const node of nodes) {
+      const text = clean(node.innerText || node.textContent || '');
+      const match = text.match(priceRe);
+      if (!match) continue;
+
+      const price = match[0];
+      const context = readAround(node);
+      const key = [price, context.slice(0, 120)].join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const entry = {
+        price,
+        label: getLabel(context, price),
+        context
+      };
+
+      if (goalLineRe.test(context)) goalLines.push(entry);
+      else if (marketMatchRe.test(context) || matchOdds.length < 3) matchOdds.push(entry);
+      else if (samples.length < 20) samples.push(entry);
+    }
+
+    return {
+      ok: true,
+      url: location.href,
+      title: document.title,
+      sourceTextLength: clean(document.body?.innerText || '').length,
+      matchOdds: matchOdds.slice(0, 24),
+      goalLines: goalLines.slice(0, 24),
+      samples: samples.slice(0, 20),
+      capturedAt: new Date().toISOString()
+    };
+  })()`;
+}
+
+ipcMain.handle('odds-radar:read', async (_event, rawPayload) => {
+  const payload = normalizeOddsRadarPayload(rawPayload);
+  const win = createOddsRadarWindow();
+
+  try {
+    const loadWait = waitForOddsRadarLoad(win);
+    win.loadURL(payload.url).catch(() => {});
+    await loadWait;
+    await new Promise(resolve => setTimeout(resolve, 3500));
+    const data = await win.webContents.executeJavaScript(scrapeOddsRadarScript(), true);
+    return {
+      ...data,
+      source: payload.source
+    };
+  } finally {
+    if (!win.isDestroyed()) win.close();
+  }
+});
+
 ipcMain.handle('worldcup:espn-sync', async () => {
   return syncWorldCupEspn();
 });

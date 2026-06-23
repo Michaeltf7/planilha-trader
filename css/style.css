@@ -2625,6 +2625,170 @@ tr:hover td {
     border: 1px solid rgba(15, 150, 156, 0.3);
 }
 
+.odds-radar-container {
+    display: grid;
+    gap: 18px;
+}
+
+.odds-radar-header {
+    align-items: center;
+}
+
+.odds-radar-actions {
+    display: grid;
+    grid-template-columns: 140px minmax(320px, 1fr) 160px;
+    gap: 12px;
+    align-items: center;
+    flex: 1;
+    max-width: 820px;
+}
+
+.odds-url-wrapper {
+    min-width: 0;
+}
+
+.odds-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: 100%;
+    border: 1px solid var(--border-color);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.odds-status i {
+    color: var(--primary-color);
+    font-size: 18px;
+}
+
+.odds-status.error {
+    border-color: rgba(239, 68, 68, 0.32);
+    background: rgba(239, 68, 68, 0.08);
+    color: #b91c1c;
+}
+
+.odds-status.error i {
+    color: #ef4444;
+}
+
+.odds-status.success {
+    border-color: rgba(16, 185, 129, 0.32);
+    background: rgba(16, 185, 129, 0.08);
+    color: #047857;
+}
+
+.odds-status.success i {
+    color: #10b981;
+}
+
+.odds-radar-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.odds-market-panel,
+.odds-diagnostics {
+    border: 1px solid var(--border-color);
+    background: var(--bg-surface);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    padding: 18px;
+}
+
+.odds-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+}
+
+.odds-panel-title i {
+    color: var(--primary-color);
+    font-size: 20px;
+}
+
+.odds-market-list {
+    display: grid;
+    gap: 10px;
+}
+
+.odds-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    border: 1px solid var(--border-color);
+    background: var(--bg-main);
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.odds-row strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 14px;
+    margin-bottom: 3px;
+}
+
+.odds-row span {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.odds-row em {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 58px;
+    min-height: 38px;
+    border-radius: 8px;
+    background: #111827;
+    color: #facc15;
+    font-style: normal;
+    font-size: 16px;
+    font-weight: 900;
+}
+
+.odds-empty {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+    border: 1px dashed var(--border-color);
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+}
+
+.odds-diagnostics pre {
+    margin: 0;
+    max-height: 260px;
+    overflow: auto;
+    border-radius: 10px;
+    background: #0f172a;
+    color: #dbeafe;
+    padding: 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+@media (max-width: 1100px) {
+    .odds-radar-actions,
+    .odds-radar-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .history-signal-row {
     display: flex;
     flex-wrap: wrap;
