@@ -1,15 +1,109 @@
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const { app, BrowserWindow, ipcMain, Menu, shell, session, nativeImage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, shell, session, nativeImage, dialog, screen } = require('electron');
 
 const childWindows = new Set();
 const replicaWindows = new Map();
 const nativeReplicaProcesses = new Set();
 const wradarRealModFeeds = new Map();
+const customWRadarWindowDefaultBounds = { width: 1220, height: 460 };
+const customWRadarWindowMinBounds = { width: 520, height: 260 };
+const customRadarHighlightMinBounds = { width: 260, height: 120 };
 
 if (process.env.PLANILHA_TRADER_PORTABLE_DATA) {
   app.setPath('userData', path.resolve(process.env.PLANILHA_TRADER_PORTABLE_DATA));
+}
+
+function getSettingsFilePath(fileName) {
+  return path.join(app.getPath('userData'), fileName);
+}
+
+function readJsonFile(fileName) {
+  try {
+    return JSON.parse(fs.readFileSync(getSettingsFilePath(fileName), 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeJsonFile(fileName, data) {
+  try {
+    const target = getSettingsFilePath(fileName);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, JSON.stringify(data, null, 2), 'utf8');
+  } catch (_) {}
+}
+
+function normalizeWindowBounds(bounds, fallback = customWRadarWindowDefaultBounds, minBounds = customWRadarWindowMinBounds) {
+  const width = Math.max(minBounds.width, Math.round(Number(bounds?.width) || fallback.width));
+  const height = Math.max(minBounds.height, Math.round(Number(bounds?.height) || fallback.height));
+  const normalized = { width, height };
+  if (Number.isFinite(Number(bounds?.x)) && Number.isFinite(Number(bounds?.y))) {
+    normalized.x = Math.round(Number(bounds.x));
+    normalized.y = Math.round(Number(bounds.y));
+  }
+  return normalized;
+}
+
+function boundsIntersectDisplay(bounds, minBounds = customWRadarWindowMinBounds) {
+  try {
+    const rect = normalizeWindowBounds(bounds, customWRadarWindowDefaultBounds, minBounds);
+    return screen.getAllDisplays().some(display => {
+      const area = display.workArea || display.bounds;
+      const right = rect.x + rect.width;
+      const bottom = rect.y + rect.height;
+      const areaRight = area.x + area.width;
+      const areaBottom = area.y + area.height;
+      const visibleWidth = Math.min(right, areaRight) - Math.max(rect.x, area.x);
+      const visibleHeight = Math.min(bottom, areaBottom) - Math.max(rect.y, area.y);
+      return visibleWidth >= 160 && visibleHeight >= 100;
+    });
+  } catch (_) {
+    return false;
+  }
+}
+
+function getCustomRadarHighlightBounds(fallback) {
+  const safeFallback = normalizeWindowBounds(fallback, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds);
+  const saved = normalizeWindowBounds(readJsonFile('custom-radar-highlight-bounds.json'), safeFallback, customRadarHighlightMinBounds);
+  if (Number.isFinite(saved.x) && Number.isFinite(saved.y) && boundsIntersectDisplay(saved, customRadarHighlightMinBounds)) {
+    return saved;
+  }
+  if (Number.isFinite(safeFallback.x) && Number.isFinite(safeFallback.y) && boundsIntersectDisplay(safeFallback, customRadarHighlightMinBounds)) {
+    return safeFallback;
+  }
+
+  try {
+    const area = screen.getPrimaryDisplay().workArea;
+    return {
+      ...safeFallback,
+      x: Math.max(area.x, Math.round(area.x + ((area.width - safeFallback.width) / 2))),
+      y: Math.max(area.y, Math.round(area.y + ((area.height - safeFallback.height) / 2)))
+    };
+  } catch (_) {
+    return safeFallback;
+  }
+}
+
+function rememberCustomRadarHighlightBounds(win) {
+  let saveTimer = null;
+  const save = () => {
+    if (!win || win.isDestroyed() || win.isMinimized()) return;
+    const bounds = typeof win.getNormalBounds === 'function' ? win.getNormalBounds() : win.getBounds();
+    writeJsonFile('custom-radar-highlight-bounds.json', normalizeWindowBounds(bounds, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds));
+  };
+  const schedule = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 350);
+  };
+
+  win.on('move', schedule);
+  win.on('resize', schedule);
+  win.on('close', () => {
+    clearTimeout(saveTimer);
+    save();
+  });
 }
 
 function createMainWindow() {
@@ -155,12 +249,12 @@ function createExternalWindow(url) {
 
 function createCustomWRadarWindow(payload) {
   const child = new BrowserWindow({
-    width: 1220,
-    height: 460,
-    minWidth: 520,
-    minHeight: 260,
+    width: customWRadarWindowDefaultBounds.width,
+    height: customWRadarWindowDefaultBounds.height,
+    minWidth: customWRadarWindowMinBounds.width,
+    minHeight: customWRadarWindowMinBounds.height,
     title: 'Radar MOD Proprio',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#08111f',
     transparent: false,
     frame: true,
     resizable: true,
@@ -295,11 +389,14 @@ async function createCustomRadarOverlayReplica(sourceWebContents, rect, title) {
 
   if (!snapshot?.event?.id) return false;
 
-  const overlay = new BrowserWindow({
+  const overlayBounds = getCustomRadarHighlightBounds({
     width: Math.max(260, normalizedRect.width),
     height: Math.max(120, normalizedRect.height),
     x: sourceX + normalizedRect.x,
-    y: sourceY + normalizedRect.y,
+    y: sourceY + normalizedRect.y
+  });
+  const overlay = new BrowserWindow({
+    ...overlayBounds,
     minWidth: 180,
     minHeight: 80,
     title: `Destaque - ${title || 'Radar MOD'}`,
@@ -331,8 +428,8 @@ async function createCustomRadarOverlayReplica(sourceWebContents, rect, title) {
     rect: normalizedRect,
     window: overlay,
     originalSize: {
-      width: Math.max(260, normalizedRect.width),
-      height: Math.max(120, normalizedRect.height)
+      width: overlayBounds.width,
+      height: overlayBounds.height
     },
     captureDelay: 250,
     quality: 72,
@@ -345,6 +442,7 @@ async function createCustomRadarOverlayReplica(sourceWebContents, rect, title) {
 
   replicaWindows.set(id, item);
   configureReplicaControls(item);
+  rememberCustomRadarHighlightBounds(overlay);
   overlay.on('closed', () => {
     clearTimeout(item.timer);
     replicaWindows.delete(id);
