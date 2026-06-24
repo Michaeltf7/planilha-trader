@@ -4,6 +4,8 @@ const AnalisePro = {
     currentPlanningDate: '',
     calendarSource: '',
     activeCalendarLeagueId: 'all',
+    calendarStatusFilter: localStorage.getItem('pro_calendar_status_filter') || 'all',
+    calendarLayoutMode: localStorage.getItem('pro_calendar_layout_mode') || 'cards',
     
     async init() {
         if (!this.currentPlanningDate) this.currentPlanningDate = this.getTodayKey();
@@ -99,6 +101,7 @@ const AnalisePro = {
                 </div>
 
                 <div id="calendar-league-filters" class="calendar-league-filters"></div>
+                <div id="calendar-view-controls" class="calendar-view-controls"></div>
                 <div id="pro-calendar-list" class="pro-calendar-list"></div>
             </div>
         `;
@@ -317,6 +320,64 @@ const AnalisePro = {
         this.filterGames();
     },
 
+    setCalendarStatusFilter(status) {
+        const next = ['all', 'live', 'upcoming', 'finished'].includes(status) ? status : 'all';
+        this.calendarStatusFilter = next;
+        localStorage.setItem('pro_calendar_status_filter', next);
+        this.filterGames();
+    },
+
+    setCalendarLayoutMode(mode) {
+        const next = mode === 'list' ? 'list' : 'cards';
+        this.calendarLayoutMode = next;
+        localStorage.setItem('pro_calendar_layout_mode', next);
+        this.filterGames();
+    },
+
+    getCalendarGameStatus(game) {
+        const type = game?.status?.type || '';
+        if (type === 'inprogress') return 'live';
+        if (type === 'finished') return 'finished';
+        return 'upcoming';
+    },
+
+    renderCalendarViewControls(gamesList) {
+        const container = document.getElementById('calendar-view-controls');
+        if (!container) return;
+
+        const counts = (gamesList || []).reduce((acc, game) => {
+            acc.all += 1;
+            acc[this.getCalendarGameStatus(game)] += 1;
+            return acc;
+        }, { all: 0, live: 0, upcoming: 0, finished: 0 });
+
+        const activeStatus = this.calendarStatusFilter || 'all';
+        const activeLayout = this.calendarLayoutMode || 'cards';
+        const statusButtons = [
+            ['all', 'Todos', counts.all],
+            ['live', 'Ao vivo', counts.live],
+            ['upcoming', 'Próximos', counts.upcoming],
+            ['finished', 'Encerrados', counts.finished]
+        ].map(([status, label, count]) => `
+            <button type="button" class="${activeStatus === status ? 'active' : ''}" onclick="AnalisePro.setCalendarStatusFilter('${status}')">
+                ${label}
+                <span>${count}</span>
+            </button>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="calendar-status-tabs">${statusButtons}</div>
+            <div class="calendar-layout-toggle">
+                <button type="button" class="${activeLayout === 'cards' ? 'active' : ''}" onclick="AnalisePro.setCalendarLayoutMode('cards')" title="Ver em cards">
+                    <i class='bx bx-grid-alt'></i><span>Cards</span>
+                </button>
+                <button type="button" class="${activeLayout === 'list' ? 'active' : ''}" onclick="AnalisePro.setCalendarLayoutMode('list')" title="Ver em lista">
+                    <i class='bx bx-list-ul'></i><span>Lista</span>
+                </button>
+            </div>
+        `;
+    },
+
     renderList(gamesList) {
         const listContainer = document.getElementById('pro-calendar-list');
         const favorites = JSON.parse(localStorage.getItem('pro_fav_leagues')) || [];
@@ -331,13 +392,18 @@ const AnalisePro = {
         const favData = JSON.parse(localStorage.getItem('pro_fav_games_v2')) || {};
         const selectedDate = document.getElementById('calendar-date-filter')?.value || this.getTodayKey();
         const favGamesIds = favData[selectedDate] || [];
+        const statusFilteredGames = (gamesList || []).filter(game => {
+            const activeStatus = this.calendarStatusFilter || 'all';
+            return activeStatus === 'all' || this.getCalendarGameStatus(game) === activeStatus;
+        });
         
         const activeLeagueId = this.activeCalendarLeagueId || 'all';
         const leagueFilteredGames = activeLeagueId === 'all'
-            ? gamesList
-            : gamesList.filter(game => this.getCalendarLeagueId(game) === String(activeLeagueId));
+            ? statusFilteredGames
+            : statusFilteredGames.filter(game => this.getCalendarLeagueId(game) === String(activeLeagueId));
 
         this.renderCalendarLeagueFilters(leagueFilteredGames);
+        this.renderCalendarViewControls(gamesList || []);
         listContainer.innerHTML = '';
 
         if (leagueFilteredGames.length === 0) {
@@ -346,10 +412,11 @@ const AnalisePro = {
         }
 
         const favGamesList = leagueFilteredGames.filter(g => favGamesIds.includes(g.id));
+        const listMode = this.calendarLayoutMode === 'list';
 
         if (favGamesList.length > 0) {
             const favSection = document.createElement('div');
-            favSection.className = 'tournament-section is-favorite-games';
+            favSection.className = `tournament-section is-favorite-games ${listMode ? 'calendar-list-section' : ''}`;
             favSection.style.border = '2px solid #ffca28';
             favSection.style.background = 'rgba(255, 202, 40, 0.03)';
             favSection.style.marginBottom = '30px';
@@ -360,8 +427,8 @@ const AnalisePro = {
                         MEUS JOGOS FAVORITOS
                     </div>
                 </div>
-                <div class="tournament-games-grid">
-                    ${favGamesList.map(game => this.renderGameCard(game, favGamesIds)).join('')}
+                <div class="${listMode ? 'calendar-compact-list' : 'tournament-games-grid'}">
+                    ${favGamesList.map(game => listMode ? this.renderGameListRow(game, favGamesIds) : this.renderGameCard(game, favGamesIds)).join('')}
                 </div>
             `;
             listContainer.appendChild(favSection);
@@ -393,7 +460,7 @@ const AnalisePro = {
             const tour = grouped[id];
             const isFav = favorites.includes(Number(id)) || favorites.includes(String(id));
             const section = document.createElement('div');
-            section.className = `tournament-section ${isFav ? 'is-favorite' : ''}`;
+            section.className = `tournament-section ${listMode ? 'calendar-list-section' : ''} ${isFav ? 'is-favorite' : ''}`;
             section.innerHTML = `
                 <div class="tournament-header">
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -405,8 +472,8 @@ const AnalisePro = {
                         ${isFav ? 'Remover' : 'Favoritar'}
                     </button>
                 </div>
-                <div class="tournament-games-grid">
-                    ${tour.games.map(game => this.renderGameCard(game, favGamesIds)).join('')}
+                <div class="${listMode ? 'calendar-compact-list' : 'tournament-games-grid'}">
+                    ${tour.games.map(game => listMode ? this.renderGameListRow(game, favGamesIds) : this.renderGameCard(game, favGamesIds)).join('')}
                 </div>
             `;
             listContainer.appendChild(section);
@@ -2246,8 +2313,7 @@ const AnalisePro = {
         `;
     },
 
-    renderGameCard(game, favGamesIds) {
-        const time = new Date(game.startTimestamp * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    getCalendarGameActionData(game) {
         const sofaId = Number(game.sofascoreId || (game.source !== 'wradar' ? game.id : 0)) || null;
         const sofaUrl = sofaId ? `https://www.sofascore.com/event/${sofaId}` : null;
         const radarFutebolUrl = game.radarFutebolUrl || 'https://www.radarfutebol.com/';
@@ -2258,6 +2324,96 @@ const AnalisePro = {
             away: game.awayTeam?.name || '',
             startTimestamp: game.startTimestamp || null
         }).replace(/"/g, '&quot;');
+        return { sofaUrl, radarFutebolUrl, wradarGame };
+    },
+
+    renderCalendarActions(game, extraClass = '') {
+        const { sofaUrl, radarFutebolUrl, wradarGame } = this.getCalendarGameActionData(game);
+        return `
+            <div class="calendar-action-grid ${extraClass}">
+                <a class="mod" href="#" onclick="AnalisePro.openCustomWRadarMod(${wradarGame}); return false;" title="1 - Radar MOD proprio">
+                    <i class='bx bx-crosshair'></i><span>MOD</span>
+                </a>
+                <a class="radar" href="${this.escapeHtml(radarFutebolUrl)}" target="_blank" title="2 - Radar Futebol">
+                    <i class='bx bx-radar'></i>
+                </a>
+                <a class="pack" href="#" onclick="AnalisePro.openWRadarForGame(${wradarGame}, 'pack'); return false;" title="3 - Radar WH + Pack">
+                    <i class='bx bx-layout'></i>
+                </a>
+                <a class="sport" href="#" onclick="AnalisePro.openWRadarForGame(${wradarGame}, 'sport'); return false;" title="4 - Sportradar">
+                    <i class='bx bx-world'></i>
+                </a>
+                <a class="scores" href="#" onclick="AnalisePro.open365ScoresForGame(${wradarGame}); return false;" title="5 - 365 Score">
+                    365
+                </a>
+                <a class="sofa" href="${sofaUrl || '#'}" ${sofaUrl ? 'target="_blank"' : 'onclick="return false;"'} title="6 - Sofascore detalhes">
+                    <i class='bx bx-plus-circle'></i>
+                </a>
+            </div>
+        `;
+    },
+
+    renderGameListRow(game, favGamesIds) {
+        const time = new Date(game.startTimestamp * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const status = this.getCalendarGameStatus(game);
+        const isFinished = status === 'finished';
+        const isLive = status === 'live';
+        const isFav = favGamesIds.includes(game.id);
+        const homeScore = game.homeScore?.display ?? game.homeScore?.current ?? '';
+        const awayScore = game.awayScore?.display ?? game.awayScore?.current ?? '';
+        const statusLabel = isLive ? (game.status?.description || 'Ao vivo') : isFinished ? 'Encerrado' : time;
+        const homePos = game.homeTeam.position || game.homeTeam.ranking || '';
+        const awayPos = game.awayTeam.position || game.awayTeam.ranking || '';
+        const rankLabel = (homePos && awayPos) ? `<span class="calendar-list-rank">RANK ${homePos}º x ${awayPos}º</span>` : '';
+
+        let oddsDisplay = '';
+        if (game.realOdds && game.realOdds.length >= 3) {
+            oddsDisplay = `
+                <div class="calendar-odds-row calendar-list-odds">
+                    <span>${game.realOdds[0].value}</span>
+                    <span>${game.realOdds[1].value}</span>
+                    <span>${game.realOdds[2].value}</span>
+                </div>
+            `;
+        } else if (game.displayOdds) {
+            oddsDisplay = `
+                <div class="calendar-odds-row calendar-list-odds">
+                    <span>${game.displayOdds.home || '-'}</span>
+                    <span>${game.displayOdds.draw || '-'}</span>
+                    <span>${game.displayOdds.away || '-'}</span>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="calendar-list-game ${isFav ? 'is-fav-game' : ''} ${isLive ? 'is-live' : ''} ${isFinished ? 'is-finished' : ''}">
+                <button class="calendar-star-btn ${isFav ? 'active' : ''}" onclick="AnalisePro.toggleFavoriteGame(${game.id})" title="Favoritar jogo">
+                    <i class='bx ${isFav ? 'bxs-star' : 'bx-star'}'></i>
+                </button>
+                <div class="calendar-list-time">${this.escapeHtml(statusLabel)}</div>
+                <div class="calendar-list-match">
+                    <div class="calendar-list-team">
+                        ${this.renderTeamLogo(game.homeTeam, 22, game.source)}
+                        <strong>${this.escapeHtml(game.homeTeam.name)}</strong>
+                        <em class="${isLive ? 'live' : ''}">${homeScore !== '' ? homeScore : '-'}</em>
+                    </div>
+                    <div class="calendar-list-team">
+                        ${this.renderTeamLogo(game.awayTeam, 22, game.source)}
+                        <strong>${this.escapeHtml(game.awayTeam.name)}</strong>
+                        <em class="${isLive ? 'live' : ''}">${awayScore !== '' ? awayScore : '-'}</em>
+                    </div>
+                </div>
+                <div class="calendar-list-meta">
+                    ${oddsDisplay}
+                    ${rankLabel}
+                </div>
+                ${this.renderCalendarActions(game, 'calendar-list-actions')}
+            </div>
+        `;
+    },
+
+    renderGameCard(game, favGamesIds) {
+        const time = new Date(game.startTimestamp * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         const isFinished = game.status.type === 'finished';
         const isLive = game.status.type === 'inprogress';
         const isFav = favGamesIds.includes(game.id);
@@ -2316,26 +2472,7 @@ const AnalisePro = {
                     ${oddsDisplay || rankLabel ? `<div class="calendar-card-meta">${oddsDisplay}${rankLabel}</div>` : ''}
                 </div>
                 ${this.renderHistorySignals(game)}
-                <div class="calendar-action-grid">
-                    <a class="mod" href="#" onclick="AnalisePro.openCustomWRadarMod(${wradarGame}); return false;" title="1 - Radar MOD proprio">
-                        <i class='bx bx-crosshair'></i><span>MOD</span>
-                    </a>
-                    <a class="radar" href="${this.escapeHtml(radarFutebolUrl)}" target="_blank" title="2 - Radar Futebol">
-                        <i class='bx bx-radar'></i>
-                    </a>
-                    <a class="pack" href="#" onclick="AnalisePro.openWRadarForGame(${wradarGame}, 'pack'); return false;" title="3 - Radar WH + Pack">
-                        <i class='bx bx-layout'></i>
-                    </a>
-                    <a class="sport" href="#" onclick="AnalisePro.openWRadarForGame(${wradarGame}, 'sport'); return false;" title="4 - Sportradar">
-                        <i class='bx bx-world'></i>
-                    </a>
-                    <a class="scores" href="#" onclick="AnalisePro.open365ScoresForGame(${wradarGame}); return false;" title="5 - 365 Score">
-                        365
-                    </a>
-                    <a class="sofa" href="${sofaUrl || '#'}" ${sofaUrl ? 'target="_blank"' : 'onclick="return false;"'} title="6 - Sofascore detalhes">
-                        <i class='bx bx-plus-circle'></i>
-                    </a>
-                </div>
+                ${this.renderCalendarActions(game)}
             </div>
         `;
     },

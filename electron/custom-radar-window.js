@@ -11,7 +11,14 @@
     overlayReplica: false,
     showOdds: localStorage.getItem('custom_wradar_mod_show_odds') !== '0',
     showMeta: localStorage.getItem('custom_wradar_mod_show_meta') !== '0',
+    showPressureChart: localStorage.getItem('custom_wradar_mod_show_pressure_chart') === '1',
+    sofascoreGraphPoints: [],
+    sofascoreGraphFetchedAt: 0,
+    sofascoreGraphError: '',
+    sofascoreGraphFetchPromise: null,
+    sofascoreGraphTimer: null,
     heatmapMode: localStorage.getItem('custom_wradar_mod_heatmap_mode') || (localStorage.getItem('custom_wradar_mod_show_heatmap') === '1' ? 'match' : 'off'),
+    heatmapStyle: localStorage.getItem('custom_wradar_mod_heatmap_style') || 'candles',
     heatmapMenuOpen: false,
     pinnedKey: '',
     pinnedIndex: null,
@@ -74,6 +81,95 @@
     if (normalized.includes('intervalo') || normalized.includes('half time')) return { paused: true, period: 'interval' };
     if (normalized.includes('2 t') || normalized.includes('2o t') || normalized.includes('2nd') || normalized.includes('second half')) return { paused: false, period: 'second' };
     return { paused: false, period: 'first' };
+  };
+  const getSofascoreEventId = () => Number(state.event?.sofascoreId || state.event?.sofaId || state.event?.sofascoreEventId || 0) || null;
+  const fetchJson = async url => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        cache: 'no-store',
+        headers: { accept: 'application/json,text/plain,*/*' }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = JSON.parse(await response.text());
+      if (typeof data?.contents === 'string') return JSON.parse(data.contents);
+      return data;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const fetchSofascoreJson = async path => {
+    const endpoints = [
+      'https://api.sofascore.com/api/v1',
+      'https://www.sofascore.com/api/v1',
+      'https://api.sofascore.app/api/v1'
+    ];
+    const urls = endpoints.map(base => `${base}${path}`);
+    const attempts = [
+      ...urls,
+      ...urls.map(url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`),
+      ...urls.map(url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`)
+    ];
+    let lastError = null;
+    for (const url of attempts) {
+      try {
+        const data = await fetchJson(url);
+        if (data && typeof data === 'object') return data;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Sofascore sem resposta.');
+  };
+  const fetchSofascorePressureGraph = async (force = false) => {
+    const eventId = getSofascoreEventId();
+    if (!eventId || !state.showPressureChart) return;
+    if (!force && Date.now() - state.sofascoreGraphFetchedAt < 12000) return;
+    if (state.sofascoreGraphFetchPromise) return state.sofascoreGraphFetchPromise;
+
+    state.sofascoreGraphFetchPromise = (async () => {
+      let points = [];
+      if (window.traderSofascoreData?.momentum) {
+        const result = await window.traderSofascoreData.momentum({ sofascoreId: eventId });
+        if (result?.ok && Array.isArray(result.momentum)) {
+          points = result.momentum;
+        } else if (result?.error) {
+          throw new Error(result.error);
+        }
+      } else {
+        const data = await fetchSofascoreJson(`/event/${eventId}/graph`);
+        points = Array.isArray(data?.graphPoints) ? data.graphPoints : [];
+      }
+      return points;
+    })()
+      .then(points => {
+        state.sofascoreGraphPoints = points
+          .map((point, index) => ({
+            minute: Number(point.minute ?? index),
+            value: Number(point.value ?? 0)
+          }))
+          .filter(point => Number.isFinite(point.minute) && Number.isFinite(point.value));
+        state.sofascoreGraphFetchedAt = Date.now();
+        state.sofascoreGraphError = '';
+        scheduleRender();
+      })
+      .catch(error => {
+        state.sofascoreGraphError = error?.message || 'Sofascore indisponivel.';
+        state.sofascoreGraphFetchedAt = Date.now();
+      })
+      .finally(() => {
+        state.sofascoreGraphFetchPromise = null;
+      });
+    return state.sofascoreGraphFetchPromise;
+  };
+  const scheduleSofascorePressureGraph = (immediate = false) => {
+    clearTimeout(state.sofascoreGraphTimer);
+    if (!state.showPressureChart || !getSofascoreEventId()) return;
+    state.sofascoreGraphTimer = setTimeout(() => {
+      fetchSofascorePressureGraph(true).finally(() => scheduleSofascorePressureGraph(false));
+    }, immediate ? 0 : 15000);
   };
   const parseAddedTimeCommentSeconds = value => {
     const raw = String(value || '').replace(/\s+/g, ' ').trim();
@@ -225,6 +321,7 @@
     if ((text.includes('possivel') || text.includes('possible')) && (text.includes('cartao vermelho') || text.includes('red card'))) return 'possible-red-card';
     if (text.includes('cartao vermelho') || text.includes('red card')) return 'red-card';
     if (text.includes('cartao') || text.includes('card')) return 'yellow-card';
+    if (text.includes('substituicao') || text.includes('substitution')) return 'substitution';
     if (text.includes('defesa') || text.includes('defence') || text.includes('defense')) return 'defense';
     if (text.includes('ataque') || text.includes('attack')) return 'attack';
     if (text.includes('posse') || text.includes('controle de meio campo') || text.includes('control')) return 'control';
@@ -235,10 +332,13 @@
     const type = eventType(item);
     const side = item?.side === 'away' ? 'away' : (item?.side === 'home' ? 'home' : '');
     const directionalArrow = side === 'away' ? 'bx-left-arrow-alt' : 'bx-right-arrow-alt';
+    if (type === 'substitution') {
+      return `<span class="custom-radar-event-icon substitution ${escapeHtml(side)}" aria-label="Substituicao"><i class='bx bx-left-arrow-alt'></i><i class='bx bx-right-arrow-alt'></i></span>`;
+    }
     const map = {
       goal: 'bx-football', dangerous: directionalArrow,
       attack: directionalArrow,
-      defense: directionalArrow, 'shot-on-target': 'bx-target-lock', 'blocked-shot': 'bx-block', shot: 'bx-target-lock',
+      defense: directionalArrow, 'shot-on-target': 'bx-football', 'blocked-shot': 'bx-block', shot: 'bx-radio-circle',
       'goal-kick': 'bx-radio-circle', 'throw-in': 'bx-radio-circle',
       corner: 'bxs-flag-alt', 'yellow-card': 'bx-square', 'possible-red-card': 'bx-error', 'red-card': 'bx-square',
       control: 'bx-transfer-alt', foul: 'bx-square', neutral: 'bx-radio-circle'
@@ -336,6 +436,24 @@
     const start = index * 5;
     return `${String(start).padStart(2, '0')}-${String(start + 5).padStart(2, '0')}`;
   };
+  const heatBucketForSeconds = seconds => {
+    const minute = Math.max(0, Number(seconds) / 60);
+    if (minute > 45 && minute < 46) {
+      return { key: '45plus', label: '45+', startSeconds: 45 * 60, endSeconds: 46 * 60, order: 8.5 };
+    }
+    if (minute > 90 && minute < 91) {
+      return { key: '90plus', label: '90+', startSeconds: 90 * 60, endSeconds: 91 * 60, order: 17.5 };
+    }
+    const adjustedMinute = minute >= 46 && minute <= 90 ? minute - 1 : minute > 91 ? 89 : minute;
+    const index = Math.max(0, Math.floor(adjustedMinute / 5));
+    return {
+      key: `w${index}`,
+      label: heatWindowLabel(index),
+      startSeconds: index * 300,
+      endSeconds: (index + 1) * 300,
+      order: index
+    };
+  };
   const summarizeHeatRange = (windows, latestSeconds, minutes) => {
     if (!windows.length || !Number.isFinite(latestSeconds)) return { score: 0, level: heatLevel(0) };
     const startSeconds = Math.max(0, latestSeconds - (minutes * 60));
@@ -374,20 +492,54 @@
     let latest = parseGameSeconds(clock);
     if (latest === null) latest = Math.max(...parsedItems.map(entry => entry.seconds), 0);
     if (period.period === 'second' && latest < 45 * 60) latest += 45 * 60;
-    const maxWindow = Math.max(0, Math.floor(latest / 300));
-    const windows = Array.from({ length: maxWindow + 1 }, (_, index) => ({
+    const latestMinute = Math.max(0, latest / 60);
+    const maxOrder = latestMinute > 45 && latestMinute < 46
+      ? 8
+      : Math.max(0, Math.ceil(heatBucketForSeconds(latest).order));
+    const windows = Array.from({ length: maxOrder + 1 }, (_, index) => ({
+      key: `w${index}`,
       index,
       label: heatWindowLabel(index),
       startSeconds: index * 300,
       endSeconds: (index + 1) * 300,
+      order: index,
       score: 0,
       events: 0,
       details: {}
     }));
+    if (latest >= 45 * 60) {
+      windows.push({
+        key: '45plus',
+        index: 9.5,
+        label: '45+',
+        startSeconds: 45 * 60,
+        endSeconds: 46 * 60,
+        order: 8.5,
+        score: 0,
+        events: 0,
+        details: {}
+      });
+    }
+    if (latest >= 90 * 60) {
+      windows.push({
+        key: '90plus',
+        index: 18.5,
+        label: '90+',
+        startSeconds: 90 * 60,
+        endSeconds: 91 * 60,
+        order: 17.5,
+        score: 0,
+        events: 0,
+        details: {}
+      });
+    }
+    windows.sort((a, b) => a.order - b.order);
+    const windowMap = new Map(windows.map(item => [item.key, item]));
 
     parsedItems.forEach(({ seconds, heat, multiplier }) => {
-      const index = Math.max(0, Math.min(maxWindow, Math.floor(seconds / 300)));
-      const windowItem = windows[index];
+      const bucket = heatBucketForSeconds(seconds);
+      const windowItem = windowMap.get(bucket.key);
+      if (!windowItem) return;
       windowItem.score += heat.score * multiplier;
       windowItem.events += 1;
       windowItem.details[heat.label] = (windowItem.details[heat.label] || 0) + 1;
@@ -403,8 +555,9 @@
           .filter(previous => entry.seconds - previous.seconds <= 120).length;
         if (pressureCount < 3) return;
 
-        const windowIndex = Math.max(0, Math.min(maxWindow, Math.floor(entry.seconds / 300)));
-        const windowItem = windows[windowIndex];
+        const bucket = heatBucketForSeconds(entry.seconds);
+        const windowItem = windowMap.get(bucket.key);
+        if (!windowItem) return;
         if (windowItem.sequenceBonus) return;
 
         const multiplier = heatTimeMultiplier(entry.seconds);
@@ -418,7 +571,8 @@
       item.level = heatLevel(item.score);
     });
 
-    const visible = windows.slice(-18);
+    const visible = windows.slice(-20);
+    const style = state.heatmapStyle === 'dots' ? 'dots' : 'candles';
     const range5 = summarizeHeatRange(windows, latest, 5);
     const range10 = summarizeHeatRange(windows, latest, 10);
     const range15 = summarizeHeatRange(windows, latest, 15);
@@ -431,11 +585,15 @@
         item.level.label,
         ...Object.entries(item.details).map(([name, count]) => `${name}: ${count}`)
       ].join(' | ');
+      const candleHeight = Math.max(8, Math.min(38, Math.round(8 + (Math.min(60, item.score) / 60) * 30)));
+      if (style === 'candles') {
+        return `<span class="custom-radar-heat-candle-wrap" title="${escapeHtml(title)}"><b>${escapeHtml(item.label)}</b><i class="custom-radar-heat-candle ${item.level.key}" style="--heat-height:${candleHeight}px"></i></span>`;
+      }
       return `<span class="custom-radar-heat-point-wrap" title="${escapeHtml(title)}"><b>${escapeHtml(item.label)}</b><i class="custom-radar-heat-point ${item.level.key}"></i></span>`;
     };
 
     return `
-      <div class="custom-radar-heatmap ${extraClass}">
+      <div class="custom-radar-heatmap ${extraClass} is-${style}">
         <div class="custom-radar-heatmap-head">
           <strong><i class='bx bxs-flame'></i> ${escapeHtml(title)}</strong>
           <span class="custom-radar-heat-trend ${trend.key}">Tendencia: ${escapeHtml(trend.label)}</span>
@@ -466,6 +624,182 @@
       `;
     }
     return heatmapPanelHtml(items, clock, 'Temperatura do jogo');
+  };
+  const sofascorePressureChartHtml = (points, names) => {
+    const validPoints = (points || [])
+      .map((point, index) => ({
+        minute: Number(point.minute ?? index),
+        value: Number(point.value ?? 0)
+      }))
+      .filter(point => Number.isFinite(point.minute) && Number.isFinite(point.value))
+      .sort((a, b) => a.minute - b.minute);
+    if (!validPoints.length) return '';
+
+    const latestMinute = Math.max(...validPoints.map(point => point.minute), 0);
+    const timelineMinutes = Math.max(90, Math.ceil(latestMinute / 5) * 5);
+    const chartWidth = Math.max(720, timelineMinutes * 10);
+    const chartHeight = 92;
+    const midY = 46;
+    const maxBarHeight = 40;
+    const barWidth = Math.max(5, Math.min(9, Math.floor(chartWidth / Math.max(90, timelineMinutes)) - 1));
+    const absValues = validPoints.map(point => Math.abs(point.value)).filter(value => value > 0).sort((a, b) => a - b);
+    const percentileIndex = absValues.length ? Math.min(absValues.length - 1, Math.floor(absValues.length * 0.88)) : 0;
+    const visualMax = Math.max(12, absValues[percentileIndex] || 0);
+    const dividerX = Math.round((45 / timelineMinutes) * chartWidth);
+    const leftStartX = 4;
+    const leftEndX = Math.max(leftStartX, dividerX - barWidth - 3);
+    const rightStartX = Math.min(chartWidth - barWidth - 4, dividerX + 3);
+    const rightEndX = chartWidth - barWidth - 4;
+    const xInRange = (value, min, max, start, end) => {
+      if (max <= min) return start;
+      const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)));
+      return Math.round(start + (ratio * (end - start)));
+    };
+    const xForMinute = minute => {
+      const safeMinute = Math.max(0, Math.min(timelineMinutes, minute));
+      if (safeMinute < 46) {
+        const firstHalfMinute = safeMinute > 45
+          ? Math.min(45, 44.72 + ((safeMinute - 45) * 0.52))
+          : safeMinute;
+        return xInRange(firstHalfMinute, 1, 45, leftStartX, leftEndX);
+      }
+      return xInRange(safeMinute, 46, timelineMinutes, rightStartX, rightEndX);
+    };
+    const bars = validPoints.map(point => {
+      const x = xForMinute(point.minute);
+      const value = Math.max(-100, Math.min(100, point.value));
+      const ratio = Math.min(1, Math.abs(value) / visualMax);
+      const height = Math.max(2, Math.round(Math.pow(ratio, 0.82) * maxBarHeight));
+      const isHome = value >= 0;
+      const y = isHome ? midY - height : midY;
+      const fill = isHome ? '#22c55e' : '#6366f1';
+      const side = isHome ? names.home : names.away;
+      const title = `${Math.round(point.minute)}' | ${side}: ${Math.abs(Math.round(value))}`;
+      return `
+        <g>
+          <title>${escapeHtml(title)}</title>
+          <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="1.5" fill="${fill}" opacity="0.96"></rect>
+        </g>
+      `;
+    }).join('');
+
+    return `
+      <div class="custom-radar-pressure-chart is-sofascore" title="Grafico de pressao Sofascore">
+        <div class="custom-radar-pressure-chart-head">
+          <strong><i class='bx bx-bar-chart-alt-2'></i> Pressao <small>Sofascore</small></strong>
+          <span><b>${escapeHtml(teamAbbr(names.home))}</b><em></em><b>${escapeHtml(teamAbbr(names.away))}</b></span>
+        </div>
+        <div class="custom-radar-pressure-chart-body">
+          <svg viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" role="img" aria-label="Grafico de pressao Sofascore">
+            <line x1="0" y1="${midY}" x2="${chartWidth}" y2="${midY}" stroke="rgba(248,250,252,.34)" stroke-width="1"></line>
+            <line x1="${dividerX}" y1="0" x2="${dividerX}" y2="${chartHeight}" stroke="rgba(248,250,252,.20)" stroke-width="1"></line>
+            ${bars}
+          </svg>
+        </div>
+      </div>
+    `;
+  };
+  const pressureChartHtml = (data, clock, names) => {
+    const sofaChart = sofascorePressureChartHtml(state.sofascoreGraphPoints, names);
+    if (sofaChart) return sofaChart;
+
+    const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
+    if (!items.length) return '';
+
+    const parsedItems = items
+      .map(item => {
+        const seconds = parseGameSeconds(commentTime(item));
+        const heat = heatEventScore(item);
+        const side = item?.side === 'away' ? 'away' : item?.side === 'home' ? 'home' : '';
+        return { item, seconds, heat, side };
+      })
+      .filter(entry => entry.seconds !== null && entry.heat && entry.side);
+    if (!parsedItems.length) return '';
+
+    const period = clockPeriodInfo(clock);
+    let latest = parseGameSeconds(clock);
+    if (latest === null) latest = Math.max(...parsedItems.map(entry => entry.seconds), 0);
+    if (period.period === 'second' && latest < 45 * 60) latest += 45 * 60;
+
+    const maxMinute = Math.max(0, Math.floor(latest / 60));
+    const startMinute = Math.max(0, maxMinute - 45);
+    const minutes = Array.from({ length: maxMinute - startMinute + 1 }, (_, offset) => ({
+      minute: startMinute + offset,
+      home: 0,
+      away: 0,
+      homeEvents: {},
+      awayEvents: {},
+      markers: []
+    }));
+    const minuteMap = new Map(minutes.map(item => [item.minute, item]));
+
+    parsedItems.forEach(({ item, seconds, heat, side }) => {
+      const minute = Math.max(0, Math.floor(seconds / 60));
+      if (minute < startMinute || minute > maxMinute) return;
+      const bucket = minuteMap.get(minute);
+      const score = Math.max(0, heat.score) * heatTimeMultiplier(seconds);
+      bucket[side] += score;
+      const detailsKey = side === 'away' ? 'awayEvents' : 'homeEvents';
+      bucket[detailsKey][heat.label] = (bucket[detailsKey][heat.label] || 0) + 1;
+      const type = eventType(item);
+      if (['goal', 'red-card', 'possible-red-card', 'corner', 'shot-on-target'].includes(type)) {
+        bucket.markers.push({ side, type });
+      }
+    });
+
+    const maxValue = Math.max(10, ...minutes.flatMap(item => [item.home, item.away]));
+    const chartWidth = Math.max(520, minutes.length * 13);
+    const chartHeight = 78;
+    const midY = 39;
+    const gap = 2;
+    const barWidth = Math.max(5, Math.min(10, Math.floor((chartWidth / Math.max(1, minutes.length)) - gap)));
+    const xFor = index => Math.round(index * (barWidth + gap) + 8);
+    const markerIcon = marker => {
+      if (marker.type === 'goal') return '●';
+      if (marker.type === 'red-card' || marker.type === 'possible-red-card') return '◆';
+      if (marker.type === 'corner') return '⚑';
+      return '•';
+    };
+    const titleFor = item => {
+      const homeDetails = Object.entries(item.homeEvents).map(([name, count]) => `${names.home}: ${name} ${count}`).join(', ');
+      const awayDetails = Object.entries(item.awayEvents).map(([name, count]) => `${names.away}: ${name} ${count}`).join(', ');
+      return [`${item.minute}'`, homeDetails, awayDetails].filter(Boolean).join(' | ');
+    };
+    const bars = minutes.map((item, index) => {
+      const x = xFor(index);
+      const homeHeight = Math.max(1, Math.round((item.home / maxValue) * 31));
+      const awayHeight = Math.max(1, Math.round((item.away / maxValue) * 31));
+      const homeOpacity = item.home > 0 ? 0.96 : 0.18;
+      const awayOpacity = item.away > 0 ? 0.96 : 0.18;
+      const markers = item.markers.slice(0, 3).map((marker, markerIndex) => {
+        const y = marker.side === 'home' ? 10 + (markerIndex * 9) : 62 - (markerIndex * 9);
+        const color = marker.side === 'home' ? '#22c55e' : '#6366f1';
+        return `<text x="${x + (barWidth / 2)}" y="${y}" text-anchor="middle" fill="${color}" font-size="8" font-weight="900">${markerIcon(marker)}</text>`;
+      }).join('');
+      return `
+        <g>
+          <title>${escapeHtml(titleFor(item))}</title>
+          <rect x="${x}" y="${midY - homeHeight}" width="${barWidth}" height="${homeHeight}" rx="1.5" fill="#22c55e" opacity="${homeOpacity}"></rect>
+          <rect x="${x}" y="${midY}" width="${barWidth}" height="${awayHeight}" rx="1.5" fill="#6366f1" opacity="${awayOpacity}"></rect>
+          ${markers}
+        </g>
+      `;
+    }).join('');
+
+    return `
+      <div class="custom-radar-pressure-chart" title="Grafico de pressao por minuto">
+        <div class="custom-radar-pressure-chart-head">
+          <strong><i class='bx bx-bar-chart-alt-2'></i> Pressao</strong>
+          <span><b>${escapeHtml(teamAbbr(names.home))}</b><em></em><b>${escapeHtml(teamAbbr(names.away))}</b></span>
+        </div>
+        <div class="custom-radar-pressure-chart-body">
+          <svg viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" role="img" aria-label="Grafico de pressao">
+            <line x1="0" y1="${midY}" x2="${chartWidth}" y2="${midY}" stroke="rgba(248,250,252,.34)" stroke-width="1"></line>
+            ${bars}
+          </svg>
+        </div>
+      </div>
+    `;
   };
   const listHtml = data => {
     const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
@@ -521,8 +855,10 @@
     const whUrl = event?.id ? `https://wradar.com.br/radar?eventId=${encodeURIComponent(event.id)}&title=${encodeURIComponent(event.name || '')}&mod=true` : '#';
     const sportUrl = idBolsa ? `https://bolsadeaposta.bet.br/widget/mradar?id=${encodeURIComponent(idBolsa)}` : '';
     const heatmapMode = ['off', 'match', 'home', 'away', 'teams'].includes(state.heatmapMode) ? state.heatmapMode : 'off';
+    const heatmapStyle = state.heatmapStyle === 'dots' ? 'dots' : 'candles';
     const heatmapActive = heatmapMode !== 'off';
     const heatmapLabels = { off: 'Desligado', match: 'Partida', home: 'Casa', away: 'Visitante', teams: 'Times separados' };
+    const pressureChartActive = !!state.showPressureChart;
     const heatmapMenu = `
       <div class="custom-radar-heat-menu ${state.heatmapMenuOpen ? 'is-open' : ''}">
         ${[
@@ -532,6 +868,11 @@
           ['teams', 'Times separados', 'bx-columns'],
           ['off', 'Desligado', 'bx-hide']
         ].map(([mode, label, icon]) => `<button type="button" class="${heatmapMode === mode ? 'active' : ''}" data-action="heatmap-mode" data-mode="${mode}"><i class='bx ${icon}'></i><span>${escapeHtml(label)}</span></button>`).join('')}
+        <div class="custom-radar-heat-menu-label">Visual</div>
+        ${[
+          ['candles', 'Velas', 'bx-bar-chart-alt-2'],
+          ['dots', 'Bolinhas', 'bx-dots-horizontal-rounded']
+        ].map(([style, label, icon]) => `<button type="button" class="${heatmapStyle === style ? 'active' : ''}" data-action="heatmap-style" data-style="${style}"><i class='bx ${icon}'></i><span>${escapeHtml(label)}</span></button>`).join('')}
       </div>
     `;
     const heatmapTopButton = `
@@ -545,6 +886,7 @@
         <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="overlay" title="Alternar fundo limpo/painel"><i class='bx bx-layer'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
+        <button type="button" class="custom-radar-icon-btn ${pressureChartActive ? 'active pressure-active' : ''}" data-action="pressure-chart" title="${pressureChartActive ? 'Ocultar grafico de pressao' : 'Mostrar grafico de pressao'}"><i class='bx bx-bar-chart-alt-2'></i></button>
         ${heatmapTopButton}
         <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="close" title="Fechar"><i class='bx bx-x'></i></button>
@@ -555,6 +897,7 @@
           <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="overlay" title="Alternar fundo limpo/painel"><i class='bx bx-layer'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
+          <button type="button" class="custom-radar-icon-btn ${pressureChartActive ? 'active pressure-active' : ''}" data-action="pressure-chart" title="${pressureChartActive ? 'Ocultar grafico de pressao' : 'Mostrar grafico de pressao'}"><i class='bx bx-bar-chart-alt-2'></i></button>
           ${heatmapTopButton}
           <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="close" title="Fechar"><i class='bx bx-x'></i></button>
@@ -572,10 +915,10 @@
             <div class="custom-radar-current-event ${escapeHtml(current?.side || '')} ${escapeHtml(type)} ${pinned ? 'is-highlighted' : ''}"><span>${escapeHtml(current?.time || clock || '--')}</span>${eventIcon(current)}<strong>${escapeHtml(currentText)}</strong></div>
             ${listHtml(data)}
           </div>
-          <div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${heatmapActive ? heatmapHtml(data, clock, heatmapMode, names) : ''}</div>
+          <div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${pressureChartActive ? pressureChartHtml(data, clock, names) : ''}${heatmapActive ? heatmapHtml(data, clock, heatmapMode, names) : ''}</div>
         </div>
         <aside class="custom-radar-side custom-radar-tools">
-          <div class="custom-radar-controls"><button type="button" class="${state.showOdds ? 'active' : ''}" data-action="odds"><i class='bx bx-money'></i> Odds</button><button type="button" class="${state.showMeta ? 'active' : ''}" data-action="meta"><i class='bx bx-data'></i> IDs</button><button type="button" class="${heatmapActive ? 'active' : ''}" data-action="heatmap-menu"><i class='bx bxs-flame'></i> ${escapeHtml(heatmapLabels[heatmapMode] || 'Calor')}</button><button type="button" class="custom-radar-highlight-action" data-action="highlight"><i class='bx bx-crop'></i> Destacar</button></div>
+          <div class="custom-radar-controls"><button type="button" class="${state.showOdds ? 'active' : ''}" data-action="odds"><i class='bx bx-money'></i> Odds</button><button type="button" class="${state.showMeta ? 'active' : ''}" data-action="meta"><i class='bx bx-data'></i> IDs</button><button type="button" class="${pressureChartActive ? 'active' : ''}" data-action="pressure-chart"><i class='bx bx-bar-chart-alt-2'></i> Pressao</button><button type="button" class="${heatmapActive ? 'active' : ''}" data-action="heatmap-menu"><i class='bx bxs-flame'></i> ${escapeHtml(heatmapLabels[heatmapMode] || 'Calor')}</button><button type="button" class="custom-radar-highlight-action" data-action="highlight"><i class='bx bx-crop'></i> Destacar</button></div>
           ${state.showOdds ? `<div class="custom-radar-card"><h3><i class='bx bx-line-chart'></i> William Hill</h3><div class="custom-radar-odds-grid">${odds(event).map(item => `<div class="custom-radar-odd"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`).join('') || '<p class="custom-radar-muted">Odds indisponiveis para este evento.</p>'}</div></div>` : ''}
           ${state.showMeta ? `<div class="custom-radar-card"><h3><i class='bx bx-fingerprint'></i> Fontes</h3><dl class="custom-radar-meta"><dt>Event ID</dt><dd>${escapeHtml(event.id || '-')}</dd><dt>WH Entity</dt><dd>${escapeHtml(event.rawEntityId || '-')}</dd><dt>ID Bolsa</dt><dd>${escapeHtml(idBolsa || '-')}</dd><dt>Sofascore</dt><dd>${escapeHtml(event.sofascoreId || '-')}</dd><dt>365Scores</dt><dd>${escapeHtml(event.scores365PartnerId || event.matchId || '-')}</dd></dl></div>` : ''}
           <div class="custom-radar-links">${sportUrl ? `<a href="${escapeHtml(sportUrl)}" target="_blank"><i class='bx bx-world'></i> Widget mRadar</a>` : ''}<a href="${escapeHtml(whUrl)}" target="_blank"><i class='bx bx-crosshair'></i> WRadar original</a>${event.packLink ? `<a href="${escapeHtml(event.packLink)}" target="_blank"><i class='bx bx-football'></i> Packball</a>` : ''}</div>
@@ -707,8 +1050,10 @@
       state.lastSignature = nextSignature;
       state.error = '';
       state.realData = payload.data || null;
+      if (state.showPressureChart && getSofascoreEventId()) fetchSofascorePressureGraph(false).catch(() => {});
       scheduleRender();
     });
+    scheduleSofascorePressureGraph(true);
     startFeed().catch(error => {
       state.error = error?.message || 'Nao foi possivel iniciar o feed real.';
       render();
@@ -767,6 +1112,17 @@
       render();
       return;
     }
+    if (action === 'pressure-chart') {
+      state.showPressureChart = !state.showPressureChart;
+      localStorage.setItem('custom_wradar_mod_show_pressure_chart', state.showPressureChart ? '1' : '0');
+      if (state.showPressureChart) {
+        scheduleSofascorePressureGraph(true);
+      } else {
+        clearTimeout(state.sofascoreGraphTimer);
+      }
+      render();
+      return;
+    }
     if (action === 'heatmap-menu') {
       state.heatmapMenuOpen = !state.heatmapMenuOpen;
       render();
@@ -781,16 +1137,31 @@
       render();
       return;
     }
+    if (action === 'heatmap-style') {
+      const style = target.closest('[data-style]')?.dataset?.style || 'candles';
+      state.heatmapStyle = style === 'dots' ? 'dots' : 'candles';
+      localStorage.setItem('custom_wradar_mod_heatmap_style', state.heatmapStyle);
+      state.heatmapMenuOpen = false;
+      render();
+      return;
+    }
   });
 
   document.addEventListener('wheel', event => {
-    if (event.target.closest('.custom-radar-comment-list')) state.interactingUntil = Date.now() + 700;
-  }, { passive: true });
+    const list = event.target.closest('.custom-radar-comment-list');
+    if (!list) return;
+    event.preventDefault();
+    const row = list.querySelector('.custom-radar-comment');
+    const step = Math.max(24, Math.round(row?.getBoundingClientRect?.().height || 34));
+    list.scrollTop += Math.sign(event.deltaY || 1) * step;
+    state.interactingUntil = Date.now() + 700;
+  }, { passive: false });
   document.addEventListener('pointerdown', event => {
     if (event.target.closest('.custom-radar-comment-list')) state.interactingUntil = Date.now() + 700;
   });
   window.addEventListener('beforeunload', () => {
     if (state.feedId) window.traderWRadarRealMod?.stopFeed?.(state.feedId);
+    clearTimeout(state.sofascoreGraphTimer);
   });
 
   init();

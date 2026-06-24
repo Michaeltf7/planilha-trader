@@ -588,6 +588,20 @@ def fetch_match_details(event_id):
     }
 
 
+def fetch_match_momentum(event_id):
+    event_id = int(event_id)
+    graph = api_get(f"/event/{event_id}/graph", timeout=20, retries=2) or {}
+    points = graph.get("graphPoints") if isinstance(graph, dict) else []
+    return {
+        "ok": isinstance(points, list),
+        "source": "Sofascore",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "eventId": event_id,
+        "momentum": points if isinstance(points, list) else [],
+        "error": graph.get("_error", "") if isinstance(graph, dict) else "",
+    }
+
+
 def logo_url(team_id):
     return f"https://api.sofascore.app/api/v1/team/{team_id}/image" if team_id else ""
 
@@ -853,6 +867,9 @@ def fetch_competition(unique_tournament_id, season_id, name="Competicao"):
 
 def main():
     try:
+        if len(sys.argv) >= 3 and sys.argv[1] == "momentum":
+            print(json.dumps(fetch_match_momentum(sys.argv[2]), ensure_ascii=False))
+            return
         if len(sys.argv) >= 3 and sys.argv[1] == "details":
             print(json.dumps(fetch_match_details(sys.argv[2]), ensure_ascii=False))
             return

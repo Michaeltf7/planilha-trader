@@ -2049,9 +2049,9 @@ tr:hover td {
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-md);
-    border-radius: 18px;
-    padding: 24px 26px;
-    gap: 20px;
+    border-radius: 14px;
+    padding: 14px 18px;
+    gap: 14px;
 }
 
 .calendar-header-card::after {
@@ -2062,20 +2062,21 @@ tr:hover td {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 6px;
-    font-size: 24px;
+    margin-bottom: 0;
+    font-size: 22px;
     letter-spacing: 0;
 }
 
 .calendar-header-card .pro-header-info h2 i {
-    width: 40px;
-    height: 40px;
+    width: 34px;
+    height: 34px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 10px;
+    border-radius: 9px;
     background: rgba(15, 150, 156, 0.12);
     color: var(--primary-color);
+    font-size: 20px;
 }
 
 .calendar-header-card .pro-header-info p {
@@ -2088,7 +2089,7 @@ tr:hover td {
     display: grid;
     grid-template-columns: minmax(250px, 1fr) 160px;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     flex: 0 1 510px;
 }
 
@@ -2112,7 +2113,7 @@ tr:hover td {
 }
 
 .calendar-header-actions .filter-control {
-    height: 46px;
+    height: 40px;
     border-radius: 10px;
 }
 
@@ -2405,9 +2406,116 @@ tr:hover td {
     white-space: nowrap;
 }
 
+.calendar-view-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.calendar-status-tabs,
+.calendar-layout-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.calendar-status-tabs {
+    flex-wrap: wrap;
+}
+
+.calendar-status-tabs button,
+.calendar-layout-toggle button {
+    min-height: 34px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 7px 12px;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.calendar-status-tabs button:hover,
+.calendar-layout-toggle button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(15, 150, 156, 0.42);
+}
+
+.calendar-status-tabs button.active {
+    border-color: #f43f5e;
+    background: #f43f5e;
+    color: #fff;
+}
+
+.calendar-status-tabs button span,
+.calendar-layout-toggle button span {
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.calendar-status-tabs button span {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-body);
+    color: var(--text-secondary);
+}
+
+.calendar-status-tabs button.active span {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+}
+
+.calendar-layout-toggle {
+    padding: 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-body);
+}
+
+.calendar-layout-toggle button {
+    min-height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    padding: 6px 10px;
+}
+
+.calendar-layout-toggle button.active {
+    background: var(--primary-color);
+    color: #fff;
+}
+
 @media (max-width: 760px) {
     .calendar-league-filters {
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+
+    .calendar-view-controls {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .calendar-layout-toggle {
+        width: 100%;
+    }
+
+    .calendar-layout-toggle button {
+        flex: 1;
     }
 }
 
@@ -2437,6 +2545,132 @@ tr:hover td {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 12px;
+}
+
+.calendar-list-section {
+    padding: 0;
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+.calendar-list-section .tournament-header {
+    min-height: 40px;
+    margin: 0;
+    padding: 8px 12px;
+    background: rgba(15, 150, 156, 0.08);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 12px;
+    letter-spacing: 0.2px;
+}
+
+.calendar-compact-list {
+    display: grid;
+}
+
+.calendar-list-game {
+    display: grid;
+    grid-template-columns: 34px 82px minmax(220px, 1fr) minmax(120px, 180px) minmax(250px, 310px);
+    align-items: center;
+    gap: 10px;
+    min-height: 52px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-surface);
+}
+
+.calendar-list-game:last-child {
+    border-bottom: 0;
+}
+
+.calendar-list-game:hover {
+    background: var(--bg-body);
+}
+
+.calendar-list-game.is-fav-game {
+    box-shadow: inset 4px 0 0 #ffca28;
+}
+
+.calendar-list-game.is-live .calendar-list-time {
+    color: #dc2626;
+}
+
+.calendar-list-game.is-finished {
+    opacity: 0.88;
+}
+
+.calendar-list-game .calendar-star-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 20px;
+}
+
+.calendar-list-time {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.calendar-list-match {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.calendar-list-team {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) 30px;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.calendar-list-team strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.calendar-list-team em {
+    color: var(--primary-color);
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 1000;
+    text-align: right;
+}
+
+.calendar-list-team em.live {
+    color: #dc2626;
+}
+
+.calendar-list-meta {
+    display: grid;
+    justify-items: start;
+    gap: 5px;
+    min-width: 0;
+}
+
+.calendar-list-rank {
+    background: rgba(15, 150, 156, 0.1);
+    color: var(--primary-color);
+    padding: 3px 7px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.calendar-list-odds {
+    flex-wrap: nowrap;
+}
+
+.calendar-list-actions {
+    margin-top: 0;
+    min-width: 0;
 }
 
 .calendar-game-card {
@@ -2623,6 +2857,28 @@ tr:hover td {
     color: var(--primary-color);
     background: rgba(15, 150, 156, 0.1);
     border: 1px solid rgba(15, 150, 156, 0.3);
+}
+
+@media (max-width: 1200px) {
+    .calendar-list-game {
+        grid-template-columns: 34px 78px minmax(210px, 1fr) minmax(230px, 310px);
+    }
+
+    .calendar-list-meta {
+        display: none;
+    }
+}
+
+@media (max-width: 860px) {
+    .calendar-list-game {
+        grid-template-columns: 32px 72px minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .calendar-list-actions {
+        grid-column: 1 / -1;
+        margin-top: 2px;
+    }
 }
 
 .history-signal-row {
@@ -3303,6 +3559,13 @@ body.custom-radar-overlay-replica a {
     box-shadow: 0 0 16px rgba(249, 115, 22, 0.18);
 }
 
+.custom-radar-icon-btn.pressure-active {
+    border-color: rgba(34, 197, 94, 0.52);
+    background: rgba(34, 197, 94, 0.16);
+    color: #bbf7d0;
+    box-shadow: 0 0 16px rgba(34, 197, 94, 0.18);
+}
+
 .custom-radar-heat-menu-wrap {
     position: relative;
     display: inline-flex;
@@ -3361,6 +3624,16 @@ body.custom-radar-overlay-replica a {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.custom-radar-heat-menu-label {
+    margin: 5px 2px 2px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    color: #94a3b8;
+    font: 1000 9px/1 'Outfit', sans-serif;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .custom-radar-scorebar {
@@ -4185,6 +4458,76 @@ body.custom-radar-overlay-replica a {
     color: #facc15;
 }
 
+.custom-radar-pressure-chart {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    margin-top: 7px;
+    padding: 8px 10px;
+    border: 1px solid var(--custom-radar-border);
+    border-radius: 10px;
+    background: rgba(2, 6, 23, 0.48);
+    color: var(--custom-radar-text);
+    font-family: 'Outfit', sans-serif;
+}
+
+.custom-radar-pressure-chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 1000;
+    line-height: 1;
+}
+
+.custom-radar-pressure-chart-head strong,
+.custom-radar-pressure-chart-head span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.custom-radar-pressure-chart-head strong {
+    color: #f8fafc;
+    text-shadow: 0 0 7px rgba(248, 250, 252, 0.72), 0 1px 3px rgba(0, 0, 0, 0.74);
+}
+
+.custom-radar-pressure-chart-head small {
+    color: #38bdf8;
+    font-size: 9px;
+    font-weight: 1000;
+    text-transform: uppercase;
+}
+
+.custom-radar-pressure-chart-head span {
+    color: #cbd5e1;
+}
+
+.custom-radar-pressure-chart-head em {
+    width: 22px;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #22c55e, #6366f1);
+}
+
+.custom-radar-pressure-chart-body {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.custom-radar-pressure-chart svg {
+    display: block;
+    width: 100%;
+    min-width: 520px;
+    height: 72px;
+    overflow: visible;
+}
+
 .custom-radar-heatmap {
     display: grid;
     gap: 8px;
@@ -4282,6 +4625,19 @@ body.custom-radar-overlay-replica a {
     padding-bottom: 2px;
 }
 
+.custom-radar-heatmap.is-candles .custom-radar-heat-track {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(24px, 1fr));
+    gap: 3px;
+    overflow: hidden;
+    scrollbar-width: none;
+    padding-bottom: 0;
+}
+
+.custom-radar-heatmap.is-candles .custom-radar-heat-track::-webkit-scrollbar {
+    display: none;
+}
+
 .custom-radar-heatmap.is-team .custom-radar-heat-track {
     gap: 6px;
     min-height: 28px;
@@ -4297,6 +4653,50 @@ body.custom-radar-overlay-replica a {
     min-width: 38px;
     padding: 1px 0;
     line-height: 1;
+}
+
+.custom-radar-heat-candle-wrap {
+    display: inline-grid;
+    grid-template-rows: auto 42px;
+    place-items: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 1px 0;
+    line-height: 1;
+}
+
+.custom-radar-heat-candle-wrap b {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 9px;
+    font-weight: 1000;
+    color: #f8fafc;
+    white-space: nowrap;
+    text-overflow: clip;
+    text-shadow: 0 0 6px rgba(248, 250, 252, 0.72), 0 1px 3px rgba(0, 0, 0, 0.72);
+}
+
+.custom-radar-heat-candle {
+    align-self: end;
+    display: block;
+    width: 10px;
+    height: var(--heat-height, 8px);
+    min-height: 8px;
+    border-radius: 6px 6px 3px 3px;
+    border: 1px solid rgba(255, 255, 255, 0.54);
+    background: #16a34a;
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.3), 0 0 14px currentColor;
+    color: #16a34a;
+}
+
+.custom-radar-heat-candle::after {
+    content: "";
+    display: block;
+    width: 14px;
+    height: 2px;
+    margin: calc(var(--heat-height, 8px) + 2px) 0 0 -3px;
+    border-radius: 999px;
+    background: rgba(248, 250, 252, 0.18);
 }
 
 .custom-radar-heat-point-wrap b {
@@ -4317,28 +4717,32 @@ body.custom-radar-overlay-replica a {
 }
 
 .custom-radar-heat-summary.cold,
-.custom-radar-heat-point.cold {
+.custom-radar-heat-point.cold,
+.custom-radar-heat-candle.cold {
     background: #16a34a;
     border-color: #86efac;
     color: #16a34a;
 }
 
 .custom-radar-heat-summary.watch,
-.custom-radar-heat-point.watch {
+.custom-radar-heat-point.watch,
+.custom-radar-heat-candle.watch {
     background: #facc15;
     border-color: #fef08a;
     color: #facc15;
 }
 
 .custom-radar-heat-summary.hot,
-.custom-radar-heat-point.hot {
+.custom-radar-heat-point.hot,
+.custom-radar-heat-candle.hot {
     background: #f97316;
     border-color: #fed7aa;
     color: #f97316;
 }
 
 .custom-radar-heat-summary.very-hot,
-.custom-radar-heat-point.very-hot {
+.custom-radar-heat-point.very-hot,
+.custom-radar-heat-candle.very-hot {
     background: #dc2626;
     border-color: #fecaca;
     box-shadow: 0 0 0 2px rgba(127, 29, 29, 0.32), 0 0 18px rgba(220, 38, 38, 0.9);
@@ -4353,6 +4757,14 @@ body.custom-radar-overlay-replica a {
     box-shadow: 0 0 0 2px rgba(124, 45, 18, 0.3), 0 0 17px rgba(249, 115, 22, 0.9);
 }
 
+.custom-radar-heat-candle.watch {
+    box-shadow: 0 0 0 2px rgba(113, 63, 18, 0.28), 0 0 16px rgba(250, 204, 21, 0.84);
+}
+
+.custom-radar-heat-candle.hot {
+    box-shadow: 0 0 0 2px rgba(124, 45, 18, 0.3), 0 0 17px rgba(249, 115, 22, 0.9);
+}
+
 .custom-wradar-modal[data-radar-density="compact"] .custom-radar-heatmap {
     padding: 7px;
     gap: 6px;
@@ -4361,6 +4773,16 @@ body.custom-radar-overlay-replica a {
 .custom-wradar-modal[data-radar-density="compact"] .custom-radar-heat-point-wrap {
     flex-basis: 34px;
     min-width: 34px;
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heat-candle-wrap {
+    grid-template-rows: auto 32px;
+    min-width: 0;
+}
+
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heat-candle {
+    width: 9px;
+    max-height: 30px;
 }
 
 .custom-wradar-modal[data-radar-density="compact"] .custom-radar-heat-point {
@@ -4384,10 +4806,20 @@ body.custom-radar-overlay-replica a {
     min-height: 24px;
 }
 
+.custom-wradar-modal[data-radar-density="compact"] .custom-radar-heatmap.is-candles.is-team .custom-radar-heat-track {
+    min-height: 42px;
+}
+
+.custom-wradar-modal[data-radar-overlay="clean"] .custom-radar-pressure-chart {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    margin-top: 4px;
+}
+
 .custom-wradar-modal[data-radar-overlay="clean"] .custom-radar-heatmap,
 .custom-wradar-modal[data-radar-overlay="clean"] .custom-radar-heatmap-split {
     grid-column: 1 / -1 !important;
-    grid-row: 2 !important;
+    grid-row: 3 !important;
     margin-top: 4px;
 }
 
@@ -4399,6 +4831,19 @@ body.custom-radar-overlay-replica a {
 
 .custom-wradar-modal[data-radar-overlay="clean"][data-radar-density="compact"] .custom-radar-heat-summary-row {
     display: none;
+}
+
+.custom-wradar-modal[data-radar-overlay="clean"][data-radar-density="compact"] .custom-radar-pressure-chart {
+    padding: 5px 8px;
+    gap: 3px;
+}
+
+.custom-wradar-modal[data-radar-overlay="clean"][data-radar-density="compact"] .custom-radar-pressure-chart-head {
+    display: none;
+}
+
+.custom-wradar-modal[data-radar-overlay="clean"][data-radar-density="compact"] .custom-radar-pressure-chart svg {
+    height: 44px;
 }
 
 .custom-radar-mini-info {
@@ -4481,7 +4926,8 @@ body.custom-radar-overlay-replica a {
 }
 
 .custom-radar-current-event {
-    grid-template-columns: 92px 38px minmax(0, 1fr);
+    grid-template-columns: 78px 30px minmax(0, 1fr);
+    column-gap: 8px;
     min-height: 70px;
     background: linear-gradient(90deg, rgba(15, 150, 156, 0.22), rgba(15, 23, 42, 0.08));
     backdrop-filter: blur(8px);
@@ -4523,9 +4969,9 @@ body.custom-radar-overlay-replica a {
 }
 
 .custom-radar-current-event .custom-radar-event-icon {
-    width: 34px;
-    height: 34px;
-    font-size: 22px;
+    width: 30px;
+    height: 30px;
+    font-size: 21px;
 }
 
 .custom-radar-current-event strong {
@@ -4562,7 +5008,7 @@ body.custom-radar-overlay-replica a {
     color: #ef4444 !important;
     background: transparent !important;
     box-shadow: none;
-    text-shadow: 0 0 8px rgba(239, 68, 68, 0.7), 0 0 18px rgba(239, 68, 68, 0.38);
+    text-shadow: 0 0 9px rgba(239, 68, 68, 0.82), 0 0 20px rgba(239, 68, 68, 0.48);
 }
 
 .custom-radar-event-icon.attack {
@@ -4586,9 +5032,10 @@ body.custom-radar-overlay-replica a {
 }
 
 .custom-radar-event-icon.shot-on-target {
-    color: #111827;
-    background: #facc15;
-    box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.14);
+    color: #22c55e !important;
+    background: transparent !important;
+    box-shadow: none;
+    text-shadow: 0 0 8px rgba(34, 197, 94, 0.72), 0 0 18px rgba(34, 197, 94, 0.38);
 }
 
 .custom-radar-event-icon.yellow-card {
@@ -4739,13 +5186,80 @@ body.custom-radar-overlay-replica a {
 }
 
 .custom-radar-event-icon.shot {
-    color: #facc15;
-    background: rgba(234, 179, 8, 0.16);
+    position: relative;
+    color: transparent !important;
+    background: transparent !important;
+    box-shadow: none;
+    font-size: 0;
+}
+
+.custom-radar-event-icon.shot::before {
+    content: "" !important;
+    position: absolute;
+    left: 4px;
+    bottom: 6px;
+    width: 12px;
+    height: 13px;
+    border-left: 2px solid #fde68a;
+    border-top: 2px solid #fde68a;
+    border-right: 2px solid #fde68a;
+    border-radius: 3px 3px 0 0;
+    filter: drop-shadow(0 0 5px rgba(250, 204, 21, 0.72));
+}
+
+.custom-radar-event-icon.shot::after {
+    content: "";
+    position: absolute;
+    right: 3px;
+    top: 3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #f8fafc;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.65), -6px 7px 0 -3px #facc15, 0 0 8px rgba(250, 204, 21, 0.72);
+}
+
+.custom-radar-event-icon.shot .bx,
+.custom-radar-event-icon.shot::marker {
+    display: none;
 }
 
 .custom-radar-event-icon.corner {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.16);
+    color: #38bdf8 !important;
+    background: transparent !important;
+    box-shadow: none;
+    text-shadow: 0 0 8px rgba(56, 189, 248, 0.72), 0 0 18px rgba(56, 189, 248, 0.36);
+}
+
+.custom-radar-event-icon.blocked-shot {
+    color: #fb923c !important;
+    background: transparent !important;
+    box-shadow: none;
+    text-shadow: 0 0 7px rgba(251, 146, 60, 0.72), 0 0 16px rgba(251, 146, 60, 0.34);
+}
+
+.custom-radar-event-icon.substitution {
+    gap: 0;
+    background: transparent !important;
+    box-shadow: none;
+    color: inherit;
+}
+
+.custom-radar-event-icon.substitution i {
+    width: 13px;
+    font-size: 17px;
+    line-height: 1;
+    text-shadow: 0 0 7px currentColor;
+}
+
+.custom-radar-event-icon.substitution i:first-child {
+    color: #ef4444;
+    transform: translateX(2px);
+}
+
+.custom-radar-event-icon.substitution i:last-child {
+    color: #22c55e;
+    transform: translateX(-2px);
 }
 
 .custom-radar-comment.red-card strong,
@@ -4763,7 +5277,8 @@ body.custom-radar-overlay-replica a {
 
 .custom-radar-comment {
     width: 100%;
-    grid-template-columns: 82px 32px minmax(0, 1fr);
+    grid-template-columns: 66px 26px minmax(0, 1fr);
+    column-gap: 7px;
     min-height: 49px;
     border: 0;
     border-bottom: 1px solid rgba(148, 163, 184, 0.12);

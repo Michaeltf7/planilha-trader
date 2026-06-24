@@ -137,6 +137,10 @@ contextBridge.exposeInMainWorld('traderCompetitionData', {
   matchDetails: (payload) => ipcRenderer.invoke('competitions:match-details', payload)
 });
 
+contextBridge.exposeInMainWorld('traderSofascoreData', {
+  momentum: (payload) => ipcRenderer.invoke('sofascore:momentum', payload)
+});
+
 contextBridge.exposeInMainWorld('traderCalendarData', {
   byDate: (payload) => ipcRenderer.invoke('calendar:by-date', payload)
 });

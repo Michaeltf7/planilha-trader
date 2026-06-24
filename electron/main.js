@@ -848,6 +848,10 @@ ipcMain.handle('competitions:match-details', async (_event, payload = {}) => {
   return fetchWorldCupMatchDetails(payload);
 });
 
+ipcMain.handle('sofascore:momentum', async (_event, payload = {}) => {
+  return fetchSofascoreMomentum(payload);
+});
+
 ipcMain.handle('calendar:by-date', async (_event, payload = {}) => {
   return fetchCalendarSofascoreDate(payload);
 });
@@ -1304,6 +1308,15 @@ async function fetchWorldCupMatchDetails(payload = {}) {
   }
   const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
   return runPythonJsonScript(scriptPath, 60000, ['details', String(eventId)]);
+}
+
+async function fetchSofascoreMomentum(payload = {}) {
+  const eventId = Number(payload.sofascoreId || payload.eventId || 0);
+  if (!eventId) {
+    return { ok: false, source: 'Sofascore', error: 'Jogo sem ID do Sofascore.' };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  return runPythonJsonScript(scriptPath, 30000, ['momentum', String(eventId)]);
 }
 
 async function syncCompetitionData(payload = {}) {
