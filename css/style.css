@@ -4627,7 +4627,8 @@ body.custom-radar-overlay-replica a {
 
 .custom-radar-heatmap.is-candles .custom-radar-heat-track {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(24px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(26px, 30px));
+    justify-content: start;
     gap: 3px;
     overflow: hidden;
     scrollbar-width: none;
