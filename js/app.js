@@ -273,7 +273,7 @@ const App = {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const view = link.getAttribute('data-view');
-                this.changeView(view);
+                this.changeView(view, 'sidebar-click');
                 
                 // Update active class
                 this.navLinks.forEach(l => l.classList.remove('active'));
@@ -1099,8 +1099,11 @@ const App = {
         return new Date(year, month, day, hour, min, sec);
     },
     
-    changeView(view) {
+    changeView(view, source = 'direct') {
         if (this.currentView === view) return;
+        if (view === 'copa-mundo' && source !== 'sidebar-click') {
+            console.warn('Troca para Copa do Mundo disparada fora do menu:', source, new Error().stack);
+        }
         this.currentView = view;
         
         // Update Title

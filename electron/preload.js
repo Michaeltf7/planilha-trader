@@ -110,12 +110,23 @@ contextBridge.exposeInMainWorld('traderDesktopHighlight', {
 contextBridge.exposeInMainWorld('traderWRadarRealMod', {
   openWindow: (payload) => ipcRenderer.invoke('wradar-real-mod:open-window', payload),
   resizeWindow: (payload) => ipcRenderer.invoke('wradar-real-mod:resize-window', payload),
+  chooseRadarIcon: (payload) => ipcRenderer.invoke('wradar-real-mod:choose-icon', payload),
   dragOverlayWindow: (payload = {}) => {
     const point = { x: Number(payload.x) || 0, y: Number(payload.y) || 0 };
     if (payload.phase === 'start') ipcRenderer.send('replica:begin-drag', point);
     else if (payload.phase === 'move') ipcRenderer.send('replica:drag-to', point);
     else if (payload.phase === 'end' || payload.phase === 'cancel') ipcRenderer.send('replica:end-drag');
   },
+  resizeOverlayWindow: (payload = {}) => {
+    const point = { x: Number(payload.x) || 0, y: Number(payload.y) || 0 };
+    if (payload.phase === 'start') ipcRenderer.send('replica:begin-resize', point);
+    else if (payload.phase === 'move') ipcRenderer.send('replica:resize-to', point);
+    else if (payload.phase === 'end' || payload.phase === 'cancel') ipcRenderer.send('replica:end-resize');
+  },
+  overlayState: () => ipcRenderer.invoke('replica:state'),
+  showOverlayMenu: () => ipcRenderer.send('replica:show-menu'),
+  toggleOverlayAlwaysOnTop: () => ipcRenderer.invoke('replica:toggle-always-on-top'),
+  resetOverlayWindow: () => ipcRenderer.invoke('replica:reset-window'),
   startFeed: (payload) => ipcRenderer.invoke('wradar-real-mod:start', payload),
   stopFeed: (feedId) => ipcRenderer.invoke('wradar-real-mod:stop', feedId),
   onUpdate: (callback) => {
@@ -138,7 +149,10 @@ contextBridge.exposeInMainWorld('traderCompetitionData', {
 });
 
 contextBridge.exposeInMainWorld('traderSofascoreData', {
-  momentum: (payload) => ipcRenderer.invoke('sofascore:momentum', payload)
+  momentum: (payload) => ipcRenderer.invoke('sofascore:momentum', payload),
+  eventDetails: (payload) => ipcRenderer.invoke('sofascore:event-details', payload),
+  tournamentLogo: (payload) => ipcRenderer.invoke('sofascore:tournament-logo', payload),
+  tournamentCalendar: (payload) => ipcRenderer.invoke('sofascore:tournament-calendar', payload)
 });
 
 contextBridge.exposeInMainWorld('traderCalendarData', {

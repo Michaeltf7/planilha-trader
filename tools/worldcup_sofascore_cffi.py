@@ -602,6 +602,31 @@ def fetch_match_momentum(event_id):
     }
 
 
+def fetch_match_player_events(event_id):
+    event_id = int(event_id)
+
+    def safe(path):
+        try:
+            return api_get(path, timeout=20, retries=2) or {}
+        except Exception as exc:
+            return {"_error": str(exc)}
+
+    incidents = safe(f"/event/{event_id}/incidents")
+    shotmap = safe(f"/event/{event_id}/shotmap")
+    return {
+        "ok": bool(incidents.get("incidents") or shotmap.get("shotmap")),
+        "source": "Sofascore",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "eventId": event_id,
+        "incidents": incidents.get("incidents") or [],
+        "shotmap": shotmap.get("shotmap") or [],
+        "errors": {
+            "incidents": incidents.get("_error", ""),
+            "shots": shotmap.get("_error", ""),
+        },
+    }
+
+
 def logo_url(team_id):
     return f"https://api.sofascore.app/api/v1/team/{team_id}/image" if team_id else ""
 
@@ -667,6 +692,8 @@ def normalize_calendar_event(event, odds_by_event=None, image_cache=None):
     event_id = event.get("id")
     odds = odds_by_event.get(str(event_id)) or odds_by_event.get(event_id) or {}
     choices = odds.get("choices") if isinstance(odds, dict) else None
+    tournament_logo_url = f"https://api.sofascore.app/api/v1/unique-tournament/{unique_tournament_id}/image" if unique_tournament_id else ""
+    tournament_logo_data = image_cache.get(f"tournament:{unique_tournament_id}") if unique_tournament_id else ""
 
     def cached_image(key, url):
         if not url:
@@ -701,10 +728,8 @@ def normalize_calendar_event(event, odds_by_event=None, image_cache=None):
             "category": {
                 "name": category.get("name") or "",
             },
-            "logo": cached_image(
-                f"tournament:{unique_tournament_id}",
-                f"https://api.sofascore.app/api/v1/unique-tournament/{unique_tournament_id}/image" if unique_tournament_id else "",
-            ),
+            "logo": tournament_logo_data or tournament_logo_url,
+            "logoData": tournament_logo_data,
         },
         "realOdds": choices if isinstance(choices, list) and len(choices) >= 3 else None,
         "source": "sofascore",
@@ -773,6 +798,272 @@ def fetch_calendar_images(events):
             if value:
                 cache[key] = value
     return cache
+
+
+def search_tournament_logo(query):
+    search = str(query or "").strip()
+    if not search:
+        return {"ok": False, "source": "Sofascore", "error": "Busca vazia."}
+
+    data = api_get(f"/search/all?q={search}&page=0", timeout=25, retries=3) or {}
+    results = data.get("results") or []
+    candidates = []
+
+    for item in results:
+        entity = item.get("entity") or {}
+        item_type = item.get("type") or ""
+        unique = entity.get("uniqueTournament") or {}
+        unique_id = unique.get("id") or (entity.get("id") if item_type == "uniqueTournament" else None)
+        sport = (entity.get("category") or {}).get("sport") or {}
+        if sport.get("slug") and sport.get("slug") != "football":
+            continue
+        if not unique_id:
+            continue
+        candidates.append({
+            "id": int(unique_id),
+            "name": entity.get("name") or unique.get("name") or search,
+            "category": (entity.get("category") or {}).get("name") or "",
+            "type": item_type,
+            "score": float(item.get("score") or 0),
+        })
+
+    if not candidates:
+        return {"ok": False, "source": "Sofascore", "error": "Torneio nao encontrado.", "query": search}
+
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    selected = candidates[0]
+    logo_url_value = f"https://api.sofascore.app/api/v1/unique-tournament/{selected['id']}/image"
+    selected["logo"] = logo_url_value
+    selected["logoData"] = fetch_image_data_url(logo_url_value, timeout=18, retries=2)
+
+    return {
+        "ok": True,
+        "source": "Sofascore",
+        "query": search,
+        "tournament": selected,
+        "candidates": candidates[:5],
+    }
+
+
+def search_tournament_logos(queries):
+    if not isinstance(queries, list):
+        return {"ok": False, "source": "Sofascore", "error": "Lista de buscas invalida."}
+
+    results = {}
+    for query in queries:
+        clean_query = str(query or "").strip()
+        if not clean_query or clean_query in results:
+            continue
+        try:
+            results[clean_query] = search_tournament_logo(clean_query)
+        except Exception as exc:
+            results[clean_query] = {
+                "ok": False,
+                "source": "Sofascore",
+                "query": clean_query,
+                "error": str(exc),
+            }
+        time.sleep(0.15)
+
+    return {
+        "ok": True,
+        "source": "Sofascore",
+        "count": len(results),
+        "results": results,
+    }
+
+
+def find_tournament_season(unique_tournament_id, date_key=""):
+    data = api_get(f"/unique-tournament/{unique_tournament_id}/seasons/", timeout=20, retries=2) or {}
+    seasons = data.get("seasons") or []
+    if not seasons:
+        return None
+
+    target_year = str(date_key or "")[:4]
+    for season in seasons:
+        text = f"{season.get('year') or ''} {season.get('name') or ''}"
+        if target_year and target_year in text:
+            return season.get("id")
+    return seasons[0].get("id")
+
+
+def calendar_event_date_key(event):
+    timestamp = event.get("startTimestamp")
+    if not timestamp:
+        return ""
+    try:
+        return br_datetime_from_timestamp(timestamp)[0]
+    except Exception:
+        return ""
+
+
+def parse_calendar_tournament_item(item):
+    if isinstance(item, dict):
+        query = str(item.get("query") or item.get("name") or "").strip()
+        unique_id = item.get("id") or item.get("uniqueTournamentId")
+        try:
+            unique_id = int(unique_id) if unique_id else None
+        except (TypeError, ValueError):
+            unique_id = None
+        return {
+            "query": query or (str(unique_id) if unique_id else ""),
+            "id": unique_id,
+            "name": str(item.get("name") or query or "").strip(),
+        }
+
+    query = str(item or "").strip()
+    return {"query": query, "id": None, "name": query}
+
+
+def fetch_competition_events_for_date(unique_tournament_id, season_id, date_key):
+    events = []
+    errors = []
+    empty_rounds = 0
+    passed_target_rounds = 0
+
+    try:
+        target_date = datetime.strptime(date_key, "%Y-%m-%d").date()
+    except ValueError:
+        target_date = None
+
+    for round_number in range(1, 70):
+        try:
+            data = api_get(f"/unique-tournament/{unique_tournament_id}/season/{season_id}/events/round/{round_number}", timeout=20, retries=2)
+            round_events = data.get("events") if data else []
+            if not round_events:
+                empty_rounds += 1
+                if empty_rounds >= 3 and round_number > 3:
+                    break
+                continue
+
+            empty_rounds = 0
+            round_dates = []
+            for event in round_events:
+                event_key = calendar_event_date_key(event)
+                if event_key:
+                    try:
+                        round_dates.append(datetime.strptime(event_key, "%Y-%m-%d").date())
+                    except ValueError:
+                        pass
+                if event_key == date_key:
+                    events.append(event)
+
+            if target_date and round_dates:
+                if min(round_dates) > target_date:
+                    passed_target_rounds += 1
+                    if passed_target_rounds >= 2 or events:
+                        break
+                else:
+                    passed_target_rounds = 0
+        except Exception as exc:
+            errors.append({"round": round_number, "error": str(exc)})
+            if round_number > 3:
+                break
+
+    unique = {}
+    for event in events:
+        if event.get("id"):
+            unique[event["id"]] = event
+    return list(unique.values()), errors
+
+
+def fetch_calendar_from_tournaments(date_key, queries):
+    if not isinstance(queries, list):
+        queries = []
+
+    unique_queries = []
+    seen = set()
+    for item in queries:
+        parsed = parse_calendar_tournament_item(item)
+        key = str(parsed.get("id") or parsed.get("query") or "").strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            unique_queries.append(parsed)
+
+    def fetch_one_tournament(item):
+        query = item.get("query") or item.get("name") or ""
+        try:
+            tournament = None
+            unique_id = item.get("id")
+            if unique_id:
+                tournament = {
+                    "id": unique_id,
+                    "name": item.get("name") or query,
+                }
+            else:
+                found = search_tournament_logo(query)
+                tournament = found.get("tournament") if found.get("ok") else None
+                unique_id = tournament.get("id") if tournament else None
+            if not unique_id:
+                return {"events": [], "tournament": None, "errors": [{"query": query, "error": "torneio nao encontrado"}]}
+
+            season_id = find_tournament_season(unique_id, date_key)
+            if not season_id:
+                return {
+                    "events": [],
+                    "tournament": None,
+                    "errors": [{"query": query, "uniqueTournamentId": unique_id, "error": "temporada nao encontrada"}],
+                }
+
+            raw_events, event_errors = fetch_competition_events_for_date(unique_id, season_id, date_key)
+            return {
+                "events": raw_events,
+                "tournament": {
+                    "query": query,
+                    "id": unique_id,
+                    "seasonId": season_id,
+                    "name": tournament.get("name") or query,
+                },
+                "errors": [
+                    {"query": query, "uniqueTournamentId": unique_id, **error_item}
+                    for error_item in event_errors
+                ],
+            }
+        except Exception as exc:
+            return {"events": [], "tournament": None, "errors": [{"query": query, "error": str(exc)}]}
+
+    events = []
+    errors = []
+    tournaments = []
+    items_to_fetch = unique_queries[:16]
+    max_workers = min(4, max(1, len(items_to_fetch)))
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(fetch_one_tournament, item) for item in items_to_fetch]
+        for future in as_completed(futures):
+            result = future.result()
+            events.extend(result.get("events") or [])
+            tournament = result.get("tournament")
+            if tournament:
+                tournaments.append(tournament)
+            errors.extend(result.get("errors") or [])
+
+    unique_events = {}
+    for event in events:
+        event_id = event.get("id")
+        if event_id:
+            unique_events[event_id] = event
+
+    events = list(unique_events.values())
+    image_cache = fetch_calendar_images(events)
+    matches = [
+        normalize_calendar_event(event, {}, image_cache)
+        for event in events
+        if event.get("homeTeam") and event.get("awayTeam") and event.get("startTimestamp")
+    ]
+    matches = [match for match in matches if br_datetime_from_timestamp(match.get("startTimestamp"))[0] == date_key]
+    matches.sort(key=lambda item: item.get("startTimestamp") or 0)
+
+    return {
+        "ok": True,
+        "source": "Sofascore",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "date": date_key,
+        "count": len(matches),
+        "matches": matches,
+        "tournaments": tournaments,
+        "errors": errors,
+    }
 
 
 def normalize_standing_row(row):
@@ -870,6 +1161,9 @@ def main():
         if len(sys.argv) >= 3 and sys.argv[1] == "momentum":
             print(json.dumps(fetch_match_momentum(sys.argv[2]), ensure_ascii=False))
             return
+        if len(sys.argv) >= 3 and sys.argv[1] == "event-details":
+            print(json.dumps(fetch_match_player_events(sys.argv[2]), ensure_ascii=False))
+            return
         if len(sys.argv) >= 3 and sys.argv[1] == "details":
             print(json.dumps(fetch_match_details(sys.argv[2]), ensure_ascii=False))
             return
@@ -879,6 +1173,15 @@ def main():
             return
         if len(sys.argv) >= 3 and sys.argv[1] == "calendar":
             print(json.dumps(fetch_calendar_date(sys.argv[2]), ensure_ascii=False))
+            return
+        if len(sys.argv) >= 4 and sys.argv[1] == "calendar-tournaments":
+            print(json.dumps(fetch_calendar_from_tournaments(sys.argv[2], json.loads(sys.argv[3])), ensure_ascii=False))
+            return
+        if len(sys.argv) >= 3 and sys.argv[1] == "tournament-search":
+            print(json.dumps(search_tournament_logo(sys.argv[2]), ensure_ascii=False))
+            return
+        if len(sys.argv) >= 3 and sys.argv[1] == "tournament-search-batch":
+            print(json.dumps(search_tournament_logos(json.loads(sys.argv[2])), ensure_ascii=False))
             return
 
         season_id = find_worldcup_2026_season()

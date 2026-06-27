@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const { app, BrowserWindow, ipcMain, Menu, shell, session, nativeImage, dialog, screen } = require('electron');
 
@@ -86,12 +87,113 @@ function getCustomRadarHighlightBounds(fallback) {
   }
 }
 
-function rememberCustomRadarHighlightBounds(win) {
+function readCustomRadarPositionSlots() {
+  const saved = readJsonFile('custom-radar-highlight-slots.json');
+  const source = saved && typeof saved.slots === 'object' ? saved.slots : {};
+  const slots = {};
+  Object.entries(source).forEach(([id, bounds]) => {
+    if (!/^\d+$/.test(id)) return;
+    const normalized = normalizeWindowBounds(bounds, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds);
+    if (Number.isFinite(normalized.x) && Number.isFinite(normalized.y) && boundsIntersectDisplay(normalized, customRadarHighlightMinBounds)) {
+      slots[id] = normalized;
+    }
+  });
+  return slots;
+}
+
+function writeCustomRadarPositionSlots(slots) {
+  writeJsonFile('custom-radar-highlight-slots.json', { slots });
+}
+
+function occupiedCustomRadarSlots(exceptItem = null) {
+  return new Set(Array.from(replicaWindows.values())
+    .filter(item => item !== exceptItem && item.isLiveOverlay && item.positionSlot && item.window && !item.window.isDestroyed())
+    .map(item => String(item.positionSlot)));
+}
+
+function chooseCustomRadarPositionSlot(parentWindow) {
+  const slots = readCustomRadarPositionSlots();
+  const occupied = occupiedCustomRadarSlots();
+  const configuredIds = Object.keys(slots).sort((a, b) => Number(a) - Number(b));
+  return new Promise(resolve => {
+    let settled = false;
+    let menu = null;
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+      try { menu?.closePopup(parentWindow); } catch (_) {}
+    };
+    const template = [
+      ...configuredIds.map(id => ({
+        label: occupied.has(id) ? `Posicao ${id} (em uso)` : `Posicao ${id}`,
+        enabled: !occupied.has(id),
+        click: () => finish({ cancelled: false, slot: id })
+      })),
+      ...(configuredIds.length ? [{ type: 'separator' }] : []),
+      { label: 'Livre (sem posicao salva)', click: () => finish({ cancelled: false, slot: null }) },
+      { type: 'separator' },
+      { label: 'Cancelar', click: () => finish({ cancelled: true, slot: null }) }
+    ];
+    menu = Menu.buildFromTemplate(template);
+    const contentBounds = parentWindow && !parentWindow.isDestroyed()
+      ? parentWindow.getContentBounds()
+      : { width: 720, height: 420 };
+    const estimatedWidth = 190;
+    const estimatedHeight = Math.min(300, Math.max(120, template.length * 30));
+    const menuX = Math.max(12, Math.round((contentBounds.width - estimatedWidth) / 2));
+    const menuY = Math.max(12, Math.round((contentBounds.height - estimatedHeight) / 2));
+    menu.popup({
+      window: parentWindow && !parentWindow.isDestroyed() ? parentWindow : undefined,
+      x: menuX,
+      y: menuY,
+      callback: () => finish({ cancelled: true, slot: null })
+    });
+  });
+}
+
+function saveCustomRadarSlot(item, slotId, bounds = null) {
+  if (!item || !item.window || item.window.isDestroyed()) return false;
+  const id = String(slotId || '');
+  if (!/^\d+$/.test(id)) return false;
+  const slots = readCustomRadarPositionSlots();
+  const current = bounds || (typeof item.window.getNormalBounds === 'function' ? item.window.getNormalBounds() : item.window.getBounds());
+  slots[id] = normalizeWindowBounds(current, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds);
+  writeCustomRadarPositionSlots(slots);
+  item.positionSlot = id;
+  return true;
+}
+
+function moveCustomRadarToSlot(item, slotId) {
+  if (!item || !item.window || item.window.isDestroyed()) return false;
+  const id = String(slotId || '');
+  if (!/^\d+$/.test(id) || occupiedCustomRadarSlots(item).has(id)) return false;
+  const slots = readCustomRadarPositionSlots();
+  if (!slots[id]) return saveCustomRadarSlot(item, id);
+  item.positionSlot = id;
+  item.window.setBounds(slots[id]);
+  return true;
+}
+
+function removeCustomRadarSlot(item, slotId) {
+  const id = String(slotId || '');
+  if (!/^\d+$/.test(id)) return false;
+  const slots = readCustomRadarPositionSlots();
+  delete slots[id];
+  writeCustomRadarPositionSlots(slots);
+  if (item?.positionSlot === id) item.positionSlot = null;
+  return true;
+}
+
+function rememberCustomRadarHighlightBounds(item) {
+  const win = item?.window;
   let saveTimer = null;
   const save = () => {
     if (!win || win.isDestroyed() || win.isMinimized()) return;
+    if (item.positionSlot) return;
     const bounds = typeof win.getNormalBounds === 'function' ? win.getNormalBounds() : win.getBounds();
-    writeJsonFile('custom-radar-highlight-bounds.json', normalizeWindowBounds(bounds, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds));
+    const normalized = normalizeWindowBounds(bounds, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds);
+    writeJsonFile('custom-radar-highlight-bounds.json', normalized);
   };
   const schedule = () => {
     clearTimeout(saveTimer);
@@ -288,6 +390,40 @@ ipcMain.handle('wradar-real-mod:resize-window', async (event, payload = {}) => {
   return { ok: true, width: nextWidth, height: nextHeight };
 });
 
+ipcMain.handle('wradar-real-mod:choose-icon', async (event, payload = {}) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const type = String(payload.type || 'icon').replace(/[^a-z0-9_-]/gi, '').slice(0, 48) || 'icon';
+  const result = await dialog.showOpenDialog(win || undefined, {
+    title: 'Escolher icone do Radar MOD',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Icones', extensions: ['svg', 'png'] },
+      { name: 'SVG', extensions: ['svg'] },
+      { name: 'PNG', extensions: ['png'] }
+    ]
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { ok: false, canceled: true };
+
+  const source = result.filePaths[0];
+  const ext = path.extname(source).toLowerCase();
+  if (!['.svg', '.png'].includes(ext)) return { ok: false, error: 'Formato invalido.' };
+
+  const targetDir = path.join(app.getPath('userData'), 'custom-radar-icons');
+  fs.mkdirSync(targetDir, { recursive: true });
+  const target = path.join(targetDir, `${type}${ext}`);
+  fs.copyFileSync(source, target);
+
+  return {
+    ok: true,
+    icon: {
+      type,
+      name: path.basename(source),
+      path: target,
+      src: pathToFileURL(target).href
+    }
+  };
+});
+
 function injectHighlightButton(win) {
   if (win.isDestroyed()) return;
   win.webContents.executeJavaScript(`
@@ -389,12 +525,20 @@ async function createCustomRadarOverlayReplica(sourceWebContents, rect, title) {
 
   if (!snapshot?.event?.id) return false;
 
-  const overlayBounds = getCustomRadarHighlightBounds({
+  const positionChoice = await chooseCustomRadarPositionSlot(sourceWindow);
+  if (positionChoice.cancelled) return false;
+
+  const fallbackBounds = {
     width: Math.max(260, normalizedRect.width),
     height: Math.max(120, normalizedRect.height),
     x: sourceX + normalizedRect.x,
     y: sourceY + normalizedRect.y
-  });
+  };
+  const positionSlot = positionChoice.slot;
+  const configuredSlots = readCustomRadarPositionSlots();
+  const overlayBounds = positionSlot && configuredSlots[positionSlot]
+    ? configuredSlots[positionSlot]
+    : getCustomRadarHighlightBounds(fallbackBounds);
   const overlay = new BrowserWindow({
     ...overlayBounds,
     minWidth: 180,
@@ -437,12 +581,13 @@ async function createCustomRadarOverlayReplica(sourceWebContents, rect, title) {
     captureInProgress: false,
     drag: null,
     timer: null,
-    isLiveOverlay: true
+    isLiveOverlay: true,
+    positionSlot
   };
 
   replicaWindows.set(id, item);
   configureReplicaControls(item);
-  rememberCustomRadarHighlightBounds(overlay);
+  rememberCustomRadarHighlightBounds(item);
   overlay.on('closed', () => {
     clearTimeout(item.timer);
     replicaWindows.delete(id);
@@ -471,7 +616,10 @@ function configureReplicaControls(item) {
     win.setPosition(displayPoint.x - moveOffset.x, displayPoint.y - moveOffset.y);
   };
 
-  win.webContents.on('context-menu', () => showReplicaMenu(item));
+  win.webContents.on('context-menu', event => {
+    event.preventDefault();
+    showReplicaMenu(item);
+  });
   win.on('blur', stopMoving);
   win.on('closed', stopMoving);
 
@@ -852,6 +1000,18 @@ ipcMain.handle('sofascore:momentum', async (_event, payload = {}) => {
   return fetchSofascoreMomentum(payload);
 });
 
+ipcMain.handle('sofascore:event-details', async (_event, payload = {}) => {
+  return fetchSofascoreEventDetails(payload);
+});
+
+ipcMain.handle('sofascore:tournament-logo', async (_event, payload = {}) => {
+  return fetchSofascoreTournamentLogo(payload);
+});
+
+ipcMain.handle('sofascore:tournament-calendar', async (_event, payload = {}) => {
+  return fetchSofascoreTournamentCalendar(payload);
+});
+
 ipcMain.handle('calendar:by-date', async (_event, payload = {}) => {
   return fetchCalendarSofascoreDate(payload);
 });
@@ -864,6 +1024,13 @@ ipcMain.on('replica:show-menu', (event) => {
 
 function showReplicaMenu(item) {
   if (!item || !item.window || item.window.isDestroyed()) return;
+  if (item.isLiveOverlay) {
+    showLiveRadarMenu(item).catch(error => {
+      item.menuOpen = false;
+      console.error('Falha ao abrir menu nativo do Radar MOD:', error);
+    });
+    return;
+  }
   const win = item.window;
   const isTop = win.isAlwaysOnTop();
   const opacity = Math.round(win.getOpacity() * 100);
@@ -949,6 +1116,171 @@ function showReplicaMenu(item) {
   menu.popup({ window: win });
 }
 
+async function showLiveRadarMenu(item) {
+  if (!item || !item.window || item.window.isDestroyed() || item.menuOpen) return;
+  const win = item.window;
+  item.menuOpen = true;
+
+  const radarState = await win.webContents.executeJavaScript(`
+    (() => window.__customRadarNativeMenuState ? window.__customRadarNativeMenuState() : ({}))()
+  `, true).catch(() => ({}));
+  if (win.isDestroyed()) {
+    item.menuOpen = false;
+    return;
+  }
+
+  const sendAction = (action, value) => {
+    if (win.isDestroyed()) return;
+    const payload = JSON.stringify({ action, value });
+    win.webContents.executeJavaScript(`
+      (() => window.__customRadarNativeMenuAction ? window.__customRadarNativeMenuAction(${payload}) : null)()
+    `, true).catch(() => {});
+  };
+  const fontPercent = Math.round((Number(radarState.fontScale) || 1) * 100);
+  const opacityPercent = Math.round((Number(radarState.overlayOpacity) || 1) * 100);
+  const contentMode = ['current', 'events', 'full'].includes(radarState.overlayContentMode)
+    ? radarState.overlayContentMode
+    : 'full';
+  const heatmapMode = ['off', 'match', 'home', 'away', 'teams'].includes(radarState.heatmapMode)
+    ? radarState.heatmapMode
+    : 'off';
+  const heatmapStyle = ['candles', 'dots', 'wave', 'bar'].includes(radarState.heatmapStyle)
+    ? radarState.heatmapStyle
+    : 'candles';
+  const configuredPositionSlots = readCustomRadarPositionSlots();
+  const occupiedPositionSlots = occupiedCustomRadarSlots(item);
+  const positionSlotIds = ['1', '2', '3', '4', '5', '6'];
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: radarState.layoutEditMode ? 'Concluir edicao do layout' : 'Editar layout',
+      type: 'checkbox',
+      checked: !!radarState.layoutEditMode,
+      click: () => sendAction('toggle-layout-editor')
+    },
+    {
+      label: 'Restaurar layout padrao',
+      click: () => sendAction('reset-card-layout')
+    },
+    { type: 'separator' },
+    {
+      label: `Fonte (${fontPercent}%)`,
+      submenu: [
+        { label: 'Menor', click: () => sendAction('font-scale-down') },
+        { label: 'Padrao (100%)', click: () => sendAction('font-scale-reset') },
+        { label: 'Maior', click: () => sendAction('font-scale-up') },
+        { type: 'separator' },
+        ...[135, 120, 100, 80, 60, 50, 40, 35].map(value => ({
+          label: `${value}%`,
+          type: 'radio',
+          checked: fontPercent === value,
+          click: () => sendAction('font-scale', value / 100)
+        }))
+      ]
+    },
+    {
+      label: `Opacidade (${opacityPercent}%)`,
+      submenu: [100, 80, 60, 40, 20].map(value => ({
+        label: `${value}%`,
+        type: 'radio',
+        checked: opacityPercent === value,
+        click: () => sendAction('overlay-opacity', value)
+      }))
+    },
+    {
+      label: 'Conteudo',
+      submenu: [
+        { label: 'So lance atual', type: 'radio', checked: contentMode === 'current', click: () => sendAction('overlay-content', 'current') },
+        { label: 'Lance + eventos', type: 'radio', checked: contentMode === 'events', click: () => sendAction('overlay-content', 'events') },
+        { label: 'Completo', type: 'radio', checked: contentMode === 'full', click: () => sendAction('overlay-content', 'full') },
+        { type: 'separator' },
+        { label: 'Grafico SofaScore', type: 'checkbox', checked: !!radarState.showPressureChart, click: () => sendAction('toggle-pressure-chart') },
+        { label: 'Grafico Radar MOD', type: 'checkbox', checked: !!radarState.showRadarPressureChart, click: () => sendAction('toggle-radar-pressure-chart') }
+      ]
+    },
+    {
+      label: 'Mapa de calor',
+      submenu: [
+        { label: 'Desligado', type: 'radio', checked: heatmapMode === 'off', click: () => sendAction('heatmap-mode', 'off') },
+        { label: 'Partida', type: 'radio', checked: heatmapMode === 'match', click: () => sendAction('heatmap-mode', 'match') },
+        { label: 'Time da casa', type: 'radio', checked: heatmapMode === 'home', click: () => sendAction('heatmap-mode', 'home') },
+        { label: 'Time visitante', type: 'radio', checked: heatmapMode === 'away', click: () => sendAction('heatmap-mode', 'away') },
+        { label: 'Times separados', type: 'radio', checked: heatmapMode === 'teams', click: () => sendAction('heatmap-mode', 'teams') },
+        { type: 'separator' },
+        {
+          label: 'Visual',
+          submenu: [
+            { label: 'Velas', type: 'radio', checked: heatmapStyle === 'candles', click: () => sendAction('heatmap-style', 'candles') },
+            { label: 'Bolinhas', type: 'radio', checked: heatmapStyle === 'dots', click: () => sendAction('heatmap-style', 'dots') },
+            { label: 'Onda', type: 'radio', checked: heatmapStyle === 'wave', click: () => sendAction('heatmap-style', 'wave') },
+            { label: 'Barra ao vivo', type: 'radio', checked: heatmapStyle === 'bar', click: () => sendAction('heatmap-style', 'bar') }
+          ]
+        }
+      ]
+    },
+    {
+      label: `Posicao (${item.positionSlot || 'livre'})`,
+      submenu: [
+        ...positionSlotIds.map(id => ({
+          label: configuredPositionSlots[id] ? `Posicao ${id}` : `Posicao ${id} (salvar aqui)`,
+          type: 'radio',
+          checked: String(item.positionSlot || '') === id,
+          enabled: !occupiedPositionSlots.has(id),
+          click: () => moveCustomRadarToSlot(item, id)
+        })),
+        { type: 'separator' },
+        {
+          label: 'Salvar local atual',
+          submenu: positionSlotIds.map(id => ({
+            label: `Como posicao ${id}`,
+            enabled: !occupiedPositionSlots.has(id),
+            click: () => saveCustomRadarSlot(item, id)
+          }))
+        },
+        {
+          label: 'Liberar posicao desta janela',
+          enabled: !!item.positionSlot,
+          click: () => { item.positionSlot = null; }
+        },
+        {
+          label: 'Excluir posicao salva',
+          submenu: positionSlotIds.map(id => ({
+            label: `Posicao ${id}`,
+            enabled: !!configuredPositionSlots[id] && !occupiedPositionSlots.has(id) && String(item.positionSlot || '') !== id,
+            click: () => removeCustomRadarSlot(item, id)
+          }))
+        }
+      ]
+    },
+    {
+      label: 'Janela',
+      submenu: [
+        {
+          label: 'Sempre acima',
+          type: 'checkbox',
+          checked: win.isAlwaysOnTop(),
+          click: menuItem => {
+            if (!win.isDestroyed()) win.setAlwaysOnTop(!!menuItem.checked, 'screen-saver');
+          }
+        },
+        {
+          label: 'Resetar posicao e tamanho',
+          click: () => resetReplicaWindow(item)
+        }
+      ]
+    },
+    { type: 'separator' },
+    { label: 'Fechar janela', click: () => win.close() }
+  ]);
+
+  menu.popup({
+    window: win,
+    callback: () => {
+      item.menuOpen = false;
+    }
+  });
+}
+
 ipcMain.on('replica:zoom', (event, direction) => {
   const item = getReplicaBySender(event.sender);
   if (!item) return;
@@ -979,6 +1311,75 @@ ipcMain.on('replica:end-drag', (event) => {
   const item = getReplicaBySender(event.sender);
   if (item) item.drag = null;
 });
+
+ipcMain.on('replica:begin-resize', (event, point) => {
+  const item = getReplicaBySender(event.sender);
+  if (!item || item.window.isDestroyed()) return;
+  const bounds = item.window.getBounds();
+  item.resize = {
+    startX: Number(point.x) || 0,
+    startY: Number(point.y) || 0,
+    bounds
+  };
+});
+
+ipcMain.on('replica:resize-to', (event, point) => {
+  const item = getReplicaBySender(event.sender);
+  if (!item || !item.resize || item.window.isDestroyed()) return;
+  const start = item.resize.bounds;
+  const width = Math.max(customRadarHighlightMinBounds.width, Math.round(start.width + ((Number(point.x) || 0) - item.resize.startX)));
+  const height = Math.max(customRadarHighlightMinBounds.height, Math.round(start.height + ((Number(point.y) || 0) - item.resize.startY)));
+  item.window.setBounds({ x: start.x, y: start.y, width, height });
+});
+
+ipcMain.on('replica:end-resize', (event) => {
+  const item = getReplicaBySender(event.sender);
+  if (!item || item.window.isDestroyed()) return;
+  item.resize = null;
+  const bounds = item.window.getBounds();
+  writeJsonFile('custom-radar-highlight-bounds.json', normalizeWindowBounds(bounds, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds));
+});
+
+ipcMain.handle('replica:state', async (event) => {
+  const item = getReplicaBySender(event.sender);
+  if (!item || item.window.isDestroyed()) return { ok: false };
+  return {
+    ok: true,
+    alwaysOnTop: item.window.isAlwaysOnTop(),
+    bounds: item.window.getBounds()
+  };
+});
+
+ipcMain.handle('replica:toggle-always-on-top', async (event) => {
+  const item = getReplicaBySender(event.sender);
+  if (!item || item.window.isDestroyed()) return { ok: false };
+  const next = !item.window.isAlwaysOnTop();
+  item.window.setAlwaysOnTop(next, 'screen-saver');
+  return { ok: true, alwaysOnTop: next };
+});
+
+ipcMain.handle('replica:reset-window', async (event) => {
+  const item = getReplicaBySender(event.sender);
+  if (!item || item.window.isDestroyed()) return { ok: false };
+  return resetReplicaWindow(item);
+});
+
+function resetReplicaWindow(item) {
+  if (!item || item.window.isDestroyed()) return { ok: false };
+  const display = screen.getDisplayMatching(item.window.getBounds()) || screen.getPrimaryDisplay();
+  const area = display.workArea || display.bounds;
+  const width = customWRadarWindowDefaultBounds.width;
+  const height = customWRadarWindowDefaultBounds.height;
+  const bounds = {
+    width,
+    height,
+    x: Math.round(area.x + ((area.width - width) / 2)),
+    y: Math.round(area.y + ((area.height - height) / 2))
+  };
+  item.window.setBounds(bounds);
+  writeJsonFile('custom-radar-highlight-bounds.json', normalizeWindowBounds(bounds, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds));
+  return { ok: true, bounds };
+}
 
 function getReplicaBySender(sender) {
   for (const item of replicaWindows.values()) {
@@ -1317,6 +1718,64 @@ async function fetchSofascoreMomentum(payload = {}) {
   }
   const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
   return runPythonJsonScript(scriptPath, 30000, ['momentum', String(eventId)]);
+}
+
+async function fetchSofascoreEventDetails(payload = {}) {
+  const eventId = Number(payload.sofascoreId || payload.eventId || 0);
+  if (!eventId) {
+    return { ok: false, source: 'Sofascore', error: 'Jogo sem ID do Sofascore.' };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  return runPythonJsonScript(scriptPath, 30000, ['event-details', String(eventId)]);
+}
+
+async function fetchSofascoreTournamentLogo(payload = {}) {
+  const queries = Array.isArray(payload.queries)
+    ? payload.queries.map(item => String(item || '').trim()).filter(Boolean)
+    : [];
+  if (queries.length) {
+    const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+    return runPythonJsonScript(scriptPath, 90000, ['tournament-search-batch', JSON.stringify([...new Set(queries)])]);
+  }
+
+  const query = String(payload.query || payload.name || '').trim();
+  if (!query) {
+    return { ok: false, source: 'Sofascore', error: 'Nome da competicao invalido.' };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  return runPythonJsonScript(scriptPath, 45000, ['tournament-search', query]);
+}
+
+async function fetchSofascoreTournamentCalendar(payload = {}) {
+  const dateKey = String(payload.date || payload.dateKey || '').trim();
+  const queries = Array.isArray(payload.queries)
+    ? payload.queries.map(item => {
+        if (item && typeof item === 'object') {
+          const id = Number(item.id || item.uniqueTournamentId || 0) || null;
+          const name = String(item.name || item.query || '').trim();
+          return id || name ? { id, name, query: String(item.query || name || id || '').trim() } : null;
+        }
+        const query = String(item || '').trim();
+        return query || null;
+      }).filter(Boolean)
+    : [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    return { ok: false, source: 'Sofascore', error: 'Data invalida para calendario por competicoes.' };
+  }
+  if (!queries.length) {
+    return { ok: true, source: 'Sofascore', date: dateKey, count: 0, matches: [], tournaments: [] };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  const seen = new Set();
+  const uniqueQueries = queries.filter(item => {
+    const key = item && typeof item === 'object'
+      ? String(item.id || item.name || item.query || '').toLowerCase()
+      : String(item || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return runPythonJsonScript(scriptPath, 120000, ['calendar-tournaments', dateKey, JSON.stringify(uniqueQueries)]);
 }
 
 async function syncCompetitionData(payload = {}) {

@@ -1,6 +1,6 @@
 {
   "name": "planilha-trader",
-  "version": "1.0.25",
+  "version": "1.1.0",
   "description": "Planilha Trader desktop",
   "main": "electron/main.js",
   "private": true,
@@ -28,6 +28,7 @@
       "js/**/*",
       "electron/**/*",
       "img/**/*",
+      "icones radar mod/**/*",
       "data/**/*",
       "tools/**/*",
       "rf.html",

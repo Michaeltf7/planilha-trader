@@ -6,6 +6,17 @@ const AnalisePro = {
     activeCalendarLeagueId: 'all',
     calendarStatusFilter: localStorage.getItem('pro_calendar_status_filter') || 'all',
     calendarLayoutMode: localStorage.getItem('pro_calendar_layout_mode') || 'cards',
+    theoBorgesMatchesCache: {},
+    theoBorgesDetailsCache: {},
+    theoInfoActiveTab: 'resumo',
+    theoInfoCurrentData: null,
+    theoInfoPendingGame: null,
+    calendarTournamentLogoCache: null,
+    calendarLoadToken: 0,
+    theoBorgesDefaultSourceUrl: 'https://clube.theoborges.com/matches?dia=hoje&t=3cb1d16fe7',
+    calendarCacheVersion: '2026-06-25-calendar-radar-restore-v1',
+    calendarCompetitionsStorageKey: 'pro_calendar_sofascore_competitions_v1',
+    calendarGamesCacheStorageKey: 'pro_calendar_sofascore_games_cache_v1',
     
     async init() {
         if (!this.currentPlanningDate) this.currentPlanningDate = this.getTodayKey();
@@ -79,6 +90,7 @@ const AnalisePro = {
 
     async render() {
         const today = this.getTodayKey();
+        this.ensureCalendarCacheVersion();
         const container = document.getElementById('app-container');
         container.innerHTML = `
             <div class="analise-pro-container">
@@ -131,16 +143,24 @@ const AnalisePro = {
         listContainer.innerHTML = '';
         loader.style.display = 'flex';
 
+        const loadToken = ++this.calendarLoadToken;
+
         try {
             if (force) this.teamLogoMisses = {};
             const gamesInMemory = this.gamesCacheDate === selectedDate ? this.games : [];
             const fetchedGames = await this.fetchCalendarGamesByDate(selectedDate, force);
+            if (loadToken !== this.calendarLoadToken || App.currentView !== 'calendario') return;
 
             // Salva cache por data para o Planejamento DiÃ¡rio
             let cacheHistory = JSON.parse(localStorage.getItem('pro_games_cache_history')) || {};
             const cachedGames = Array.isArray(cacheHistory[selectedDate]) ? cacheHistory[selectedDate] : [];
-            this.games = this.mergeRadarDailyGames(fetchedGames, [...cachedGames, ...gamesInMemory]);
+            const mergedGames = this.mergeRadarDailyGames(fetchedGames, [...cachedGames, ...gamesInMemory]);
+            this.games = mergedGames;
             if (this.games.length > 0 && !this.calendarSource) this.calendarSource = 'Sofascore';
+            this.renderList(this.games);
+            this.gamesCacheDate = selectedDate;
+            this.gamesCacheAt = Date.now();
+            loader.style.display = 'none';
             
             // Cleanup cacheHistory para evitar QuotaExceededError
             const dates = Object.keys(cacheHistory).sort();
@@ -159,15 +179,40 @@ const AnalisePro = {
                 localStorage.setItem('pro_games_cache_history', JSON.stringify(cacheHistory));
             }
 
-            this.renderList(this.games);
-            this.gamesCacheDate = selectedDate;
-            this.gamesCacheAt = Date.now();
+            this.enrichCalendarAfterInitialRender(selectedDate, loadToken, cacheHistory);
 
         } catch (err) {
             console.error("Erro no Calendário:", err);
             listContainer.innerHTML = `<div class="empty-state"><p>Erro ao conectar com o servidor.</p></div>`;
         } finally {
-            loader.style.display = 'none';
+            if (loadToken === this.calendarLoadToken) loader.style.display = 'none';
+        }
+    },
+
+    async enrichCalendarAfterInitialRender(selectedDate, loadToken, cacheHistory = null) {
+        try {
+            let baseGames = this.games;
+            if (this.calendarSource === 'Sofascore') {
+                const radarGames = await this.withTimeout(this.fetchRadarFutebolGamesByDate(selectedDate, false), 5000, []);
+                if (Array.isArray(radarGames) && radarGames.length) {
+                    baseGames = this.enrichSofascoreGamesWithRadar(baseGames, radarGames);
+                    this.calendarSource = 'Sofascore + Radar Futebol';
+                }
+            }
+
+            const gamesWithLogos = await this.enrichCalendarTournamentLogos(baseGames);
+            if (loadToken !== this.calendarLoadToken || App.currentView !== 'calendario') return;
+
+            this.games = gamesWithLogos;
+            this.renderList(this.games);
+
+            const history = cacheHistory || JSON.parse(localStorage.getItem('pro_games_cache_history')) || {};
+            history[selectedDate] = this.games;
+            try {
+                localStorage.setItem('pro_games_cache_history', JSON.stringify(history));
+            } catch (_) {}
+        } catch (error) {
+            console.warn('Nao foi possivel enriquecer calendario em segundo plano:', error);
         }
     },
 
@@ -248,9 +293,301 @@ const AnalisePro = {
         return category ? `${category}: ${name}` : name;
     },
 
+    getCalendarTournamentLogoCache() {
+        if (this.calendarTournamentLogoCache) return this.calendarTournamentLogoCache;
+        try {
+            this.calendarTournamentLogoCache = JSON.parse(localStorage.getItem('pro_calendar_tournament_logos_v1')) || {};
+        } catch (_) {
+            this.calendarTournamentLogoCache = {};
+        }
+        return this.calendarTournamentLogoCache;
+    },
+
+    saveCalendarTournamentLogoCache() {
+        try {
+            localStorage.setItem('pro_calendar_tournament_logos_v1', JSON.stringify(this.getCalendarTournamentLogoCache()));
+        } catch (error) {
+            console.warn('Nao foi possivel salvar cache de logos das competicoes:', error);
+        }
+    },
+
+    getCalendarTournamentLogoKey(game) {
+        const category = this.normalizeMatchText(game?.tournament?.category?.name || '');
+        const name = this.normalizeMatchText(game?.tournament?.name || '');
+        return `${category}|${name}`;
+    },
+
+    getCalendarTournamentSearchName(game) {
+        const name = String(game?.tournament?.name || '').trim();
+        if (!name) return '';
+        return name
+            .replace(/\bGroup\s+[A-Z0-9]+\b/gi, '')
+            .replace(/\bGrupo\s+[A-Z0-9]+\b/gi, '')
+            .replace(/[,;-]\s*$/g, '')
+            .trim();
+    },
+
+    getDefaultCalendarCompetitions() {
+        return [
+            { id: 16, name: 'FIFA World Cup', enabled: true },
+            { id: 325, name: 'Brasileirao Betano', enabled: false },
+            { id: 390, name: 'Brasileiro Serie B', enabled: false },
+            { id: 384, name: 'Copa Libertadores', enabled: false },
+            { id: 480, name: 'Copa Sudamericana', enabled: false },
+            { id: 17, name: 'Premier League', enabled: false },
+            { id: 8, name: 'LaLiga', enabled: false },
+            { id: 23, name: 'Serie A', enabled: false },
+            { id: 35, name: 'Bundesliga', enabled: false },
+            { id: 34, name: 'Ligue 1', enabled: false },
+            { id: 37, name: 'Eredivisie', enabled: false },
+            { id: 238, name: 'Liga Portugal Betclic', enabled: false },
+            { id: 52, name: 'Super Lig', enabled: false },
+            { id: 955, name: 'Saudi Pro League', enabled: false }
+        ];
+    },
+
+    getCalendarCompetitions() {
+        let saved = [];
+        try {
+            saved = JSON.parse(localStorage.getItem(this.calendarCompetitionsStorageKey)) || [];
+        } catch (_) {
+            saved = [];
+        }
+
+        const byKey = new Map();
+        this.getDefaultCalendarCompetitions().forEach(item => {
+            byKey.set(String(item.id || item.name).toLowerCase(), { ...item });
+        });
+
+        saved.forEach(item => {
+            const id = Number(item?.id || item?.uniqueTournamentId || 0) || null;
+            const name = String(item?.name || item?.query || '').trim();
+            if (!id && !name) return;
+            const key = String(id || name).toLowerCase();
+            byKey.set(key, {
+                id,
+                name: name || `Competição ${id}`,
+                enabled: item.enabled !== false
+            });
+        });
+
+        return Array.from(byKey.values());
+    },
+
+    saveCalendarCompetitions(competitions) {
+        const clean = (competitions || [])
+            .map(item => ({
+                id: Number(item?.id || 0) || null,
+                name: String(item?.name || '').trim(),
+                enabled: item?.enabled !== false
+            }))
+            .filter(item => item.id || item.name);
+        localStorage.setItem(this.calendarCompetitionsStorageKey, JSON.stringify(clean));
+        this.clearCalendarGamesCache();
+    },
+
+    getEnabledCalendarCompetitions() {
+        const enabled = this.getCalendarCompetitions().filter(item => item.enabled !== false);
+        return enabled.length ? enabled : [{ id: 16, name: 'FIFA World Cup', enabled: true }];
+    },
+
+    getCalendarCompetitionsSignature() {
+        return this.getEnabledCalendarCompetitions()
+            .map(item => String(item.id || item.name).toLowerCase())
+            .sort()
+            .join('|');
+    },
+
+    readCalendarGamesCache() {
+        try {
+            return JSON.parse(localStorage.getItem(this.calendarGamesCacheStorageKey)) || {};
+        } catch (_) {
+            return {};
+        }
+    },
+
+    writeCalendarGamesCache(cache) {
+        try {
+            localStorage.setItem(this.calendarGamesCacheStorageKey, JSON.stringify(cache));
+        } catch (error) {
+            const keys = Object.keys(cache || {}).sort((a, b) => (cache[b]?.savedAt || 0) - (cache[a]?.savedAt || 0));
+            const trimmed = {};
+            keys.slice(0, 8).forEach(key => { trimmed[key] = cache[key]; });
+            try {
+                localStorage.setItem(this.calendarGamesCacheStorageKey, JSON.stringify(trimmed));
+            } catch (_) {}
+        }
+    },
+
+    getCalendarGamesCacheKey(dateKey) {
+        return `${dateKey}::${this.getCalendarCompetitionsSignature()}`;
+    },
+
+    getCachedCalendarGames(dateKey) {
+        const cache = this.readCalendarGamesCache();
+        const item = cache[this.getCalendarGamesCacheKey(dateKey)];
+        if (!item || !Array.isArray(item.games)) return null;
+
+        const age = Date.now() - Number(item.savedAt || 0);
+        const isToday = dateKey === this.getTodayKey();
+        const freshMs = isToday ? 5 * 60 * 1000 : 12 * 60 * 60 * 1000;
+        const maxMs = isToday ? 60 * 60 * 1000 : 3 * 24 * 60 * 60 * 1000;
+        if (age > maxMs) return null;
+        return {
+            games: item.games,
+            stale: age > freshMs,
+            savedAt: item.savedAt
+        };
+    },
+
+    setCachedCalendarGames(dateKey, games) {
+        if (!dateKey || !Array.isArray(games)) return;
+        const cache = this.readCalendarGamesCache();
+        cache[this.getCalendarGamesCacheKey(dateKey)] = {
+            savedAt: Date.now(),
+            games
+        };
+
+        const keys = Object.keys(cache).sort((a, b) => (cache[b]?.savedAt || 0) - (cache[a]?.savedAt || 0));
+        keys.slice(12).forEach(key => delete cache[key]);
+        this.writeCalendarGamesCache(cache);
+    },
+
+    clearCalendarGamesCache() {
+        localStorage.removeItem(this.calendarGamesCacheStorageKey);
+        this.gamesCacheDate = '';
+        this.gamesCacheAt = 0;
+    },
+
+    getKnownCalendarTournamentQueries() {
+        const seen = new Set();
+        return this.getEnabledCalendarCompetitions().filter(item => {
+            const key = typeof item === 'object'
+                ? String(item.id || item.name || '').toLowerCase()
+                : String(item || '').toLowerCase();
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        }).slice(0, 10);
+    },
+
+    getSofascoreCalendarFallbackQueries(dateKey) {
+        const base = [
+            { id: 16, name: 'FIFA World Cup' }
+        ];
+
+        if (dateKey === this.getTodayKey()) return base;
+
+        return [
+            ...base,
+            { id: 390, name: 'Brasileiro Serie B' },
+            { id: 325, name: 'Brasileirao Betano' },
+            { id: 384, name: 'Copa Libertadores' },
+            { id: 480, name: 'Copa Sudamericana' }
+        ];
+    },
+
+    withTimeout(promise, timeoutMs, fallbackValue = null) {
+        return Promise.race([
+            promise,
+            new Promise(resolve => setTimeout(() => resolve(fallbackValue), timeoutMs))
+        ]);
+    },
+
+    applyCalendarTournamentLogo(game, cachedLogo) {
+        if (!game || !cachedLogo?.logoData) return game;
+        game.tournament = {
+            ...(game.tournament || {}),
+            id: game.tournament?.id || cachedLogo.id,
+            logo: cachedLogo.logoData,
+            logoData: cachedLogo.logoData,
+            uniqueTournament: {
+                ...(game.tournament?.uniqueTournament || {}),
+                id: cachedLogo.id,
+                name: cachedLogo.name || game.tournament?.uniqueTournament?.name || game.tournament?.name || ''
+            }
+        };
+        return game;
+    },
+
+    async enrichCalendarTournamentLogos(games) {
+        if (!Array.isArray(games) || !games.length) return games || [];
+
+        const cache = this.getCalendarTournamentLogoCache();
+        const missing = new Map();
+
+        for (const game of games) {
+            const key = this.getCalendarTournamentLogoKey(game);
+            if (cache[key]?.logoData) {
+                this.applyCalendarTournamentLogo(game, cache[key]);
+                continue;
+            }
+
+            const existingLogo = this.resolveTournamentLogo(game?.tournament || {});
+            if (String(existingLogo || '').startsWith('data:')) continue;
+
+            const query = this.getCalendarTournamentSearchName(game);
+            if (query) missing.set(key, query);
+        }
+
+        if (!missing.size || !window.traderSofascoreData?.tournamentLogo) return games;
+
+        try {
+            const response = await window.traderSofascoreData.tournamentLogo({
+                queries: [...new Set(missing.values())]
+            });
+            const results = response?.results || {};
+
+            for (const [key, query] of missing.entries()) {
+                const item = results[query];
+                const tournament = item?.tournament || {};
+                if (!item?.ok || !tournament.logoData) continue;
+
+                cache[key] = {
+                    id: tournament.id,
+                    name: tournament.name || query,
+                    category: tournament.category || '',
+                    logoData: tournament.logoData
+                };
+            }
+            this.saveCalendarTournamentLogoCache();
+
+            for (const game of games) {
+                const key = this.getCalendarTournamentLogoKey(game);
+                if (cache[key]?.logoData) this.applyCalendarTournamentLogo(game, cache[key]);
+            }
+        } catch (error) {
+            console.warn('Nao foi possivel enriquecer logos das competicoes:', error);
+        }
+
+        return games;
+    },
+
+    normalizeSofascoreImageUrl(url) {
+        const value = String(url || '');
+        if (!value || value.startsWith('data:')) return value;
+        return value
+            .replace('https://www.sofascore.com/api/v1/team/', 'https://api.sofascore.app/api/v1/team/')
+            .replace('https://www.sofascore.com/api/v1/unique-tournament/', 'https://api.sofascore.app/api/v1/unique-tournament/');
+    },
+
+    resolveTournamentLogo(tournament = {}) {
+        const uniqueTournamentId = tournament?.uniqueTournament?.id || tournament?.id;
+        const name = tournament?.name || '';
+        const localLogo = typeof App !== 'undefined' && App.getLogoLiga ? App.getLogoLiga(name) : '';
+        const directLogo = tournament?.logoData || tournament?.logo || tournament?.imageUrl || tournament?.uniqueTournament?.logo || '';
+
+        if (String(directLogo).startsWith('data:')) return directLogo;
+        if (String(localLogo).startsWith('data:') || localLogo) return this.normalizeSofascoreImageUrl(localLogo);
+
+        const logoUrl = directLogo || (uniqueTournamentId ? `https://api.sofascore.app/api/v1/unique-tournament/${uniqueTournamentId}/image` : '');
+        return this.normalizeSofascoreImageUrl(logoUrl);
+    },
+
     renderTournamentLogo(game, size = 26) {
-        const logo = game?.tournament?.logo || '';
+        const tournament = game?.tournament || {};
         const name = game?.tournament?.name || '';
+        const logo = this.resolveTournamentLogo(tournament);
         const dimension = Number(size) || 26;
         if (logo) {
             return `<img class="calendar-league-logo" src="${this.escapeHtml(logo)}" alt="${this.escapeHtml(name)}" style="width:${dimension}px;height:${dimension}px;" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="calendar-league-logo-fallback" style="display:none;width:${dimension}px;height:${dimension}px;">${this.escapeHtml(this.getTeamInitials(name))}</span>`;
@@ -332,6 +669,129 @@ const AnalisePro = {
         this.calendarLayoutMode = next;
         localStorage.setItem('pro_calendar_layout_mode', next);
         this.filterGames();
+    },
+
+    openCalendarCompetitionsModal() {
+        const existing = document.getElementById('calendar-competitions-modal');
+        if (existing) existing.remove();
+
+        const competitions = this.getCalendarCompetitions();
+        const enabledCount = competitions.filter(item => item.enabled !== false).length;
+        const modal = document.createElement('div');
+        modal.id = 'calendar-competitions-modal';
+        modal.className = 'calendar-config-modal-overlay';
+        modal.innerHTML = `
+            <div class="calendar-config-modal">
+                <header>
+                    <div>
+                        <span>SOFASCORE</span>
+                        <h3>Competições do calendário</h3>
+                        <p>${enabledCount} competição(ões) ativas. Quanto mais competições, maior o tempo de atualização.</p>
+                    </div>
+                    <button type="button" onclick="AnalisePro.closeCalendarCompetitionsModal()" title="Fechar">
+                        <i class='bx bx-x'></i>
+                    </button>
+                </header>
+
+                <section class="calendar-config-add">
+                    <input id="calendar-competition-id" type="number" min="1" placeholder="ID SofaScore">
+                    <input id="calendar-competition-name" type="text" placeholder="Nome da competição">
+                    <button type="button" onclick="AnalisePro.addCalendarCompetitionFromModal()">
+                        <i class='bx bx-plus'></i> Adicionar
+                    </button>
+                </section>
+
+                <section class="calendar-config-list">
+                    ${competitions.map(item => this.renderCalendarCompetitionOption(item)).join('')}
+                </section>
+
+                <footer>
+                    <button type="button" class="ghost" onclick="AnalisePro.resetCalendarCompetitions()">
+                        Restaurar padrão
+                    </button>
+                    <button type="button" class="ghost" onclick="AnalisePro.clearCalendarGamesCache(); AnalisePro.refreshGames(true); AnalisePro.closeCalendarCompetitionsModal();">
+                        Limpar cache
+                    </button>
+                    <button type="button" class="primary" onclick="AnalisePro.saveCalendarCompetitionsFromModal()">
+                        Salvar e atualizar
+                    </button>
+                </footer>
+            </div>
+        `;
+        modal.addEventListener('click', event => {
+            if (event.target === modal) this.closeCalendarCompetitionsModal();
+        });
+        document.body.appendChild(modal);
+    },
+
+    renderCalendarCompetitionOption(item) {
+        const id = Number(item?.id || 0) || '';
+        const name = String(item?.name || '').trim();
+        const key = this.escapeAttr(String(id || name));
+        return `
+            <label class="calendar-config-item" data-id="${this.escapeAttr(id)}" data-name="${this.escapeAttr(name)}">
+                <input type="checkbox" ${item.enabled !== false ? 'checked' : ''}>
+                <span>
+                    <strong>${this.escapeHtml(name || `Competição ${id}`)}</strong>
+                    <em>${id ? `ID ${id}` : 'Busca por nome'}</em>
+                </span>
+                ${id === 16 ? `<b>Copa</b>` : `<button type="button" onclick="AnalisePro.removeCalendarCompetitionFromModal('${key}')"><i class='bx bx-trash'></i></button>`}
+            </label>
+        `;
+    },
+
+    closeCalendarCompetitionsModal() {
+        document.getElementById('calendar-competitions-modal')?.remove();
+    },
+
+    addCalendarCompetitionFromModal() {
+        const idInput = document.getElementById('calendar-competition-id');
+        const nameInput = document.getElementById('calendar-competition-name');
+        const id = Number(idInput?.value || 0) || null;
+        const name = String(nameInput?.value || '').trim();
+        if (!id && !name) {
+            alert('Informe o ID do SofaScore ou o nome da competição.');
+            return;
+        }
+
+        const list = this.getCalendarCompetitions();
+        const key = String(id || name).toLowerCase();
+        const exists = list.some(item => String(item.id || item.name).toLowerCase() === key);
+        if (!exists) list.push({ id, name: name || `Competição ${id}`, enabled: true });
+        this.saveCalendarCompetitions(list);
+        this.openCalendarCompetitionsModal();
+    },
+
+    removeCalendarCompetitionFromModal(key) {
+        const cleanKey = String(key || '').toLowerCase();
+        const list = this.getCalendarCompetitions().filter(item => {
+            if (Number(item.id) === 16) return true;
+            return String(item.id || item.name).toLowerCase() !== cleanKey;
+        });
+        this.saveCalendarCompetitions(list);
+        this.openCalendarCompetitionsModal();
+    },
+
+    saveCalendarCompetitionsFromModal() {
+        const items = Array.from(document.querySelectorAll('#calendar-competitions-modal .calendar-config-item'));
+        const competitions = items.map(item => ({
+            id: Number(item.dataset.id || 0) || null,
+            name: String(item.dataset.name || '').trim(),
+            enabled: Boolean(item.querySelector('input[type="checkbox"]')?.checked)
+        }));
+        if (!competitions.some(item => item.enabled)) {
+            alert('Deixe pelo menos uma competição ativa.');
+            return;
+        }
+        this.saveCalendarCompetitions(competitions);
+        this.closeCalendarCompetitionsModal();
+        this.refreshGames(true);
+    },
+
+    resetCalendarCompetitions() {
+        localStorage.removeItem(this.calendarCompetitionsStorageKey);
+        this.clearCalendarGamesCache();
+        this.openCalendarCompetitionsModal();
     },
 
     getCalendarGameStatus(game) {
@@ -667,16 +1127,34 @@ const AnalisePro = {
 
     async fetchSofascoreGamesByDate(dateKey) {
         if (window.traderCalendarData?.byDate) {
-            const result = await window.traderCalendarData.byDate({ date: dateKey });
+            const result = await this.withTimeout(
+                window.traderCalendarData.byDate({ date: dateKey }),
+                8000,
+                null
+            );
+            if (!result) throw new Error('Sofascore demorou para responder.');
             if (!result?.ok) throw new Error(result?.error || 'Sofascore nao retornou jogos.');
-            return (result.matches || []).filter(game =>
+            let matches = (result.matches || []).filter(game =>
                 this.getLocalDateKey(game.startTimestamp) === dateKey
-            ).map(game => ({
-                ...game,
-                source: 'sofascore',
-                sourceLabel: 'Sofascore',
-                sofascoreId: Number(game.sofascoreId || game.id) || null
-            }));
+            ).map(game => this.normalizeSofascoreCalendarGame(game));
+
+            if (!matches.length && window.traderSofascoreData?.tournamentCalendar) {
+                const tournamentResult = await this.withTimeout(
+                    window.traderSofascoreData.tournamentCalendar({
+                        date: dateKey,
+                        queries: this.getSofascoreCalendarFallbackQueries(dateKey)
+                    }),
+                    dateKey === this.getTodayKey() ? 8000 : 18000,
+                    null
+                );
+                if (tournamentResult?.ok && Array.isArray(tournamentResult.matches)) {
+                    matches = tournamentResult.matches
+                        .filter(game => this.getLocalDateKey(game.startTimestamp) === dateKey)
+                        .map(game => this.normalizeSofascoreCalendarGame(game));
+                }
+            }
+
+            return matches.sort((a, b) => Number(a.startTimestamp || 0) - Number(b.startTimestamp || 0));
         }
 
         const ts = Date.now();
@@ -691,12 +1169,31 @@ const AnalisePro = {
         return (eventsData?.events || []).filter(game =>
             this.getLocalDateKey(game.startTimestamp) === dateKey
         ).map(game => {
-            game.source = 'sofascore';
-            game.sourceLabel = 'SofaScore';
-            game.sofascoreId = Number(game.id) || null;
-            if (allOdds[game.id]) game.realOdds = allOdds[game.id].choices;
-            return game;
+            const normalized = this.normalizeSofascoreCalendarGame(game);
+            if (allOdds[game.id]) normalized.realOdds = allOdds[game.id].choices;
+            return normalized;
         });
+    },
+
+    normalizeSofascoreCalendarGame(game) {
+        const logo = this.resolveTournamentLogo(game?.tournament || {});
+        return {
+            ...game,
+            source: 'sofascore',
+            sourceLabel: 'Sofascore',
+            sofascoreId: Number(game.sofascoreId || game.id) || null,
+            tournament: {
+                ...(game.tournament || {}),
+                logo,
+                logoData: game.tournament?.logoData || (String(logo).startsWith('data:') ? logo : ''),
+                uniqueTournament: game.tournament?.uniqueTournament
+                    ? {
+                        ...game.tournament.uniqueTournament,
+                        logo: game.tournament.uniqueTournament.logo || logo
+                    }
+                    : game.tournament?.uniqueTournament
+            }
+        };
     },
 
     decodeHtmlEntities(value) {
@@ -847,7 +1344,7 @@ const AnalisePro = {
             if (teamKey !== '|') radarByTeams.set(teamKey, game);
         });
 
-        return (sofascoreGames || []).map(game => {
+        const enriched = (sofascoreGames || []).map(game => {
             const sofaId = String(game.sofascoreId || game.id || '');
             const teamKey = this.getCalendarMatchKey(game);
             const radarGame = radarBySofaId.get(sofaId) || radarByTeams.get(teamKey);
@@ -862,6 +1359,17 @@ const AnalisePro = {
                 radarMatched: true
             };
         });
+
+        const sofaKeys = new Set((sofascoreGames || []).map(game => this.getCalendarMatchKey(game)));
+        const sofaIds = new Set((sofascoreGames || []).map(game => String(game.sofascoreId || game.id || '')).filter(Boolean));
+        const extras = (radarGames || []).filter(game => {
+            const radarId = String(game.sofascoreId || game.id || '');
+            const teamKey = this.getCalendarMatchKey(game);
+            return (!radarId || !sofaIds.has(radarId)) && !sofaKeys.has(teamKey);
+        });
+
+        return [...enriched, ...extras]
+            .sort((a, b) => Number(a.startTimestamp || 0) - Number(b.startTimestamp || 0));
     },
 
     async fetchCalendarGamesByDate(dateKey, force = false) {
@@ -869,15 +1377,8 @@ const AnalisePro = {
         try {
             const sofascoreGames = await this.fetchSofascoreGamesByDate(dateKey);
             if (sofascoreGames.length > 0) {
-                let radarGames = [];
-                try {
-                    radarGames = await this.fetchRadarFutebolGamesByDate(dateKey, force);
-                } catch (error) {
-                    console.warn('Radar Futebol indisponível para enriquecer calendário:', error);
-                }
-
-                this.calendarSource = radarGames.length > 0 ? 'Sofascore + Radar Futebol' : 'Sofascore';
-                return this.enrichSofascoreGamesWithRadar(sofascoreGames, radarGames);
+                this.calendarSource = 'Sofascore';
+                return sofascoreGames;
             }
         } catch (error) {
             sofascoreError = error;
@@ -2194,6 +2695,324 @@ const AnalisePro = {
 
     escapeAttr(value) {
         return this.escapeHtml(String(value ?? '')).replace(/`/g, '&#096;');
+    },
+
+    getTheoBorgesSourceUrl() {
+        return localStorage.getItem('theo_borges_source_url') || this.theoBorgesDefaultSourceUrl || '';
+    },
+
+    setTheoBorgesSourceUrl(url) {
+        const cleanUrl = String(url || '').trim();
+        if (cleanUrl) localStorage.setItem('theo_borges_source_url', cleanUrl);
+        return cleanUrl;
+    },
+
+    ensureCalendarCacheVersion() {
+        const current = localStorage.getItem('pro_calendar_cache_version');
+        if (current === this.calendarCacheVersion) return;
+        localStorage.removeItem('pro_games_cache_history');
+        localStorage.removeItem(this.calendarGamesCacheStorageKey);
+        localStorage.removeItem('pro_calendar_sofascore_games_cache_v1');
+        localStorage.setItem('pro_calendar_cache_version', this.calendarCacheVersion);
+        this.gamesCacheDate = '';
+        this.gamesCacheAt = 0;
+    },
+
+    dateKeyToTheoDay(dateKey) {
+        const today = this.getTodayKey();
+        const base = new Date(`${today}T12:00:00`);
+        const target = new Date(`${dateKey}T12:00:00`);
+        const diff = Math.round((target - base) / 86400000);
+        const map = {
+            [-1]: 'ontem',
+            0: 'hoje',
+            1: 'amanha',
+            2: 'depois',
+            3: 'tresdias',
+            4: 'quatrodias'
+        };
+        return map[diff] || 'hoje';
+    },
+
+    async getTheoBorgesMatchesForDate(dateKey) {
+        if (!window.traderTheoBorgesData?.matches) {
+            throw new Error('Integração Theo Borges indisponível nesta versão.');
+        }
+
+        let sourceUrl = this.getTheoBorgesSourceUrl();
+        if (!sourceUrl) {
+            const error = new Error('THEO_CONFIG_REQUIRED');
+            error.code = 'THEO_CONFIG_REQUIRED';
+            throw error;
+        }
+
+        const day = this.dateKeyToTheoDay(dateKey);
+        const cacheKey = `${day}|${sourceUrl}`;
+        const cached = this.theoBorgesMatchesCache[cacheKey];
+        if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) return cached.data;
+
+        const data = await window.traderTheoBorgesData.matches({ url: sourceUrl, day });
+        this.theoBorgesMatchesCache[cacheKey] = { timestamp: Date.now(), data };
+        return data;
+    },
+
+    async enrichTheoInfoAvailability(games) {
+        if (!Array.isArray(games) || !games.length || !window.traderTheoBorgesData?.matches) return games || [];
+
+        const dates = [...new Set(games.map(game => this.getLocalDateKey(game.startTimestamp)).filter(Boolean))];
+        const matchesByDate = {};
+
+        for (const dateKey of dates) {
+            try {
+                const list = await this.withTimeout(this.getTheoBorgesMatchesForDate(dateKey), 7000, null);
+                matchesByDate[dateKey] = Array.isArray(list?.matches) ? list.matches : [];
+            } catch (_) {
+                matchesByDate[dateKey] = [];
+            }
+        }
+
+        return games.map(game => {
+            const dateKey = this.getLocalDateKey(game.startTimestamp);
+            const match = this.findTheoMatchForGame(game, matchesByDate[dateKey] || []);
+            return {
+                ...game,
+                theoInfoAvailable: Boolean(match?.detailUrl),
+                theoInfoDetailUrl: match?.detailUrl || ''
+            };
+        });
+    },
+
+    getTheoGameCacheKey(game) {
+        const dateKey = this.getLocalDateKey(game.startTimestamp);
+        return `${dateKey}|${this.normalizeMatchText(game.homeTeam?.name)}|${this.normalizeMatchText(game.awayTeam?.name)}`;
+    },
+
+    scoreTheoMatch(calendarGame, theoMatch) {
+        const home = this.normalizeMatchText(calendarGame.homeTeam?.name);
+        const away = this.normalizeMatchText(calendarGame.awayTeam?.name);
+        const theoHome = this.normalizeMatchText(theoMatch.home?.name);
+        const theoAway = this.normalizeMatchText(theoMatch.away?.name);
+        if (!home || !away || !theoHome || !theoAway) return 0;
+        let score = 0;
+        if (home === theoHome) score += 5;
+        if (away === theoAway) score += 5;
+        if (home === theoAway) score += 2;
+        if (away === theoHome) score += 2;
+        if (theoHome.includes(home) || home.includes(theoHome)) score += 2;
+        if (theoAway.includes(away) || away.includes(theoAway)) score += 2;
+        const gameLeague = this.normalizeMatchText(calendarGame.tournament?.name || '');
+        const theoLeague = this.normalizeMatchText(theoMatch.league || '');
+        if (gameLeague && theoLeague && (gameLeague.includes(theoLeague) || theoLeague.includes(gameLeague))) score += 1;
+        return score;
+    },
+
+    findTheoMatchForGame(calendarGame, theoMatches) {
+        const ranked = (theoMatches || [])
+            .map(match => ({ match, score: this.scoreTheoMatch(calendarGame, match) }))
+            .sort((a, b) => b.score - a.score);
+        return ranked[0]?.score >= 8 ? ranked[0].match : null;
+    },
+
+    async loadTheoInfoForGame(game) {
+        const cacheKey = this.getTheoGameCacheKey(game);
+        const cached = this.theoBorgesDetailsCache[cacheKey];
+        if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) return cached.data;
+
+        let detailUrl = game?.theoInfoDetailUrl || '';
+        if (!detailUrl) {
+            const dateKey = this.getLocalDateKey(game.startTimestamp);
+            const list = await this.getTheoBorgesMatchesForDate(dateKey);
+            const match = this.findTheoMatchForGame(game, list.matches);
+            detailUrl = match?.detailUrl || '';
+        }
+
+        if (!detailUrl) {
+            throw new Error('Não encontrei este jogo no Theo Borges para a data selecionada.');
+        }
+
+        const detail = await window.traderTheoBorgesData.game({ url: detailUrl });
+        const data = { ...detail, listMatch: { detailUrl } };
+        this.theoBorgesDetailsCache[cacheKey] = { timestamp: Date.now(), data };
+        return data;
+    },
+
+    ensureTheoInfoModal() {
+        let modal = document.getElementById('theo-info-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'theo-info-modal';
+            document.body.appendChild(modal);
+        }
+        return modal;
+    },
+
+    async openTheoInfo(gamePayload) {
+        const game = typeof gamePayload === 'string' ? JSON.parse(decodeURIComponent(gamePayload)) : gamePayload;
+        this.theoInfoPendingGame = game;
+        this.theoInfoActiveTab = 'resumo';
+        const modal = this.ensureTheoInfoModal();
+        modal.className = 'theo-info-modal is-open';
+        modal.innerHTML = this.renderTheoInfoShell({ loading: true, game });
+
+        try {
+            const data = await this.loadTheoInfoForGame(game);
+            this.theoInfoCurrentData = data;
+            modal.innerHTML = this.renderTheoInfoShell({ data, game });
+        } catch (error) {
+            this.theoInfoCurrentData = null;
+            modal.innerHTML = this.renderTheoInfoShell({ error: error?.code || error?.message || String(error), game });
+        }
+    },
+
+    saveTheoBorgesSourceFromModal() {
+        const input = document.getElementById('theo-info-source-url');
+        const url = this.setTheoBorgesSourceUrl(input?.value || '');
+        if (!url) return;
+        this.theoBorgesMatchesCache = {};
+        this.theoBorgesDetailsCache = {};
+        if (this.theoInfoPendingGame) {
+            this.openTheoInfo(this.theoInfoPendingGame);
+        }
+    },
+
+    closeTheoInfo() {
+        const modal = document.getElementById('theo-info-modal');
+        if (modal) modal.classList.remove('is-open');
+        this.theoInfoCurrentData = null;
+    },
+
+    setTheoInfoTab(tab) {
+        this.theoInfoActiveTab = tab || 'resumo';
+        const modal = document.getElementById('theo-info-modal');
+        if (modal && this.theoInfoCurrentData) modal.innerHTML = this.renderTheoInfoShell({ data: this.theoInfoCurrentData });
+    },
+
+    renderTheoInfoShell({ loading = false, error = '', data = null, game = null } = {}) {
+        const match = data?.match || {};
+        const displayGame = game || {
+            homeTeam: { name: match.home?.name || 'Mandante' },
+            awayTeam: { name: match.away?.name || 'Visitante' }
+        };
+        const homeName = match.home?.name || displayGame.homeTeam?.name || 'Mandante';
+        const awayName = match.away?.name || displayGame.awayTeam?.name || 'Visitante';
+        const cacheKey = game ? this.getTheoGameCacheKey(game) : '';
+        const tabs = [
+            ['resumo', 'Resumo', 'bx-pulse'],
+            ['forma', 'Forma', 'bx-history'],
+            ['estatisticas', 'Estatísticas', 'bx-table'],
+            ['jogadores', 'Jogadores', 'bx-user']
+        ];
+
+        const body = loading
+            ? `<div class="theo-info-loading"><i class='bx bx-loader-alt bx-spin'></i><strong>Buscando informações...</strong></div>`
+            : error
+                ? this.renderTheoInfoError(error)
+                : this.renderTheoInfoTab(data);
+
+        return `
+            <div class="theo-info-backdrop" onclick="AnalisePro.closeTheoInfo()"></div>
+            <section class="theo-info-panel" role="dialog" aria-modal="true" data-cache-key="${this.escapeAttr(cacheKey)}">
+                <header class="theo-info-head">
+                    <div class="theo-info-title">
+                        <span>INFO</span>
+                        <strong>${this.escapeHtml(homeName)} <em>x</em> ${this.escapeHtml(awayName)}</strong>
+                        <small>${this.escapeHtml(match.competition || displayGame.tournament?.name || '')}${match.time ? ` · ${this.escapeHtml(match.time)}` : ''}${match.date ? ` · ${this.escapeHtml(match.date)}` : ''}</small>
+                    </div>
+                    <button type="button" onclick="AnalisePro.closeTheoInfo()" title="Fechar"><i class='bx bx-x'></i></button>
+                </header>
+                ${!loading && !error ? `<nav class="theo-info-tabs">${tabs.map(([id, label, icon]) => `
+                    <button type="button" class="${this.theoInfoActiveTab === id ? 'active' : ''}" onclick="AnalisePro.setTheoInfoTab('${id}')"><i class='bx ${icon}'></i>${label}</button>
+                `).join('')}</nav>` : ''}
+                <div class="theo-info-body">${body}</div>
+            </section>
+        `;
+    },
+
+    renderTheoInfoError(error) {
+        const needsConfig = error === 'THEO_CONFIG_REQUIRED';
+        const message = needsConfig
+            ? 'Cole o link do Theo Borges com o token t=... para ativar o INFO.'
+            : error;
+        return `
+            <div class="theo-info-error">
+                <i class='bx bx-error-circle'></i>
+                <strong>${this.escapeHtml(message)}</strong>
+                <div class="theo-info-config">
+                    <input id="theo-info-source-url" type="text" value="${this.escapeAttr(this.getTheoBorgesSourceUrl())}" placeholder="https://clube.theoborges.com/matches?dia=hoje&t=...">
+                    <button onclick="AnalisePro.saveTheoBorgesSourceFromModal()">Salvar e buscar</button>
+                </div>
+                ${!needsConfig ? `<button onclick="localStorage.removeItem('theo_borges_source_url'); AnalisePro.theoInfoPendingGame && AnalisePro.openTheoInfo(AnalisePro.theoInfoPendingGame)">Reconfigurar link</button>` : ''}
+            </div>
+        `;
+    },
+
+    renderTheoInfoTab(data) {
+        if (!data) return '';
+        const tab = this.theoInfoActiveTab || 'resumo';
+        if (tab === 'forma') return this.renderTheoForm(data);
+        if (tab === 'estatisticas') return this.renderTheoStats(data);
+        if (tab === 'jogadores') return this.renderTheoPlayers(data);
+        return this.renderTheoSummary(data);
+    },
+
+    renderTheoSummary(data) {
+        const table = data.tables?.find(item => item.title === 'Aproveitamento Geral') || data.tables?.[0];
+        return `
+            <div class="theo-info-grid">
+                ${this.renderTheoTrends(data.trends)}
+                ${this.renderTheoTable(table, 'theo-info-card wide')}
+                ${this.renderTheoLeaderboard(data.leaderboards?.[0], 'theo-info-card')}
+            </div>
+        `;
+    },
+
+    renderTheoTrends(trends = []) {
+        if (!trends.length) return `<article class="theo-info-card"><h3>Tendências</h3><p>Sem tendências disponíveis.</p></article>`;
+        return `<article class="theo-info-card"><h3><i class='bx bx-trending-up'></i>Tendências</h3>${trends.map(team => `
+            <div class="theo-trend-team">
+                <strong>${team.logo ? `<img src="${this.escapeHtml(team.logo)}" alt="">` : ''}${this.escapeHtml(team.team)}</strong>
+                ${team.items.map(item => `<div><span>${this.escapeHtml(item.label)}</span><b>${this.escapeHtml(item.value)}</b></div>`).join('')}
+            </div>
+        `).join('')}</article>`;
+    },
+
+    renderTheoTable(table, className = 'theo-info-card') {
+        if (!table) return `<article class="${className}"><h3>Estatísticas</h3><p>Sem dados disponíveis.</p></article>`;
+        return `<article class="${className}"><h3>${this.escapeHtml(table.title)}</h3><div class="theo-stat-table">
+            ${table.rows.map(row => `<div><b>${this.escapeHtml(row.home)}</b><span>${this.escapeHtml(row.label)}</span><b>${this.escapeHtml(row.away)}</b></div>`).join('')}
+        </div></article>`;
+    },
+
+    renderTheoStats(data) {
+        return `<div class="theo-info-grid stats-grid">${(data.tables || []).map(table => this.renderTheoTable(table)).join('')}</div>`;
+    },
+
+    renderTheoForm(data) {
+        const renderTeam = (side, items = []) => `<article class="theo-info-card wide"><h3>${this.escapeHtml(side)}</h3><div class="theo-form-row">
+            ${items.slice(0, 10).map(item => `<div class="theo-form-game ${this.escapeHtml(item.class || item.result || '')}">
+                <img src="${this.escapeHtml(item.opponent_image || '')}" alt="" onerror="this.style.display='none'">
+                <span>${this.escapeHtml(item.abbr || item.opponent_name || '')}</span>
+                <strong>${this.escapeHtml(item.score || '-')}</strong>
+                <em>${this.escapeHtml(({ win: 'V', draw: 'E', loss: 'D' }[item.result] || item.result || '-'))}</em>
+            </div>`).join('')}
+        </div></article>`;
+        return `<div class="theo-info-grid">${renderTeam(data.match?.home?.name || 'Mandante', data.recentForm?.home)}${renderTeam(data.match?.away?.name || 'Visitante', data.recentForm?.away)}</div>`;
+    },
+
+    renderTheoLeaderboard(board, className = 'theo-info-card') {
+        if (!board) return `<article class="${className}"><h3>Jogadores</h3><p>Sem dados disponíveis.</p></article>`;
+        const metricHeaders = (board.headers || []).slice(1);
+        return `<article class="${className}"><h3>${this.escapeHtml(board.title)}</h3><div class="theo-player-list">
+            ${(board.rows || []).map(player => `<div class="theo-player-row">
+                <img src="${this.escapeHtml(player.avatar || '')}" alt="" onerror="this.style.display='none'">
+                <div><strong>${this.escapeHtml(player.name)}</strong><span>${this.escapeHtml(player.team || '')}</span></div>
+                ${metricHeaders.map(header => `<b title="${this.escapeHtml(header)}">${this.escapeHtml(player.metrics?.[header] || '-')}</b>`).join('')}
+            </div>`).join('')}
+        </div></article>`;
+    },
+
+    renderTheoPlayers(data) {
+        return `<div class="theo-info-grid players-grid">${(data.leaderboards || []).map(board => this.renderTheoLeaderboard(board)).join('')}</div>`;
     },
 
     summarizeTrades(trades) {
