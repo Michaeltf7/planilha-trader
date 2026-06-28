@@ -26,7 +26,7 @@ const WorldCup = {
         timer: null,
         started: false
     },
-    syncCacheKey: 'worldcup_sync_cache_v4',
+    syncCacheKey: 'worldcup_sync_cache_v5',
 
     groups: {
         A: ['Mexico', 'South Africa', 'South Korea', 'Czech Republic'],
@@ -691,7 +691,7 @@ const WorldCup = {
         return `
             <article class="wc-game-row ${isFavorite ? 'favorite' : ''}">
                 <button class="wc-star ${isFavorite ? 'active' : ''}" onclick="WorldCup.toggleFavoriteMatch('${this.escapeAttr(match.id)}')" title="Favoritar jogo"><i class='bx ${isFavorite ? 'bxs-star' : 'bx-star'}'></i></button>
-                <span class="wc-stage">Grupo ${match.group} - 1</span>
+                <span class="wc-stage">${this.getMatchStageLabel(match)}</span>
                 <strong class="home">${match.home} ${this.getFlag(match.home)}</strong>
                 <span class="wc-score">${score}</span>
                 <strong class="away">${this.getFlag(match.away)} ${match.away}</strong>
@@ -708,7 +708,7 @@ const WorldCup = {
         const place = this.getMatchPlace(match);
         return `
             <article class="wc-compact-match">
-                <span>Grupo ${match.group} - 1</span>
+                <span>${this.getMatchStageLabel(match)}</span>
                 <div><strong>${this.getFlag(match.home)} ${match.home}</strong><b>vs</b><strong>${this.getFlag(match.away)} ${match.away}</strong></div>
                 <small>${this.formatDate(match.date)} - ${match.time.replace(/ UTC.*$/, '')}${place ? ` - ${place}` : ''}${broadcasts}</small>
                 ${this.renderMatchRadarActions(match, false)}
@@ -1336,13 +1336,38 @@ const WorldCup = {
     },
 
     normalizeExternalMatch(match) {
+        const isKnockout = this.isKnockoutStage(match.stage);
         return {
             ...match,
-            group: match.group && match.group !== '-' ? match.group : this.inferGroupByTeams(match.home, match.away),
+            group: !isKnockout && match.group && match.group !== '-'
+                ? match.group
+                : (isKnockout ? '-' : this.inferGroupByTeams(match.home, match.away)),
             status: this.normalizeStatus(match.status),
             homeScore: Number.isFinite(match.homeScore) ? match.homeScore : null,
             awayScore: Number.isFinite(match.awayScore) ? match.awayScore : null
         };
+    },
+
+    isKnockoutStage(stage) {
+        return /round of|final|quarter|semi|third place|3rd place|play-?off/i.test(String(stage || ''));
+    },
+
+    getMatchStageLabel(match) {
+        const stage = String(match.stage || '').trim();
+        const labels = {
+            'Round of 32': '16 avos de final',
+            'Round of 16': 'Oitavas de final',
+            'Quarterfinals': 'Quartas de final',
+            'Quarter-finals': 'Quartas de final',
+            'Semifinals': 'Semifinais',
+            'Semi-finals': 'Semifinais',
+            'Third place': '3o lugar',
+            'Match for 3rd place': '3o lugar',
+            'Final': 'Final'
+        };
+        if (stage) return labels[stage] || stage;
+        const round = String(match.round || '').trim();
+        return `Grupo ${match.group}${round ? ` - Rodada ${round}` : ''}`;
     },
 
     getMatchDisplayStatus(match) {

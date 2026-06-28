@@ -5260,6 +5260,18 @@ body.custom-radar-overlay-replica .custom-radar-pressure-chart-head {
     overflow: visible;
 }
 
+.custom-radar-window-toolbar.is-collapsed > :not(.custom-radar-toolbar-toggle) {
+    display: none;
+}
+
+.custom-radar-window-toolbar.is-collapsed {
+    gap: 0;
+}
+
+.custom-radar-window-toolbar .custom-radar-toolbar-toggle {
+    color: #cbd5e1;
+}
+
 .custom-wradar-modal[data-radar-density="wide"] .custom-radar-window-toolbar {
     display: none;
 }
@@ -5638,12 +5650,12 @@ body.custom-radar-overlay-replica .custom-radar-pressure-chart-head {
 .custom-radar-pressure-chart.is-radar-mod svg {
     width: 100%;
     min-width: 0;
-    height: clamp(92px, calc(112px * var(--custom-radar-font-scale, 1)), 132px);
+    height: clamp(132px, calc(156px * var(--custom-radar-font-scale, 1)), 176px);
     overflow: visible;
 }
 
 .custom-radar-pressure-chart.is-radar-mod .custom-radar-pressure-chart-body {
-    min-height: clamp(92px, calc(112px * var(--custom-radar-font-scale, 1)), 132px);
+    min-height: clamp(132px, calc(156px * var(--custom-radar-font-scale, 1)), 176px);
     overflow: hidden;
     padding: 0;
 }
@@ -6232,11 +6244,11 @@ body.custom-radar-overlay-replica .custom-radar-pressure-chart-head {
 }
 
 .custom-wradar-modal[data-radar-overlay="clean"][data-radar-density="compact"] .custom-radar-pressure-chart.is-radar-mod svg {
-    height: clamp(88px, calc(104px * var(--custom-radar-font-scale, 1)), 124px);
+    height: clamp(124px, calc(148px * var(--custom-radar-font-scale, 1)), 168px);
 }
 
 .custom-wradar-modal[data-radar-overlay="clean"][data-radar-density="compact"] .custom-radar-pressure-chart.is-radar-mod .custom-radar-pressure-chart-body {
-    min-height: clamp(88px, calc(104px * var(--custom-radar-font-scale, 1)), 124px);
+    min-height: clamp(124px, calc(148px * var(--custom-radar-font-scale, 1)), 168px);
 }
 
 .custom-radar-mini-info {

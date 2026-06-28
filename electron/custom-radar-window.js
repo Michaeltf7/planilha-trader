@@ -33,6 +33,7 @@
     heatmapMode: localStorage.getItem('custom_wradar_mod_heatmap_mode') || (localStorage.getItem('custom_wradar_mod_show_heatmap') === '1' ? 'match' : 'off'),
     heatmapStyle: localStorage.getItem('custom_wradar_mod_heatmap_style') || 'candles',
     heatmapMenuOpen: false,
+    toolbarCollapsed: localStorage.getItem('custom_wradar_mod_toolbar_collapsed') === '1',
     fontScale: Number(localStorage.getItem('custom_wradar_mod_font_scale')) || 1,
     fontMenuOpen: false,
     fontMenuX: 0,
@@ -1213,13 +1214,13 @@
 
     const maxValue = Math.max(6, ...minutes.map(item => item.chosen?.weight || 0));
     const chartWidth = 980;
-    const chartHeight = 112;
-    const midY = 56;
+    const chartHeight = 176;
+    const midY = 88;
     const topPad = 4;
     const bottomPad = 4;
     const gap = 3;
     const barWidth = 7;
-    const markerSize = 13;
+    const markerSize = 21;
     const dividerX = Math.round(chartWidth / 2);
     const leftStart = 16;
     const leftEnd = dividerX - 9;
@@ -1273,11 +1274,12 @@
         const centerX = x + markerSize / 2;
         const centerY = y + markerSize / 2;
         const cardColor = marker.type === 'yellow-card' ? '#facc15' : '#ef4444';
+        const cardWidth = markerSize * 0.52;
+        const cardHeight = markerSize * 0.78;
         return `
           <g class="custom-radar-pressure-event-marker">
             <title>${escapeHtml(markerTitle(marker))}</title>
-            <circle cx="${centerX}" cy="${centerY}" r="${markerSize / 2 + 1.8}" fill="${bg}" stroke="${cardColor}" stroke-width="1.7" opacity="0.98"></circle>
-            <rect x="${centerX - 3.2}" y="${centerY - 4.7}" width="6.4" height="9.4" rx="1.1" fill="${cardColor}" stroke="rgba(255,255,255,.88)" stroke-width="0.8" transform="rotate(-8 ${centerX} ${centerY})"></rect>
+            <rect x="${centerX - cardWidth / 2}" y="${centerY - cardHeight / 2}" width="${cardWidth}" height="${cardHeight}" rx="1.4" fill="${cardColor}" stroke="rgba(255,255,255,.88)" stroke-width="0.9" transform="rotate(-8 ${centerX} ${centerY})"></rect>
           </g>
         `;
       }
@@ -1285,8 +1287,7 @@
         return `
           <g class="custom-radar-pressure-event-marker">
             <title>${escapeHtml(markerTitle(marker))}</title>
-            <circle cx="${x + markerSize / 2}" cy="${y + markerSize / 2}" r="${markerSize / 2 + 1.8}" fill="${bg}" stroke="${stroke}" stroke-width="1.7" opacity="0.98"></circle>
-            <image href="${escapeHtml(href)}" x="${x + 2}" y="${y + 2}" width="${markerSize - 4}" height="${markerSize - 4}" preserveAspectRatio="xMidYMid meet"></image>
+            <image href="${escapeHtml(href)}" x="${x}" y="${y}" width="${markerSize}" height="${markerSize}" preserveAspectRatio="xMidYMid meet"></image>
           </g>
         `;
       }
@@ -1305,31 +1306,38 @@
         if (a.seconds !== b.seconds) return a.seconds - b.seconds;
         return a.type.localeCompare(b.type);
       });
-    const markerRows = {
-      home: [2, 19, 36],
-      away: [chartHeight - markerSize - 2, chartHeight - markerSize - 19, chartHeight - markerSize - 36]
+    const occupiedMarkers = { home: [], away: [] };
+    const markerBarHeight = marker => {
+      const minute = Math.max(0, Math.min(maxMinute, Math.floor(marker.seconds / 60)));
+      const chosen = minuteMap.get(minute)?.chosen;
+      const weight = chosen?.side === marker.side ? chosen.weight : radarModPressureWeight(marker.type);
+      return Math.max(5, Math.round(((Number(weight) || 0) / maxValue) * 46));
     };
-    const occupiedRows = { home: [[], [], []], away: [[], [], []] };
     const markerPosition = marker => {
       const baseX = xForSeconds(marker.seconds, marker.rawTime) + (barWidth / 2) - (markerSize / 2);
-      const preferred = Math.max(0, Math.min(2, Number(marker.lane) || 0));
-      const rowOrder = [preferred, ...[0, 1, 2].filter(row => row !== preferred)];
-      const offsets = [0, -9, 9, -18, 18, -27, 27, -36, 36];
+      const barHeight = markerBarHeight(marker);
+      const baseY = marker.side === 'home'
+        ? midY - barHeight - markerSize - gap
+        : midY + barHeight + gap;
       const minDistance = markerSize + 4;
-      for (const offset of offsets) {
-        const x = Math.max(1, Math.min(chartWidth - markerSize - 1, Math.round(baseX + offset)));
-        const center = x + (markerSize / 2);
-        for (const row of rowOrder) {
-          const available = occupiedRows[marker.side][row].every(previous => Math.abs(previous - center) >= minDistance);
-          if (!available) continue;
-          occupiedRows[marker.side][row].push(center);
-          return { x, y: markerRows[marker.side][row] };
-        }
+      const verticalOffsets = [0, markerSize + 3, (markerSize + 3) * 2, (markerSize + 3) * 3];
+      for (const verticalOffset of verticalOffsets) {
+        const rawY = marker.side === 'home' ? baseY - verticalOffset : baseY + verticalOffset;
+        const y = Math.max(1, Math.min(chartHeight - markerSize - 1, Math.round(rawY)));
+        const x = Math.max(1, Math.min(chartWidth - markerSize - 1, Math.round(baseX)));
+        const centerX = x + (markerSize / 2);
+        const centerY = y + (markerSize / 2);
+        const available = occupiedMarkers[marker.side].every(previous => (
+          Math.abs(previous.x - centerX) >= minDistance || Math.abs(previous.y - centerY) >= minDistance
+        ));
+        if (!available) continue;
+        occupiedMarkers[marker.side].push({ x: centerX, y: centerY });
+        return { x, y };
       }
-      const fallbackRow = rowOrder.reduce((best, row) => occupiedRows[marker.side][row].length < occupiedRows[marker.side][best].length ? row : best, rowOrder[0]);
-      const fallbackX = Math.max(1, Math.min(chartWidth - markerSize - 1, Math.round(baseX + offsets[offsets.length - 1])));
-      occupiedRows[marker.side][fallbackRow].push(fallbackX + (markerSize / 2));
-      return { x: fallbackX, y: markerRows[marker.side][fallbackRow] };
+      const fallbackX = Math.max(1, Math.min(chartWidth - markerSize - 1, Math.round(baseX)));
+      const fallbackY = Math.max(1, Math.min(chartHeight - markerSize - 1, Math.round(baseY)));
+      occupiedMarkers[marker.side].push({ x: fallbackX + (markerSize / 2), y: fallbackY + (markerSize / 2) });
+      return { x: fallbackX, y: fallbackY };
     };
     const titleFor = item => {
       if (!item.chosen) return `${item.minute}' | Sem evento de pressao`;
@@ -1650,7 +1658,8 @@
     const regularMainHtml = `${liveFeedHtml}<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${sofascorePanelHtml}${radarPressurePanelHtml}${heatPanelHtml}</div>`;
     modal.setAttribute('data-layout-edit', state.layoutEditMode ? '1' : '0');
     content.innerHTML = `
-      <div class="custom-radar-window-toolbar">
+      <div class="custom-radar-window-toolbar ${state.toolbarCollapsed ? 'is-collapsed' : ''}">
+        <button type="button" class="custom-radar-icon-btn custom-radar-toolbar-toggle" data-action="toolbar-toggle" title="${state.toolbarCollapsed ? 'Expandir controles' : 'Recolher controles'}" aria-label="${state.toolbarCollapsed ? 'Expandir controles' : 'Recolher controles'}"><i class='bx ${state.toolbarCollapsed ? 'bx-chevron-left' : 'bx-chevron-right'}'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="overlay" title="Alternar fundo limpo/painel"><i class='bx bx-layer'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
@@ -1909,6 +1918,13 @@
     if (action === 'font-submenu') {
       const submenu = target.closest('[data-submenu]')?.dataset?.submenu || 'font';
       state.activeFontSubmenu = ['font', 'background', 'content', 'heatmap', 'window'].includes(submenu) ? submenu : 'font';
+      render();
+      return;
+    }
+    if (action === 'toolbar-toggle') {
+      state.toolbarCollapsed = !state.toolbarCollapsed;
+      state.heatmapMenuOpen = false;
+      localStorage.setItem('custom_wradar_mod_toolbar_collapsed', state.toolbarCollapsed ? '1' : '0');
       render();
       return;
     }

@@ -210,6 +210,7 @@ def normalize_event(event):
         "slug": event.get("slug") or "",
         "group": infer_group(event),
         "round": round_info.get("round") or round_info.get("name") or "",
+        "stage": round_info.get("name") or "",
         "date": date,
         "time": hour,
         "home": team_name(home_team),
@@ -269,19 +270,44 @@ def find_worldcup_2026_season():
 def fetch_events(season_id):
     events = []
     errors = []
-    for round_number in range(1, 12):
-        try:
-            data = api_get(f"/unique-tournament/{TOURNAMENT_ID}/season/{season_id}/events/round/{round_number}")
-            round_events = data.get("events") if data else []
-            if not round_events:
-                if round_number > 4:
+
+    # Knockout matches are published in the paginated season timeline instead
+    # of the numbered group-stage round endpoints.
+    for direction in ("last", "next"):
+        for page in range(10):
+            try:
+                data = api_get(
+                    f"/unique-tournament/{TOURNAMENT_ID}/season/{season_id}/events/{direction}/{page}"
+                ) or {}
+                page_events = data.get("events") or []
+                events.extend(page_events)
+                if not page_events or not data.get("hasNextPage"):
                     break
-                continue
-            events.extend(round_events)
-        except Exception as exc:
-            errors.append({"round": round_number, "error": str(exc)})
-            if round_number > 4:
+            except Exception as exc:
+                errors.append({"direction": direction, "page": page, "error": str(exc)})
                 break
+
+    try:
+        live_data = api_get(
+            f"/unique-tournament/{TOURNAMENT_ID}/season/{season_id}/events/live"
+        ) or {}
+        events.extend(live_data.get("events") or [])
+    except Exception as exc:
+        errors.append({"direction": "live", "error": str(exc)})
+
+    # The timeline can omit the event currently crossing a status boundary.
+    # Supplement it with the three known group rounds when the tournament is
+    # not yet complete; IDs are deduplicated below.
+    collected_ids = {event.get("id") for event in events if event.get("id")}
+    if len(collected_ids) < 104:
+        for round_number in range(1, 4):
+            try:
+                data = api_get(
+                    f"/unique-tournament/{TOURNAMENT_ID}/season/{season_id}/events/round/{round_number}"
+                ) or {}
+                events.extend(data.get("events") or [])
+            except Exception as exc:
+                errors.append({"round": round_number, "error": str(exc)})
     unique = {}
     for event in events:
         if event.get("id"):
