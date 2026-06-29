@@ -220,6 +220,7 @@ def normalize_event(event):
         "venue": venue["venue"],
         "city": venue["city"],
         "status": status,
+        "winnerCode": event.get("winnerCode"),
         "statusDetail": event.get("status", {}).get("description") or "",
         "clock": live_clock(event, status),
         "livePeriodStartTimestamp": clock_meta["periodStartTimestamp"],

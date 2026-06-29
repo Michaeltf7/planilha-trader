@@ -3,7 +3,9 @@ const WorldCup = {
     knockoutView: 'cards',
     activeGroup: 'A',
     leaderTab: 'goals',
+    simulatorStage: 'groups',
     simulatedScores: {},
+    simulatedKnockoutWinners: {},
     favoriteMatchIds: [],
     favoritesLoaded: false,
     compareTeams: {
@@ -26,7 +28,7 @@ const WorldCup = {
         timer: null,
         started: false
     },
-    syncCacheKey: 'worldcup_sync_cache_v5',
+    syncCacheKey: 'worldcup_sync_cache_v6',
 
     groups: {
         A: ['Mexico', 'South Africa', 'South Korea', 'Czech Republic'],
@@ -271,14 +273,17 @@ const WorldCup = {
     renderKnockout() {
         const standings = this.getAllStandings();
         const qualified = this.getQualifiedSnapshot(standings);
-        const rounds = this.getKnockoutRounds(qualified);
+        const projectedRounds = this.getKnockoutRounds(qualified);
+        const officialRounds = this.getOfficialKnockoutRounds();
+        const rounds = officialRounds.length ? officialRounds : projectedRounds;
+        const isOfficial = officialRounds.length > 0;
         return `
             <section class="wc-knockout-hero">
                 <div>
-                    <h3><i class='bx bx-git-branch'></i> Mata-Mata Projetado</h3>
-                    <p>Confrontos montados pela classificacao atual. Vagas de melhores terceiros exibem os grupos possiveis e os terceiros atualmente elegiveis.</p>
+                    <h3><i class='bx bx-git-branch'></i> ${isOfficial ? 'Mata-Mata Oficial' : 'Mata-Mata Projetado'}</h3>
+                    <p>${isOfficial ? 'Confrontos e classificados atualizados automaticamente pelo SofaScore.' : 'Confrontos montados pela classificacao atual. Vagas de melhores terceiros exibem os grupos possiveis e os terceiros atualmente elegiveis.'}</p>
                 </div>
-                <span>${qualified.thirds.length}/8 melhores terceiros</span>
+                <span>${isOfficial ? '<i class="bx bx-refresh"></i> Atualizacao automatica' : `${qualified.thirds.length}/8 melhores terceiros`}</span>
             </section>
             <div class="wc-knockout-viewbar">
                 <button class="${this.knockoutView === 'cards' ? 'active' : ''}" onclick="WorldCup.setKnockoutView('cards')"><i class='bx bx-grid-alt'></i> Cards</button>
@@ -355,7 +360,7 @@ const WorldCup = {
     sortKnockoutBracketMatches(roundName, matches) {
         const orders = {
             '16 avos de final': [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87],
-            'Oitavas': [90, 89, 93, 94, 91, 92, 95, 96],
+            'Oitavas': [89, 90, 93, 94, 91, 92, 95, 96],
             'Quartas': [97, 98, 99, 100],
             'Semifinais': [101, 102],
             'Final + 3o Lugar': [104, 103]
@@ -374,13 +379,14 @@ const WorldCup = {
         const home = typeof match.home === 'string' ? { label: match.home, pending: true } : match.home;
         const away = typeof match.away === 'string' ? { label: match.away, pending: true } : match.away;
         const place = [meta.venue, meta.city].filter(Boolean).join(' - ');
+        const selected = match.simulator ? this.getValidSimulatedWinner(match) : '';
         return `
-            <article class="wc-bracket-match" ${place ? `title="${place}"` : ''}>
+            <article class="wc-bracket-match ${match.simulator ? 'is-simulator' : ''}" ${place ? `title="${place}"` : ''}>
                 ${match.bracketLabel ? `<span class="wc-bracket-match-label">${match.bracketLabel}</span>` : ''}
                 <div class="wc-bracket-card">
                     <div class="wc-bracket-card-teams">
-                        ${this.bracketCardTeamHtml(home)}
-                        ${this.bracketCardTeamHtml(away)}
+                        ${this.bracketCardTeamHtml(home, match, selected)}
+                        ${this.bracketCardTeamHtml(away, match, selected)}
                     </div>
                     <time class="wc-bracket-card-time">
                         <small>Jogo ${match.number}</small>
@@ -393,17 +399,21 @@ const WorldCup = {
         `;
     },
 
-    bracketCardTeamHtml(slot) {
+    bracketCardTeamHtml(slot, match = {}, selected = '') {
         if (!slot) {
             return `<div class="wc-bracket-card-team pending"><i class='bx bx-shield-quarter'></i><strong>A definir</strong></div>`;
         }
         if (slot.team) {
+            const isSelected = selected === slot.team;
+            const tag = match.simulator ? 'button' : 'div';
+            const action = match.simulator ? ` type="button" onclick="WorldCup.setSimKnockoutWinner(${Number(match.number)}, '${this.escapeAttr(slot.team)}')"` : '';
             return `
-                <div class="wc-bracket-card-team">
+                <${tag}${action} class="wc-bracket-card-team ${isSelected || slot.winner ? 'winner' : ''} ${slot.loser ? 'loser' : ''}">
                     <span>${this.getFlag(slot.team, 40)}</span>
-                    <strong>${slot.team}</strong>
-                    ${slot.seed ? `<em>${slot.seed}</em>` : ''}
-                </div>
+                    <div class="wc-bracket-card-team-meta"><strong>${slot.team}</strong>${slot.seed ? `<em>${slot.seed}</em>` : ''}</div>
+                    ${Number.isFinite(slot.score) ? `<b>${slot.score}</b>` : ''}
+                    ${match.simulator ? `<i class='bx ${isSelected ? 'bx-check' : 'bx-chevron-right'}'></i>` : ''}
+                </${tag}>
             `;
         }
         const label = slot.label || 'A definir';
@@ -571,13 +581,16 @@ const WorldCup = {
     },
 
     renderSimulator() {
+        if (this.simulatorStage === 'knockout') return this.renderKnockoutSimulator();
         const group = this.activeGroup;
         const teams = this.groups[group] || [];
         const table = this.getSimulatedStandings(group);
         const thirdRanking = this.renderThirdPlaceRanking(Object.fromEntries(Object.keys(this.groups).map(item => [item, this.getSimulatedStandings(item)])));
         return `
             <section class="wc-subtabs">
-                <button class="active">Fase de Grupos</button><button>Mata-Mata</button><button onclick="WorldCup.resetSimulator()">Resetar</button>
+                <button class="active" onclick="WorldCup.setSimulatorStage('groups')">Fase de Grupos</button>
+                <button onclick="WorldCup.setSimulatorStage('knockout')">Mata-Mata</button>
+                <button onclick="WorldCup.resetSimulator()">Resetar</button>
             </section>
             <section class="wc-group-tabs">
                 ${Object.keys(this.groups).map(item => `<button class="${group === item ? 'active' : ''}" onclick="WorldCup.setGroup('${item}')">Grupo ${item}</button>`).join('')}
@@ -593,6 +606,28 @@ const WorldCup = {
                 </article>
             </section>
             ${thirdRanking}
+        `;
+    },
+
+    renderKnockoutSimulator() {
+        const standings = Object.fromEntries(Object.keys(this.groups).map(group => [group, this.getSimulatedStandings(group)]));
+        const qualified = this.getQualifiedSnapshot(standings);
+        const rounds = this.getSimulatedKnockoutRounds(qualified);
+        const champion = this.getValidSimulatedWinner(rounds.flatMap(round => round.matches).find(match => match.number === 104));
+        return `
+            <section class="wc-subtabs">
+                <button onclick="WorldCup.setSimulatorStage('groups')">Fase de Grupos</button>
+                <button class="active" onclick="WorldCup.setSimulatorStage('knockout')">Mata-Mata</button>
+                <button onclick="WorldCup.resetSimulator()">Resetar</button>
+            </section>
+            <section class="wc-simulator-knockout-head">
+                <div><i class='bx bx-git-branch'></i><span><strong>Simulador do mata-mata</strong><small>Clique na selecao vencedora para avancar no chaveamento.</small></span></div>
+                ${champion ? `<div class="wc-simulator-champion"><i class='bx bx-trophy'></i><span>Campeao simulado</span><strong>${this.getFlag(champion)} ${champion}</strong></div>` : '<span class="wc-simulator-progress">Defina os vencedores ate a final</span>'}
+            </section>
+            ${this.renderKnockoutBracket(rounds.map(round => ({
+                ...round,
+                matches: round.matches.map(match => ({ ...match, simulator: true }))
+            })))}
         `;
     },
 
@@ -1010,6 +1045,122 @@ const WorldCup = {
                 { number: 104, home: 'Vencedor Jogo 101', away: 'Vencedor Jogo 102' }
             ] }
         ];
+    },
+
+    getOfficialKnockoutRounds() {
+        const stageConfig = {
+            'Round of 32': { name: '16 avos de final', numbers: Array.from({ length: 16 }, (_, index) => 73 + index) },
+            'Round of 16': { name: 'Oitavas', numbers: Array.from({ length: 8 }, (_, index) => 89 + index) },
+            Quarterfinals: { name: 'Quartas', numbers: [97, 98, 99, 100] },
+            'Quarter-finals': { name: 'Quartas', numbers: [97, 98, 99, 100] },
+            Semifinals: { name: 'Semifinais', numbers: [101, 102] },
+            'Semi-finals': { name: 'Semifinais', numbers: [101, 102] },
+            'Match for 3rd place': { name: '3o Lugar', numbers: [103] },
+            'Third place': { name: '3o Lugar', numbers: [103] },
+            Final: { name: 'Final', numbers: [104] }
+        };
+        const knockoutMatches = this.matches
+            .filter(match => stageConfig[String(match.stage || '').trim()])
+            .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+        if (!knockoutMatches.length) return [];
+
+        const usedNumbers = new Set();
+        const byRound = new Map();
+        knockoutMatches.forEach(match => {
+            const config = stageConfig[String(match.stage || '').trim()];
+            const date = this.formatDate(match.date).slice(0, 5);
+            const time = String(match.time || '').replace(/ UTC.*$/, '');
+            let number = config.numbers.find(candidate => {
+                const meta = this.getKnockoutMatchMeta(candidate);
+                return !usedNumbers.has(candidate) && meta.date === date && meta.time === time;
+            });
+            if (!number) number = config.numbers.find(candidate => !usedNumbers.has(candidate));
+            if (!number) return;
+            usedNumbers.add(number);
+
+            const hasScore = Number.isFinite(match.homeScore) && Number.isFinite(match.awayScore);
+            const homeWon = Number(match.winnerCode) === 1 || (hasScore && match.homeScore > match.awayScore);
+            const awayWon = Number(match.winnerCode) === 2 || (hasScore && match.awayScore > match.homeScore);
+            const normalized = {
+                number,
+                official: true,
+                status: match.status,
+                home: this.officialKnockoutSlot(match.home, match.homeScore, homeWon, awayWon),
+                away: this.officialKnockoutSlot(match.away, match.awayScore, awayWon, homeWon)
+            };
+            if (!byRound.has(config.name)) byRound.set(config.name, []);
+            byRound.get(config.name).push(normalized);
+        });
+
+        return ['16 avos de final', 'Oitavas', 'Quartas', 'Semifinais', '3o Lugar', 'Final']
+            .filter(name => byRound.has(name))
+            .map(name => ({ name, matches: byRound.get(name) }));
+    },
+
+    officialKnockoutSlot(team, score, winner = false, loser = false) {
+        const name = String(team || '').trim();
+        const pending = name.match(/^W(?:inner(?: of)?(?: match)?)?\s*(\d+)$/i);
+        if (pending) return { label: `Vencedor Jogo ${pending[1]}`, pending: true };
+        return {
+            team: name,
+            score: Number.isFinite(score) ? score : null,
+            winner,
+            loser
+        };
+    },
+
+    getSimulatedKnockoutRounds(qualified) {
+        const firstRound = this.getKnockoutRounds(qualified)[0].matches.map(match => ({ ...match }));
+        const matches = new Map(firstRound.map(match => [match.number, match]));
+        const winnerSlot = number => {
+            const match = matches.get(number);
+            const team = this.getValidSimulatedWinner(match);
+            return team ? { team, seed: `Vencedor Jogo ${number}` } : { label: `Vencedor Jogo ${number}`, pending: true };
+        };
+        const loserSlot = number => {
+            const match = matches.get(number);
+            const winner = this.getValidSimulatedWinner(match);
+            if (!winner) return { label: `Perdedor Jogo ${number}`, pending: true };
+            const loser = [match?.home?.team, match?.away?.team].find(team => team && team !== winner);
+            return loser ? { team: loser, seed: `Perdedor Jogo ${number}` } : { label: `Perdedor Jogo ${number}`, pending: true };
+        };
+        const createRound = (name, definitions) => {
+            const roundMatches = definitions.map(([number, homeSource, awaySource]) => {
+                const match = { number, home: winnerSlot(homeSource), away: winnerSlot(awaySource) };
+                matches.set(number, match);
+                return match;
+            });
+            return { name, matches: roundMatches };
+        };
+
+        const roundOf16 = createRound('Oitavas', [
+            [89, 74, 77], [90, 73, 75], [91, 76, 78], [92, 79, 80],
+            [93, 83, 84], [94, 81, 82], [95, 86, 88], [96, 85, 87]
+        ]);
+        const quarterfinals = createRound('Quartas', [
+            [97, 89, 90], [98, 93, 94], [99, 91, 92], [100, 95, 96]
+        ]);
+        const semifinals = createRound('Semifinais', [[101, 97, 98], [102, 99, 100]]);
+        const thirdPlaceMatch = { number: 103, home: loserSlot(101), away: loserSlot(102) };
+        matches.set(103, thirdPlaceMatch);
+        const finalMatch = { number: 104, home: winnerSlot(101), away: winnerSlot(102) };
+        matches.set(104, finalMatch);
+
+        return [
+            { name: '16 avos de final', matches: firstRound },
+            roundOf16,
+            quarterfinals,
+            semifinals,
+            { name: '3o lugar', matches: [thirdPlaceMatch] },
+            { name: 'Final', matches: [finalMatch] }
+        ];
+    },
+
+    getValidSimulatedWinner(match) {
+        if (!match) return '';
+        const selected = this.simulatedKnockoutWinners[match.number] || '';
+        const teams = [match.home?.team, match.away?.team].filter(Boolean);
+        return teams.includes(selected) ? selected : '';
     },
 
     winnerSlot(qualified, group) {
@@ -1656,6 +1807,16 @@ const WorldCup = {
         this.render();
     },
 
+    setSimulatorStage(stage) {
+        this.simulatorStage = stage === 'knockout' ? 'knockout' : 'groups';
+        this.render();
+    },
+
+    setSimKnockoutWinner(matchNumber, team) {
+        this.simulatedKnockoutWinners[Number(matchNumber)] = team;
+        this.render();
+    },
+
     setLeaderTab(tab) {
         this.leaderTab = tab;
         this.render();
@@ -1676,6 +1837,7 @@ const WorldCup = {
     },
     resetSimulator() {
         this.simulatedScores = {};
+        this.simulatedKnockoutWinners = {};
         this.render();
     },
 

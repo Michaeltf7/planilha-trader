@@ -9525,11 +9525,47 @@ body.custom-radar-overlay-replica .custom-radar-heatmap.is-team {
     margin: 0;
     padding: 0 8px;
     display: grid;
-    grid-template-columns: 24px minmax(0, auto) minmax(0, 1fr);
+    grid-template-columns: 24px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 6px;
     line-height: 1;
     border-bottom: 1px solid rgba(226, 232, 240, 0.86);
+}
+.wc-bracket-card-team-meta {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+.wc-bracket-card-team b {
+    color: #0f172a;
+    font-size: 15px;
+    font-weight: 950;
+}
+.wc-bracket-card-team > i {
+    color: #64748b;
+    font-size: 16px;
+}
+button.wc-bracket-card-team {
+    width: 100%;
+    border-top: 0;
+    border-right: 0;
+    border-left: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+button.wc-bracket-card-team:hover {
+    background: rgba(15, 150, 156, 0.08);
+}
+.wc-bracket-card-team.winner {
+    background: rgba(34, 197, 94, 0.12);
+}
+.wc-bracket-card-team.winner > i,
+.wc-bracket-card-team.winner b {
+    color: #16a34a;
+}
+.wc-bracket-card-team.loser {
+    opacity: 0.58;
 }
 .wc-bracket-card-team:last-child {
     border-bottom: 0;
@@ -9652,6 +9688,7 @@ body.custom-radar-overlay-replica .custom-radar-heatmap.is-team {
     border-left-color: rgba(148, 163, 184, 0.14);
 }
 :root[data-theme="dark"] .wc-bracket-card-team strong,
+:root[data-theme="dark"] .wc-bracket-card-team b,
 :root[data-theme="dark"] .wc-bracket-card-time strong,
 :root[data-theme="dark"] .wc-bracket-card-time span,
 :root[data-theme="dark"] .wc-bracket-card-time em {
@@ -10020,6 +10057,60 @@ body.custom-radar-overlay-replica .custom-radar-heatmap.is-team {
     color: var(--wc-text);
     text-align: center;
     font-weight: 900;
+}
+.wc-simulator-knockout-head {
+    min-height: 76px;
+    margin-bottom: 14px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border: 1px solid var(--wc-line);
+    border-radius: 8px;
+    background: var(--wc-panel);
+}
+.wc-simulator-knockout-head > div,
+.wc-simulator-knockout-head > div > span,
+.wc-simulator-champion {
+    display: flex;
+    align-items: center;
+}
+.wc-simulator-knockout-head > div {
+    gap: 10px;
+}
+.wc-simulator-knockout-head > div > i {
+    color: var(--wc-gold);
+    font-size: 25px;
+}
+.wc-simulator-knockout-head > div > span {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+}
+.wc-simulator-knockout-head strong {
+    color: var(--wc-text);
+}
+.wc-simulator-knockout-head small,
+.wc-simulator-progress {
+    color: var(--wc-muted);
+    font-size: 11px;
+    font-weight: 800;
+}
+.wc-simulator-champion {
+    flex-direction: row !important;
+    padding: 8px 12px;
+    border-left: 1px solid var(--wc-line);
+}
+.wc-simulator-champion span,
+.wc-simulator-champion strong {
+    display: block;
+}
+.wc-simulator-champion span {
+    color: var(--wc-muted);
+    font-size: 9px;
+    font-weight: 900;
+    text-transform: uppercase;
 }
 .wc-ranking-list {
     display: flex;
