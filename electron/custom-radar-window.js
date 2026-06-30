@@ -12,6 +12,34 @@
     showOdds: localStorage.getItem('custom_wradar_mod_show_odds') !== '0',
     showMeta: localStorage.getItem('custom_wradar_mod_show_meta') !== '0',
     showIconGallery: localStorage.getItem('custom_wradar_mod_show_icon_gallery') === '1',
+    personalizationTab: localStorage.getItem('custom_wradar_mod_personalization_tab') || 'profiles',
+    visualProfile: localStorage.getItem('custom_wradar_mod_visual_profile') || 'custom',
+    radarIconScale: Number(localStorage.getItem('custom_wradar_mod_radar_icon_scale') || localStorage.getItem('custom_wradar_mod_icon_scale')) || 1,
+    pressureIconScale: Number(localStorage.getItem('custom_wradar_mod_pressure_icon_scale') || localStorage.getItem('custom_wradar_mod_icon_scale')) || 1,
+    componentSettings: (() => {
+      try {
+        return JSON.parse(localStorage.getItem('custom_wradar_mod_component_settings') || '{}') || {};
+      } catch (_) {
+        return {};
+      }
+    })(),
+    colorSettings: (() => {
+      try {
+        return JSON.parse(localStorage.getItem('custom_wradar_mod_color_settings') || '{}') || {};
+      } catch (_) {
+        return {};
+      }
+    })(),
+    alertSettings: (() => {
+      try {
+        return JSON.parse(localStorage.getItem('custom_wradar_mod_alert_settings') || '{}') || {};
+      } catch (_) {
+        return {};
+      }
+    })(),
+    alertRuntime: { signature: '', firedAt: {}, visualUntil: 0, message: '' },
+    colorPickerActive: false,
+    showAutoSummary: localStorage.getItem('custom_wradar_mod_show_auto_summary') !== '0',
     customIconMap: (() => {
       try {
         return JSON.parse(localStorage.getItem('custom_wradar_mod_icon_map') || '{}') || {};
@@ -87,6 +115,40 @@
   const saveCustomIconMap = () => {
     localStorage.setItem('custom_wradar_mod_icon_map', JSON.stringify(state.customIconMap || {}));
   };
+  const defaultComponentSettings = {
+    score: { scale: 1, opacity: 1 },
+    events: { scale: 1, opacity: 1 },
+    stats: { scale: 1, opacity: 1 },
+    charts: { scale: 1, opacity: 1 },
+    heatmap: { scale: 1, opacity: 1 }
+  };
+  const defaultColorSettings = {
+    home: '#38bdf8', away: '#a78bfa', cold: '#22c55e', warm: '#facc15', hot: '#f97316', danger: '#ef4444'
+  };
+  const defaultAlertSettings = {
+    enabled: false, sound: true, visual: true, notification: false,
+    pressure: true, sequence: true, shots: true, redCard: true, goalChance: true
+  };
+  const componentSetting = key => ({
+    ...(defaultComponentSettings[key] || { scale: 1, opacity: 1 }),
+    ...(state.componentSettings?.[key] || {})
+  });
+  const colorSetting = key => state.colorSettings?.[key] || defaultColorSettings[key];
+  const alertSetting = key => state.alertSettings?.[key] ?? defaultAlertSettings[key];
+  const saveComponentSettings = () => localStorage.setItem('custom_wradar_mod_component_settings', JSON.stringify(state.componentSettings || {}));
+  const saveColorSettings = () => localStorage.setItem('custom_wradar_mod_color_settings', JSON.stringify(state.colorSettings || {}));
+  const saveAlertSettings = () => localStorage.setItem('custom_wradar_mod_alert_settings', JSON.stringify(state.alertSettings || {}));
+  const clampComponentScale = value => Math.max(0.6, Math.min(1.5, Math.round((Number(value) || 1) * 20) / 20));
+  const clampComponentOpacity = value => Math.max(0.2, Math.min(1, Math.round((Number(value) || 1) * 10) / 10));
+  const clampIconScale = value => Math.max(0.7, Math.min(1.6, Math.round((Number(value) || 1) * 20) / 20));
+  const setRadarIconScale = value => {
+    state.radarIconScale = clampIconScale(value);
+    localStorage.setItem('custom_wradar_mod_radar_icon_scale', String(state.radarIconScale));
+  };
+  const setPressureIconScale = value => {
+    state.pressureIconScale = clampIconScale(value);
+    localStorage.setItem('custom_wradar_mod_pressure_icon_scale', String(state.pressureIconScale));
+  };
   const normalizeMatchText = value => String(value || '')
     .replace(/[øö]/gi, 'o').replace(/æ/gi, 'ae').replace(/œ/gi, 'oe').replace(/ł/gi, 'l')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -128,12 +190,45 @@
     state.overlayOpacity = clampOverlayOpacity(value);
     localStorage.setItem('custom_wradar_mod_overlay_opacity', String(state.overlayOpacity));
   };
+  const currentVisualProfile = () => ({
+    fontScale: state.fontScale, overlayOpacity: state.overlayOpacity, content: state.overlayContentMode,
+    pressure: state.showPressureChart, radarPressure: state.showRadarPressureChart,
+    heatmapMode: state.heatmapMode, heatmapStyle: state.heatmapStyle,
+    componentSettings: state.componentSettings
+  });
+  const applyVisualProfile = profile => {
+    let config = visualProfilePresets[profile];
+    if (profile === 'custom') {
+      try { config = JSON.parse(localStorage.getItem('custom_wradar_mod_custom_profile') || '{}'); } catch (_) { config = {}; }
+    }
+    if (!config || !Object.keys(config).length) return;
+    setFontScale(config.fontScale ?? state.fontScale);
+    setOverlayOpacity(config.overlayOpacity ?? state.overlayOpacity);
+    state.overlayContentMode = config.content || state.overlayContentMode;
+    state.showPressureChart = config.pressure ?? state.showPressureChart;
+    state.showRadarPressureChart = config.radarPressure ?? state.showRadarPressureChart;
+    state.heatmapMode = config.heatmapMode || state.heatmapMode;
+    state.heatmapStyle = config.heatmapStyle || state.heatmapStyle;
+    if (config.componentSettings) state.componentSettings = config.componentSettings;
+    localStorage.setItem('custom_wradar_mod_overlay_content_mode', state.overlayContentMode);
+    localStorage.setItem('custom_wradar_mod_show_pressure_chart', state.showPressureChart ? '1' : '0');
+    localStorage.setItem('custom_wradar_mod_show_radar_pressure_chart', state.showRadarPressureChart ? '1' : '0');
+    localStorage.setItem('custom_wradar_mod_heatmap_mode', state.heatmapMode);
+    localStorage.setItem('custom_wradar_mod_heatmap_style', state.heatmapStyle);
+    saveComponentSettings();
+    state.visualProfile = profile;
+    localStorage.setItem('custom_wradar_mod_visual_profile', profile);
+    if (state.showPressureChart) scheduleSofascorePressureGraph(true);
+    if (state.showRadarPressureChart) scheduleSofascorePlayerEvents(true);
+  };
   const defaultCardLayout = {
     radar: { order: 0, span: 12, height: 0 },
     stats: { order: 1, span: 12, height: 0 },
-    sofascore: { order: 2, span: 12, height: 0 },
-    'radar-pressure': { order: 3, span: 12, height: 0 },
-    heatmap: { order: 4, span: 12, height: 0 }
+    summary: { order: 2, span: 5, height: 0 },
+    sofascore: { order: 3, span: 12, height: 0 },
+    'radar-pressure': { order: 4, span: 12, height: 0 },
+    heatmap: { order: 5, span: 12, height: 0 },
+    alerts: { order: 6, span: 12, height: 0 }
   };
   const cardLayoutFor = id => {
     const fallback = defaultCardLayout[id] || { order: 99, span: 12, height: 0 };
@@ -158,6 +253,14 @@
     state.cardLayout = {};
     localStorage.removeItem('custom_wradar_mod_card_layout');
   };
+  if (state.cardLayout?.alerts && !state.cardLayout?.summary) {
+    state.cardLayout = {
+      ...state.cardLayout,
+      summary: { ...state.cardLayout.alerts },
+      alerts: { ...defaultCardLayout.alerts }
+    };
+    localStorage.setItem('custom_wradar_mod_card_layout', JSON.stringify(state.cardLayout));
+  }
   const commentText = text => String(text || '').replace(/\s+/g, ' ').trim()
     .replace(/(Intervalo)(?:\s*Intervalo)+/gi, '$1')
     .replace(/(Half Time)(?:\s*Half Time)+/gi, '$1');
@@ -304,8 +407,16 @@
         };
         (Array.isArray(incidentData?.incidents) ? incidentData.incidents : []).forEach(incident => {
           const incidentType = String(incident?.incidentType || '').toLowerCase();
+          const incidentClass = String(incident?.incidentClass || incident?.cardType || '').toLowerCase();
           const minute = Number(incident?.time || 0) + Number(incident?.addedTime || 0);
           const side = incident?.isHome === true ? 'home' : incident?.isHome === false ? 'away' : '';
+          if (incidentType.includes('card') || incidentClass.includes('yellow') || incidentClass.includes('red')) {
+            const type = incidentClass.includes('red') ? 'red-card' : 'yellow-card';
+            pushEvent({
+              type, minute, side,
+              player: incident?.player?.name || incident?.player?.shortName || incident?.playerName || incident?.athlete?.name || ''
+            });
+          }
           if (incidentType === 'goal') {
             pushEvent({
               type: 'goal', minute, side,
@@ -547,6 +658,17 @@
     };
     return `<i class='custom-radar-event-icon ${escapeHtml(type)} ${escapeHtml(side)} bx ${map[type] || map.neutral}'></i>`;
   };
+  const visualProfilePresets = {
+    compact: { fontScale: 0.72, overlayOpacity: 0.8, content: 'events', pressure: false, radarPressure: false, heatmapMode: 'match', heatmapStyle: 'bar' },
+    full: { fontScale: 1, overlayOpacity: 1, content: 'full', pressure: true, radarPressure: true, heatmapMode: 'teams', heatmapStyle: 'candles' },
+    streaming: { fontScale: 0.82, overlayOpacity: 0.8, content: 'full', pressure: true, radarPressure: false, heatmapMode: 'match', heatmapStyle: 'wave' }
+  };
+  const personalizationTabs = [
+    ['profiles', 'Perfis', 'bx-bookmark'], ['alerts', 'Alertas', 'bx-bell'], ['colors', 'Cores', 'bx-palette'],
+    ['components', 'Componentes', 'bx-layout'], ['icons', 'Icones', 'bx-image']
+  ];
+  const componentLabels = { score: 'Placar', events: 'Eventos', stats: 'Estatisticas', charts: 'Graficos', heatmap: 'Mapa de calor' };
+  const toggleControl = (action, key, label, checked) => `<label class="custom-radar-toggle-row"><span>${escapeHtml(label)}</span><input type="checkbox" data-action="${action}" data-setting="${key}" ${checked ? 'checked' : ''}><i></i></label>`;
   const radarIconGalleryHtml = () => {
     const samples = [
       { type: 'goal', label: 'Gol', text: 'Goal for Casa', source: 'Gol.svg' },
@@ -572,29 +694,89 @@
       { type: 'full-time', label: 'Final da partida', text: 'Final da Partida', source: 'Boxicons bx-stop-circle' },
       { type: 'neutral', label: 'Neutro', text: 'Evento neutro', source: 'Boxicons bx-radio-circle' }
     ];
+    const tab = personalizationTabs.some(item => item[0] === state.personalizationTab) ? state.personalizationTab : 'profiles';
+    const profilePanel = `<div class="custom-radar-personalization-panel custom-radar-profile-panel">
+      <div class="custom-radar-profile-grid">${[
+        ['compact', 'Compacto', 'Informacao essencial em pouco espaco', 'bx-collapse'],
+        ['full', 'Completo', 'Todos os componentes ativos', 'bx-grid-alt'],
+        ['streaming', 'Streaming', 'Transparencia e leitura sobre video', 'bx-broadcast'],
+        ['custom', 'Personalizado', 'Seus ajustes salvos', 'bx-slider-alt']
+      ].map(([key, label, description, icon]) => `<button class="custom-radar-profile-card ${state.visualProfile === key ? 'active' : ''}" data-action="profile-apply" data-profile="${key}"><i class='bx ${icon}'></i><strong>${label}</strong><small>${description}</small></button>`).join('')}</div>
+      <div class="custom-radar-profile-actions"><button data-action="profile-save-custom"><i class='bx bx-save'></i> Salvar como Personalizado</button><small>Fonte, opacidade e componentes ficam neste perfil. Posicao e tamanho seguem as memorias 1, 2 e 3 da janela destacada.</small></div>
+    </div>`;
+    const alertsPanel = `<div class="custom-radar-personalization-panel custom-radar-settings-grid">
+      <section><h4>Funcionamento</h4>${toggleControl('alert-setting', 'enabled', 'Ativar alertas', alertSetting('enabled'))}${toggleControl('alert-setting', 'sound', 'Som curto', alertSetting('sound'))}${toggleControl('alert-setting', 'visual', 'Destaque visual', alertSetting('visual'))}${toggleControl('alert-setting', 'notification', 'Notificacao do sistema', alertSetting('notification'))}</section>
+      <section><h4>Regras</h4>${toggleControl('alert-setting', 'pressure', 'Pressao crescente', alertSetting('pressure'))}${toggleControl('alert-setting', 'sequence', 'Sequencia de ataques perigosos', alertSetting('sequence'))}${toggleControl('alert-setting', 'shots', 'Muitos remates', alertSetting('shots'))}${toggleControl('alert-setting', 'redCard', 'Cartao vermelho', alertSetting('redCard'))}${toggleControl('alert-setting', 'goalChance', 'Possivel momento de gol', alertSetting('goalChance'))}</section>
+      <section><h4>Resumo automatico</h4>${toggleControl('summary-toggle', 'summary', 'Exibir no Radar MOD', state.showAutoSummary)}<p>Descreve somente o ritmo recente, sem indicar mercado.</p></section>
+    </div>`;
+    const colorLabels = { home: 'Time da casa', away: 'Time visitante', cold: 'Frio', warm: 'Atencao', hot: 'Quente', danger: 'Muito perigoso' };
+    const colorsPanel = `<div class="custom-radar-personalization-panel custom-radar-color-grid">${Object.entries(colorLabels).map(([key, label]) => `<label><span>${label}</span><input type="color" value="${escapeHtml(colorSetting(key))}" data-action="color-change" data-color-key="${key}"><b>${escapeHtml(colorSetting(key))}</b></label>`).join('')}<button data-action="colors-reset"><i class='bx bx-reset'></i> Restaurar cores</button></div>`;
+    const componentsPanel = `<div class="custom-radar-personalization-panel"><div class="custom-radar-component-grid">${Object.entries(componentLabels).map(([key, label]) => {
+      const setting = componentSetting(key);
+      return `<div class="custom-radar-component-row"><strong>${label}</strong><span>Escala</span><button data-action="component-scale-down" data-component="${key}"><i class='bx bx-minus'></i></button><b>${Math.round(setting.scale * 100)}%</b><button data-action="component-scale-up" data-component="${key}"><i class='bx bx-plus'></i></button><span>Opacidade</span><button data-action="component-opacity-down" data-component="${key}"><i class='bx bx-minus'></i></button><b>${Math.round(setting.opacity * 100)}%</b><button data-action="component-opacity-up" data-component="${key}"><i class='bx bx-plus'></i></button></div>`;
+    }).join('')}</div><button data-action="components-reset"><i class='bx bx-reset'></i> Restaurar componentes</button></div>`;
+    const previewHtml = `<section class="custom-radar-personalization-preview" aria-label="Visualizacao previa">
+      <header><span>Visualizacao previa</span><small>Atualizacao imediata</small></header>
+      <div class="custom-radar-preview-score"><b data-preview-color="home" style="color:${colorSetting('home')}">CASA</b><strong>1 x 0</strong><b data-preview-color="away" style="color:${colorSetting('away')}">FORA</b></div>
+      <div class="custom-radar-preview-event"><i class='bx bx-target-lock'></i><span>62'18''</span><strong>Remate certeiro</strong></div>
+      <div class="custom-radar-preview-stats"><span>AP 18-11</span><span>CG 5-2</span><span>ESC 6-3</span></div>
+      <div class="custom-radar-preview-chart"><i data-preview-color="away" style="height:35%;background:${colorSetting('away')}"></i><i data-preview-color="home" style="height:55%;background:${colorSetting('home')}"></i><i data-preview-color="home" style="height:80%;background:${colorSetting('home')}"></i><i data-preview-color="away" style="height:42%;background:${colorSetting('away')}"></i><i data-preview-color="home" style="height:68%;background:${colorSetting('home')}"></i></div>
+      <div class="custom-radar-preview-heat"><i data-preview-color="cold" style="background:${colorSetting('cold')}"></i><i data-preview-color="warm" style="background:${colorSetting('warm')}"></i><i data-preview-color="hot" style="background:${colorSetting('hot')}"></i><i data-preview-color="danger" style="background:${colorSetting('danger')}"></i></div>
+    </section>`;
     return `
-      <div class="custom-radar-card custom-radar-icon-gallery-card">
-        <h3><i class='bx bx-category'></i> Icones do Radar MOD</h3>
-        <div class="custom-radar-icon-gallery">
-          ${samples.map(sample => {
-            const custom = state.customIconMap?.[sample.type];
-            const defaultIcon = defaultRadarIconMap[sample.type];
-            const icon = eventIcon({ comment: sample.text, side: 'home' });
-            return `
-              <div class="custom-radar-icon-sample ${escapeHtml(sample.type)}">
-                <span class="custom-radar-icon-preview">${icon}</span>
-                <strong>${escapeHtml(sample.label)}</strong>
-                <small>${escapeHtml(custom?.name ? `Custom: ${custom.name}` : (defaultIcon?.name ? `Padrao: ${defaultIcon.name}` : sample.source))}</small>
-                <span class="custom-radar-icon-actions">
-                  <button type="button" data-action="icon-change" data-icon-type="${escapeHtml(sample.type)}"><i class='bx bx-upload'></i> Trocar</button>
-                  <button type="button" ${custom?.src ? '' : 'disabled'} data-action="icon-reset" data-icon-type="${escapeHtml(sample.type)}"><i class='bx bx-reset'></i></button>
-                </span>
-              </div>
-            `;
-          }).join('')}
+      <div class="custom-radar-personalization-modal" role="dialog" aria-modal="true" aria-label="Central de personalizacao">
+        <button type="button" class="custom-radar-personalization-backdrop" data-action="icon-gallery" aria-label="Fechar central"></button>
+        <div class="custom-radar-card custom-radar-icon-gallery-card" data-personalization-tab="${tab}">
+          <div class="custom-radar-personalization-title">
+            <span><i class='bx bx-slider-alt'></i><span><strong>Central de personalizacao</strong><small>Ajuste os eventos sem alterar os dados do Radar MOD.</small></span></span>
+            <button type="button" data-action="icon-gallery" title="Fechar central"><i class='bx bx-x'></i></button>
+          </div>
+          <nav class="custom-radar-personalization-tabs">${personalizationTabs.map(([key, label, icon]) => `<button class="${tab === key ? 'active' : ''}" data-action="personalization-tab" data-tab="${key}"><i class='bx ${icon}'></i><span>${label}</span></button>`).join('')}</nav>
+          ${tab === 'colors' || tab === 'components' || tab === 'profiles' ? previewHtml : ''}
+          ${tab === 'profiles' ? profilePanel : tab === 'alerts' ? alertsPanel : tab === 'colors' ? colorsPanel : tab === 'components' ? componentsPanel : ''}
+          <div class="custom-radar-personalization-controls">
+            <div class="custom-radar-personalization-scale">
+              <span><i class='bx bx-list-ul'></i> Icones no Radar</span>
+              <button type="button" data-action="radar-icon-scale-down" title="Diminuir no Radar"><i class='bx bx-minus'></i></button>
+              <strong>${Math.round(clampIconScale(state.radarIconScale) * 100)}%</strong>
+              <button type="button" data-action="radar-icon-scale-up" title="Aumentar no Radar"><i class='bx bx-plus'></i></button>
+              <button type="button" data-action="radar-icon-scale-reset" title="Tamanho padrao no Radar"><i class='bx bx-reset'></i> Padrao</button>
+            </div>
+            <div class="custom-radar-personalization-scale">
+              <span><i class='bx bx-bar-chart-square'></i> Icones no grafico</span>
+              <button type="button" data-action="pressure-icon-scale-down" title="Diminuir no grafico"><i class='bx bx-minus'></i></button>
+              <strong>${Math.round(clampIconScale(state.pressureIconScale) * 100)}%</strong>
+              <button type="button" data-action="pressure-icon-scale-up" title="Aumentar no grafico"><i class='bx bx-plus'></i></button>
+              <button type="button" data-action="pressure-icon-scale-reset" title="Tamanho padrao no grafico"><i class='bx bx-reset'></i> Padrao</button>
+            </div>
+            <button type="button" class="reset-all" data-action="icon-reset-all"><i class='bx bx-refresh'></i> Restaurar todos</button>
+          </div>
+          <div class="custom-radar-icon-gallery">
+            ${samples.map(sample => {
+              const custom = state.customIconMap?.[sample.type];
+              const defaultIcon = defaultRadarIconMap[sample.type];
+              const icon = eventIcon({ comment: sample.text, side: 'home' });
+              return `
+                <div class="custom-radar-icon-sample ${escapeHtml(sample.type)}">
+                  <span class="custom-radar-icon-preview">${icon}</span>
+                  <strong>${escapeHtml(sample.label)}</strong>
+                  <small>${escapeHtml(custom?.name ? `Custom: ${custom.name}` : (defaultIcon?.name ? `Padrao: ${defaultIcon.name}` : sample.source))}</small>
+                  <span class="custom-radar-icon-actions">
+                    <button type="button" data-action="icon-change" data-icon-type="${escapeHtml(sample.type)}"><i class='bx bx-upload'></i> Trocar</button>
+                    <button type="button" ${custom?.src ? '' : 'disabled'} data-action="icon-reset" data-icon-type="${escapeHtml(sample.type)}"><i class='bx bx-reset'></i></button>
+                  </span>
+                </div>
+              `;
+            }).join('')}
+          </div>
         </div>
       </div>
     `;
+  };
+  const refreshPersonalizationModal = () => {
+    const current = $('.custom-radar-personalization-modal');
+    if (current) current.outerHTML = radarIconGalleryHtml();
+    else render();
   };
   const renderLogo = (team, fallbackName) => {
     const id = team?.a;
@@ -670,6 +852,120 @@
     if (type === 'goal-kick') return { type, label: 'Tiros de meta', score: -1 };
     if (type === 'foul' || text.includes('falta') || text.includes('free kick')) return { type: 'foul', label: 'Faltas', score: -0.5 };
     return null;
+  };
+  const recentMatchPulse = (data, clock, windowSeconds = 600) => {
+    const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
+    const latest = parseGameSeconds(clock) ?? Math.max(0, ...items.map(item => parseGameSeconds(commentTime(item)) || 0));
+    const result = {
+      home: 0, away: 0, dangerous: 0, shots: 0, onTarget: 0, redCards: 0, sequence: 0, latest,
+      lastDangerousAt: -1, lastShotAt: -1, lastOnTargetAt: -1, lastRedCardAt: -1, lastPressureAt: -1
+    };
+    let consecutiveSide = '';
+    let consecutiveCount = 0;
+    items
+      .map(item => ({ item, seconds: parseGameSeconds(commentTime(item)) }))
+      .filter(entry => entry.seconds !== null && entry.seconds <= latest && latest - entry.seconds <= windowSeconds)
+      .sort((a, b) => a.seconds - b.seconds)
+      .forEach(({ item, seconds }) => {
+        const side = item?.side === 'away' ? 'away' : (item?.side === 'home' ? 'home' : '');
+        const type = eventType(item);
+        const heat = heatEventScore(item);
+        if (side && heat) {
+          result[side] += Math.max(0, heat.score || 0);
+          if ((heat.score || 0) > 0) result.lastPressureAt = Math.max(result.lastPressureAt, seconds);
+        }
+        if (type === 'dangerous') {
+          result.dangerous += 1;
+          result.lastDangerousAt = Math.max(result.lastDangerousAt, seconds);
+        }
+        if (['shot', 'shot-on-target', 'blocked-shot', 'woodwork'].includes(type)) {
+          result.shots += 1;
+          result.lastShotAt = Math.max(result.lastShotAt, seconds);
+        }
+        if (['shot-on-target', 'woodwork'].includes(type)) {
+          result.onTarget += 1;
+          result.lastOnTargetAt = Math.max(result.lastOnTargetAt, seconds);
+        }
+        if (type === 'red-card') {
+          result.redCards += 1;
+          result.lastRedCardAt = Math.max(result.lastRedCardAt, seconds);
+        }
+        if (side && type === 'dangerous') {
+          consecutiveCount = consecutiveSide === side ? consecutiveCount + 1 : 1;
+          consecutiveSide = side;
+          result.sequence = Math.max(result.sequence, consecutiveCount);
+        }
+      });
+    return result;
+  };
+  const autoSummary = (data, clock, names) => {
+    const pulse = recentMatchPulse(data, clock, 600);
+    const total = pulse.home + pulse.away;
+    const difference = Math.abs(pulse.home - pulse.away);
+    if (!total) return { tone: 'calm', text: 'Jogo sem pressao relevante nos ultimos minutos.' };
+    if (pulse.onTarget >= 3 || total >= 48) return { tone: 'danger', text: 'Ritmo muito alto e chegadas perigosas recentes.' };
+    if (difference >= 12) {
+      const leader = pulse.home > pulse.away ? (names.home || 'Mandante') : (names.away || 'Visitante');
+      return { tone: 'hot', text: `${leader} pressiona com mais intensidade.` };
+    }
+    if (pulse.sequence >= 4) return { tone: 'watch', text: 'Sequencia ofensiva em andamento.' };
+    if (total >= 20) return { tone: 'watch', text: 'Jogo ativo, com pressao alternada.' };
+    return { tone: 'calm', text: 'Ritmo controlado neste momento.' };
+  };
+  const playAlertSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.frequency.value = 740;
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      oscillator.connect(gain).connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.25);
+      oscillator.onended = () => ctx.close().catch(() => {});
+    } catch (_) {}
+  };
+  const evaluateAlerts = (data, clock, names) => {
+    if (!alertSetting('enabled')) return;
+    const pulseTwoMinutes = recentMatchPulse(data, clock, 120);
+    const pulse = recentMatchPulse(data, clock, 180);
+    const sixMinutes = recentMatchPulse(data, clock, 360);
+    const previousHome = Math.max(0, sixMinutes.home - pulse.home);
+    const previousAway = Math.max(0, sixMinutes.away - pulse.away);
+    const isFresh = seconds => seconds >= 0 && pulse.latest - seconds <= 30;
+    const candidates = [];
+    if (alertSetting('redCard') && pulse.redCards && isFresh(pulse.lastRedCardAt)) candidates.push(['red-card', 'Cartao vermelho registrado']);
+    if (alertSetting('goalChance') && pulseTwoMinutes.onTarget >= 3 && isFresh(pulseTwoMinutes.lastOnTargetAt)) candidates.push(['goal-chance', 'Muitas finalizacoes perigosas']);
+    const leadingPressure = Math.max(pulse.home, pulse.away);
+    const previousPressure = pulse.home > pulse.away ? previousHome : previousAway;
+    if (alertSetting('pressure') && leadingPressure >= 18 && leadingPressure >= Math.max(6, previousPressure * 1.4) && isFresh(pulse.lastPressureAt)) {
+      const leader = pulse.home > pulse.away ? (names.home || 'Mandante') : (names.away || 'Visitante');
+      candidates.push(['pressure', `Pressao crescente: ${leader}`]);
+    }
+    if (alertSetting('sequence') && pulse.sequence >= 4 && isFresh(pulse.lastDangerousAt)) candidates.push(['sequence', 'Sequencia de ataques perigosos detectada']);
+    if (alertSetting('shots') && pulse.shots >= 5 && isFresh(pulse.lastShotAt)) candidates.push(['shots', 'Muitos remates nos ultimos 3 minutos']);
+    const selected = candidates[0];
+    if (!selected) return;
+    const [kind, message] = selected;
+    const signature = `${kind}|${Math.floor((pulse.latest || 0) / 60)}`;
+    const now = Date.now();
+    let sharedAlert = {};
+    try { sharedAlert = JSON.parse(localStorage.getItem('custom_wradar_mod_last_alert') || '{}'); } catch (_) {}
+    if (state.alertRuntime.signature === signature || now - (state.alertRuntime.firedAt[kind] || 0) < 35000 || now - (Number(sharedAlert.at) || 0) < 35000) return;
+    state.alertRuntime.signature = signature;
+    state.alertRuntime.firedAt[kind] = now;
+    state.alertRuntime.message = message;
+    state.alertRuntime.visualUntil = alertSetting('visual') ? now + 5000 : 0;
+    localStorage.setItem('custom_wradar_mod_last_alert', JSON.stringify({ signature, at: now }));
+    if (alertSetting('sound')) playAlertSound();
+    if (alertSetting('notification') && 'Notification' in window) {
+      const show = () => new Notification('Radar MOD', { body: message });
+      if (Notification.permission === 'granted') show();
+      else if (Notification.permission !== 'denied') Notification.requestPermission().then(permission => permission === 'granted' && show());
+    }
   };
   const heatTimeMultiplier = seconds => {
     const minute = Math.max(0, Math.floor((Number(seconds) || 0) / 60));
@@ -936,16 +1232,16 @@
           <svg class="custom-radar-heat-wave" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Onda de intensidade">
             <defs>
               <linearGradient id="${gradientId}-stroke" x1="0" y1="1" x2="0" y2="0">
-                <stop offset="0%" stop-color="#22c55e" />
-                <stop offset="35%" stop-color="#facc15" />
-                <stop offset="65%" stop-color="#f97316" />
-                <stop offset="100%" stop-color="#ef4444" />
+                <stop offset="0%" stop-color="${colorSetting('cold')}" />
+                <stop offset="35%" stop-color="${colorSetting('warm')}" />
+                <stop offset="65%" stop-color="${colorSetting('hot')}" />
+                <stop offset="100%" stop-color="${colorSetting('danger')}" />
               </linearGradient>
               <linearGradient id="${gradientId}-fill" x1="0" y1="1" x2="0" y2="0">
-                <stop offset="0%" stop-color="#22c55e" stop-opacity="0.12" />
-                <stop offset="45%" stop-color="#facc15" stop-opacity="0.22" />
-                <stop offset="75%" stop-color="#f97316" stop-opacity="0.32" />
-                <stop offset="100%" stop-color="#ef4444" stop-opacity="0.42" />
+                <stop offset="0%" stop-color="${colorSetting('cold')}" stop-opacity="0.12" />
+                <stop offset="45%" stop-color="${colorSetting('warm')}" stop-opacity="0.22" />
+                <stop offset="75%" stop-color="${colorSetting('hot')}" stop-opacity="0.32" />
+                <stop offset="100%" stop-color="${colorSetting('danger')}" stop-opacity="0.42" />
               </linearGradient>
             </defs>
             <g class="custom-radar-heat-wave-grid">
@@ -1102,7 +1398,7 @@
       const height = Math.max(2, Math.round(Math.pow(ratio, 0.82) * maxBarHeight));
       const isHome = value >= 0;
       const y = isHome ? midY - height : midY;
-      const fill = isHome ? '#22c55e' : '#6366f1';
+      const fill = isHome ? colorSetting('home') : colorSetting('away');
       const side = isHome ? names.home : names.away;
       const title = `${Math.round(point.minute)}' | ${side}: ${Math.abs(Math.round(value))}`;
       return `
@@ -1170,7 +1466,7 @@
     'red-card': { label: 'CV', name: 'Cartao vermelho', lane: 0, color: '#ef4444' },
     substitution: { label: 'S', name: 'Substituicao', lane: 2, color: '#94a3b8' }
   })[type] || null;
-  const radarModPressureIconHref = type => defaultRadarIconMap[type]?.src || '';
+  const radarModPressureIconHref = type => radarIconForType(type)?.src || '';
   const radarModPressureChartHtml = (data, clock, names) => {
     const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
     if (!items.length) return '';
@@ -1220,7 +1516,7 @@
     const bottomPad = 4;
     const gap = 3;
     const barWidth = 7;
-    const markerSize = 21;
+    const markerSize = Math.round(21 * clampIconScale(state.pressureIconScale));
     const dividerX = Math.round(chartWidth / 2);
     const leftStart = 16;
     const leftEnd = dividerX - 9;
@@ -1270,6 +1566,14 @@
       const stroke = marker.color || (marker.side === 'home' ? '#22c55e' : '#6366f1');
       const href = radarModPressureIconHref(marker.type);
       const fontSize = marker.label.length > 1 ? 6.2 : 8.2;
+      if (href) {
+        return `
+          <g class="custom-radar-pressure-event-marker">
+            <title>${escapeHtml(markerTitle(marker))}</title>
+            <image href="${escapeHtml(href)}" x="${x}" y="${y}" width="${markerSize}" height="${markerSize}" preserveAspectRatio="xMidYMid meet"></image>
+          </g>
+        `;
+      }
       if (marker.type === 'yellow-card' || marker.type === 'red-card') {
         const centerX = x + markerSize / 2;
         const centerY = y + markerSize / 2;
@@ -1280,14 +1584,6 @@
           <g class="custom-radar-pressure-event-marker">
             <title>${escapeHtml(markerTitle(marker))}</title>
             <rect x="${centerX - cardWidth / 2}" y="${centerY - cardHeight / 2}" width="${cardWidth}" height="${cardHeight}" rx="1.4" fill="${cardColor}" stroke="rgba(255,255,255,.88)" stroke-width="0.9" transform="rotate(-8 ${centerX} ${centerY})"></rect>
-          </g>
-        `;
-      }
-      if (href) {
-        return `
-          <g class="custom-radar-pressure-event-marker">
-            <title>${escapeHtml(markerTitle(marker))}</title>
-            <image href="${escapeHtml(href)}" x="${x}" y="${y}" width="${markerSize}" height="${markerSize}" preserveAspectRatio="xMidYMid meet"></image>
           </g>
         `;
       }
@@ -1353,8 +1649,8 @@
       return `
         <g>
           <title>${escapeHtml(titleFor(item))}</title>
-          <rect x="${x}" y="${isHome ? midY - height : midY - 1}" width="${barWidth}" height="${isHome ? height : 1}" rx="2.5" fill="#38bdf8" opacity="${isHome ? 0.98 : 0.14}"></rect>
-          <rect x="${x}" y="${midY}" width="${barWidth}" height="${isAway ? height : 1}" rx="2.5" fill="#a78bfa" opacity="${isAway ? 0.98 : 0.14}"></rect>
+          <rect x="${x}" y="${isHome ? midY - height : midY - 1}" width="${barWidth}" height="${isHome ? height : 1}" rx="2.5" fill="${colorSetting('home')}" opacity="${isHome ? 0.98 : 0.14}"></rect>
+          <rect x="${x}" y="${midY}" width="${barWidth}" height="${isAway ? height : 1}" rx="2.5" fill="${colorSetting('away')}" opacity="${isAway ? 0.98 : 0.14}"></rect>
         </g>
       `;
     }).join('');
@@ -1454,14 +1750,14 @@
       const awayOpacity = item.away > 0 ? 0.96 : 0.18;
       const markers = item.markers.slice(0, 3).map((marker, markerIndex) => {
         const y = marker.side === 'home' ? 10 + (markerIndex * 9) : 62 - (markerIndex * 9);
-        const color = marker.side === 'home' ? '#22c55e' : '#6366f1';
+        const color = marker.side === 'home' ? colorSetting('home') : colorSetting('away');
         return `<text x="${x + (barWidth / 2)}" y="${y}" text-anchor="middle" fill="${color}" font-size="8" font-weight="900">${markerIcon(marker)}</text>`;
       }).join('');
       return `
         <g>
           <title>${escapeHtml(titleFor(item))}</title>
-          <rect x="${x}" y="${midY - homeHeight}" width="${barWidth}" height="${homeHeight}" rx="1.5" fill="#22c55e" opacity="${homeOpacity}"></rect>
-          <rect x="${x}" y="${midY}" width="${barWidth}" height="${awayHeight}" rx="1.5" fill="#6366f1" opacity="${awayOpacity}"></rect>
+          <rect x="${x}" y="${midY - homeHeight}" width="${barWidth}" height="${homeHeight}" rx="1.5" fill="${colorSetting('home')}" opacity="${homeOpacity}"></rect>
+          <rect x="${x}" y="${midY}" width="${barWidth}" height="${awayHeight}" rx="1.5" fill="${colorSetting('away')}" opacity="${awayOpacity}"></rect>
           ${markers}
         </g>
       `;
@@ -1519,8 +1815,15 @@
     modal.setAttribute('data-radar-overlay', state.cleanOverlay ? 'clean' : 'panel');
     modal.setAttribute('data-overlay-content-mode', state.overlayContentMode);
     modal.style.setProperty('--custom-radar-font-scale', String(clampFontScale(state.fontScale)));
+    modal.style.setProperty('--custom-radar-icon-scale', String(clampIconScale(state.radarIconScale)));
     modal.style.setProperty('--custom-radar-overlay-dim', '0');
     modal.style.setProperty('--custom-radar-overlay-opacity', String(clampOverlayOpacity(state.overlayOpacity)));
+    Object.keys(defaultColorSettings).forEach(key => modal.style.setProperty(`--custom-radar-color-${key}`, colorSetting(key)));
+    Object.keys(defaultComponentSettings).forEach(key => {
+      const setting = componentSetting(key);
+      modal.style.setProperty(`--custom-radar-${key}-scale`, String(clampComponentScale(setting.scale)));
+      modal.style.setProperty(`--custom-radar-${key}-opacity`, String(clampComponentOpacity(setting.opacity)));
+    });
     const event = state.event || {};
     const data = state.realData;
     const teams = splitTeams(event);
@@ -1531,6 +1834,8 @@
     };
     const names = { home: data?.homeName || teams.home, away: data?.awayName || teams.away };
     const clock = data?.clock || event.minute || (event.whInPlay ? 'Ao vivo' : 'Pre-live');
+    evaluateAlerts(data, clock, names);
+    modal.classList.toggle('has-active-alert', state.alertRuntime.visualUntil > Date.now());
     const added = addedTimeHtml(data, clock);
     const current = getFocusedComment(data) || getLastComment(data);
     const pinned = (!!state.pinnedKey || Number.isInteger(state.pinnedIndex)) && !!current;
@@ -1544,6 +1849,13 @@
     const heatmapActive = heatmapMode !== 'off';
     const heatmapLabels = { off: 'Desligado', match: 'Partida', home: 'Casa', away: 'Visitante', teams: 'Times separados' };
     const pressureChartActive = !!state.showPressureChart;
+    const summary = autoSummary(data, clock, names);
+    const summaryHtml = state.showAutoSummary ? `<div class="custom-radar-auto-summary is-${summary.tone}"><i class='bx bx-pulse'></i><strong>${escapeHtml(summary.text)}</strong></div>` : '';
+    const alertBannerHtml = state.alertRuntime.visualUntil > Date.now() && state.alertRuntime.message
+      ? `<div class="custom-radar-alert-banner"><i class='bx bx-bell'></i><strong>${escapeHtml(state.alertRuntime.message)}</strong></div>` : '';
+    const alertModuleHtml = alertBannerHtml || (state.layoutEditMode
+      ? `<div class="custom-radar-alert-placeholder"><i class='bx bx-bell'></i><span>O alerta aparecera aqui quando uma regra for disparada.</span></div>`
+      : '');
     const heatmapMenu = `
       <div class="custom-radar-heat-menu ${state.heatmapMenuOpen ? 'is-open' : ''}">
         ${[
@@ -1654,8 +1966,10 @@
         ${editModuleHtml('sofascore', 'Pressao SofaScore', sofascorePanelHtml)}
         ${editModuleHtml('radar-pressure', 'Pressao Radar MOD', radarPressurePanelHtml)}
         ${editModuleHtml('heatmap', 'Mapa de calor', heatPanelHtml)}
+        ${editModuleHtml('summary', 'Resumo automatico', summaryHtml)}
+        ${editModuleHtml('alerts', 'Alertas', alertModuleHtml)}
       </div>`;
-    const regularMainHtml = `${liveFeedHtml}<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${sofascorePanelHtml}${radarPressurePanelHtml}${heatPanelHtml}</div>`;
+    const regularMainHtml = `${liveFeedHtml}<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${sofascorePanelHtml}${radarPressurePanelHtml}${heatPanelHtml}</div>${alertBannerHtml}${summaryHtml}`;
     modal.setAttribute('data-layout-edit', state.layoutEditMode ? '1' : '0');
     content.innerHTML = `
       <div class="custom-radar-window-toolbar ${state.toolbarCollapsed ? 'is-collapsed' : ''}">
@@ -1665,6 +1979,7 @@
         <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
         <button type="button" class="custom-radar-icon-btn ${pressureChartActive ? 'active pressure-active' : ''}" data-action="pressure-chart" title="${pressureChartActive ? 'Ocultar grafico de pressao' : 'Mostrar grafico de pressao'}"><i class='bx bx-bar-chart-alt-2'></i></button>
         <button type="button" class="custom-radar-icon-btn ${state.showRadarPressureChart ? 'active radar-pressure-active' : ''}" data-action="radar-pressure-chart" title="${state.showRadarPressureChart ? 'Ocultar grafico Radar MOD' : 'Mostrar grafico Radar MOD'}"><i class='bx bx-bar-chart-square'></i></button>
+        <button type="button" class="custom-radar-icon-btn ${state.showIconGallery ? 'active' : ''}" data-action="icon-gallery" title="Central de personalizacao"><i class='bx bx-slider-alt'></i></button>
         ${heatmapTopButton}
         <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="close" title="Fechar"><i class='bx bx-x'></i></button>
@@ -1677,6 +1992,7 @@
           <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
           <button type="button" class="custom-radar-icon-btn ${pressureChartActive ? 'active pressure-active' : ''}" data-action="pressure-chart" title="${pressureChartActive ? 'Ocultar grafico de pressao' : 'Mostrar grafico de pressao'}"><i class='bx bx-bar-chart-alt-2'></i></button>
           <button type="button" class="custom-radar-icon-btn ${state.showRadarPressureChart ? 'active radar-pressure-active' : ''}" data-action="radar-pressure-chart" title="${state.showRadarPressureChart ? 'Ocultar grafico Radar MOD' : 'Mostrar grafico Radar MOD'}"><i class='bx bx-bar-chart-square'></i></button>
+          <button type="button" class="custom-radar-icon-btn ${state.showIconGallery ? 'active' : ''}" data-action="icon-gallery" title="Central de personalizacao"><i class='bx bx-slider-alt'></i></button>
           ${heatmapTopButton}
           <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="close" title="Fechar"><i class='bx bx-x'></i></button>
@@ -1687,15 +2003,15 @@
         <div class="custom-radar-score"><span>${score.home}</span><small>${escapeHtml(clock || '--')} ${added}</small><span>${score.away}</span></div>
         <div class="custom-radar-team away"><strong>${escapeHtml(names.away)}</strong>${renderLogo(event.j, names.away)}</div>
       </div>
+      ${state.showIconGallery && !state.overlayReplica ? radarIconGalleryHtml() : ''}
       <div class="custom-radar-layout custom-radar-event-layout">
         <div class="custom-radar-main">
           ${state.overlayReplica ? overlayMainHtml : regularMainHtml}
         </div>
         <aside class="custom-radar-side custom-radar-tools">
-          <div class="custom-radar-controls"><button type="button" class="${state.showOdds ? 'active' : ''}" data-action="odds"><i class='bx bx-money'></i> Odds</button><button type="button" class="${state.showMeta ? 'active' : ''}" data-action="meta"><i class='bx bx-data'></i> IDs</button><button type="button" class="${state.showIconGallery ? 'active' : ''}" data-action="icon-gallery"><i class='bx bx-category'></i> Icones</button><button type="button" class="${pressureChartActive ? 'active' : ''}" data-action="pressure-chart"><i class='bx bx-bar-chart-alt-2'></i> Pressao</button><button type="button" class="${state.showRadarPressureChart ? 'active' : ''}" data-action="radar-pressure-chart"><i class='bx bx-bar-chart-square'></i> Radar MOD</button><button type="button" class="${heatmapActive ? 'active' : ''}" data-action="heatmap-menu"><i class='bx bxs-flame'></i> ${escapeHtml(heatmapLabels[heatmapMode] || 'Calor')}</button><button type="button" class="custom-radar-highlight-action" data-action="highlight"><i class='bx bx-crop'></i> Destacar</button></div>
+          <div class="custom-radar-controls"><button type="button" class="${state.showOdds ? 'active' : ''}" data-action="odds"><i class='bx bx-money'></i> Odds</button><button type="button" class="${state.showMeta ? 'active' : ''}" data-action="meta"><i class='bx bx-data'></i> IDs</button><button type="button" class="${state.showIconGallery ? 'active' : ''}" data-action="icon-gallery"><i class='bx bx-slider-alt'></i> Personalizar</button><button type="button" class="${pressureChartActive ? 'active' : ''}" data-action="pressure-chart"><i class='bx bx-bar-chart-alt-2'></i> Pressao</button><button type="button" class="${state.showRadarPressureChart ? 'active' : ''}" data-action="radar-pressure-chart"><i class='bx bx-bar-chart-square'></i> Radar MOD</button><button type="button" class="${heatmapActive ? 'active' : ''}" data-action="heatmap-menu"><i class='bx bxs-flame'></i> ${escapeHtml(heatmapLabels[heatmapMode] || 'Calor')}</button><button type="button" class="custom-radar-highlight-action" data-action="highlight"><i class='bx bx-crop'></i> Destacar</button></div>
           ${state.showOdds ? `<div class="custom-radar-card"><h3><i class='bx bx-line-chart'></i> William Hill</h3><div class="custom-radar-odds-grid">${odds(event).map(item => `<div class="custom-radar-odd"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`).join('') || '<p class="custom-radar-muted">Odds indisponiveis para este evento.</p>'}</div></div>` : ''}
           ${state.showMeta ? `<div class="custom-radar-card"><h3><i class='bx bx-fingerprint'></i> Fontes</h3><dl class="custom-radar-meta"><dt>Event ID</dt><dd>${escapeHtml(event.id || '-')}</dd><dt>WH Entity</dt><dd>${escapeHtml(event.rawEntityId || '-')}</dd><dt>ID Bolsa</dt><dd>${escapeHtml(idBolsa || '-')}</dd><dt>Sofascore</dt><dd>${escapeHtml(event.sofascoreId || '-')}</dd><dt>365Scores</dt><dd>${escapeHtml(event.scores365PartnerId || event.matchId || '-')}</dd></dl></div>` : ''}
-          ${state.showIconGallery ? radarIconGalleryHtml() : ''}
           <div class="custom-radar-links">${sportUrl ? `<a href="${escapeHtml(sportUrl)}" target="_blank"><i class='bx bx-world'></i> Widget mRadar</a>` : ''}<a href="${escapeHtml(whUrl)}" target="_blank"><i class='bx bx-crosshair'></i> WRadar original</a>${event.packLink ? `<a href="${escapeHtml(event.packLink)}" target="_blank"><i class='bx bx-football'></i> Packball</a>` : ''}</div>
         </aside>
       </div>
@@ -1716,7 +2032,7 @@
 
   function scheduleRender() {
     clearTimeout(state.deferredTimer);
-    if (Date.now() < state.interactingUntil) {
+    if (state.colorPickerActive || Date.now() < state.interactingUntil) {
       state.deferredTimer = setTimeout(scheduleRender, 260);
       return;
     }
@@ -1910,6 +2226,11 @@
     const target = event.target;
     const action = target.closest('[data-action]')?.getAttribute('data-action');
     const insideFontMenu = !!target.closest('.custom-radar-font-menu');
+    if (action === 'color-change') {
+      state.colorPickerActive = true;
+      state.interactingUntil = Date.now() + 120000;
+      return;
+    }
     if (state.fontMenuOpen && !insideFontMenu) {
       state.fontMenuOpen = false;
       render();
@@ -2061,9 +2382,113 @@
       render();
       return;
     }
+    if (action === 'personalization-tab') {
+      const tab = target.closest('[data-tab]')?.dataset?.tab || 'profiles';
+      state.personalizationTab = personalizationTabs.some(item => item[0] === tab) ? tab : 'profiles';
+      localStorage.setItem('custom_wradar_mod_personalization_tab', state.personalizationTab);
+      refreshPersonalizationModal();
+      return;
+    }
+    if (action === 'profile-apply') {
+      applyVisualProfile(target.closest('[data-profile]')?.dataset?.profile || 'custom');
+      render();
+      return;
+    }
+    if (action === 'profile-save-custom') {
+      localStorage.setItem('custom_wradar_mod_custom_profile', JSON.stringify(currentVisualProfile()));
+      state.visualProfile = 'custom';
+      localStorage.setItem('custom_wradar_mod_visual_profile', 'custom');
+      render();
+      return;
+    }
+    if (action === 'alert-setting') {
+      const input = target.closest('input[data-setting]');
+      if (!input) return;
+      state.alertSettings = { ...(state.alertSettings || {}), [input.dataset.setting]: !!input.checked };
+      saveAlertSettings();
+      return;
+    }
+    if (action === 'summary-toggle') {
+      const input = target.closest('input');
+      state.showAutoSummary = !!input?.checked;
+      localStorage.setItem('custom_wradar_mod_show_auto_summary', state.showAutoSummary ? '1' : '0');
+      render();
+      return;
+    }
+    if (action === 'components-reset') {
+      state.componentSettings = {};
+      saveComponentSettings();
+      render();
+      return;
+    }
+    if (action?.startsWith('component-')) {
+      const button = target.closest('[data-component]');
+      const key = button?.dataset?.component;
+      if (!componentLabels[key]) return;
+      const current = componentSetting(key);
+      if (action === 'component-scale-down') current.scale = clampComponentScale(current.scale - 0.1);
+      if (action === 'component-scale-up') current.scale = clampComponentScale(current.scale + 0.1);
+      if (action === 'component-opacity-down') current.opacity = clampComponentOpacity(current.opacity - 0.1);
+      if (action === 'component-opacity-up') current.opacity = clampComponentOpacity(current.opacity + 0.1);
+      state.componentSettings = { ...(state.componentSettings || {}), [key]: current };
+      saveComponentSettings();
+      state.visualProfile = 'custom';
+      localStorage.setItem('custom_wradar_mod_visual_profile', 'custom');
+      const modalElement = $('.custom-wradar-modal');
+      modalElement?.style.setProperty(`--custom-radar-${key}-scale`, String(current.scale));
+      modalElement?.style.setProperty(`--custom-radar-${key}-opacity`, String(current.opacity));
+      const values = button.closest('.custom-radar-component-row')?.querySelectorAll('b') || [];
+      if (values[0]) values[0].textContent = `${Math.round(current.scale * 100)}%`;
+      if (values[1]) values[1].textContent = `${Math.round(current.opacity * 100)}%`;
+      return;
+    }
+    if (action === 'colors-reset') {
+      state.colorSettings = {};
+      saveColorSettings();
+      render();
+      return;
+    }
     if (action === 'icon-gallery') {
       state.showIconGallery = !state.showIconGallery;
       localStorage.setItem('custom_wradar_mod_show_icon_gallery', state.showIconGallery ? '1' : '0');
+      render();
+      return;
+    }
+    if (action === 'radar-icon-scale-down') {
+      setRadarIconScale(state.radarIconScale - 0.1);
+      render();
+      return;
+    }
+    if (action === 'radar-icon-scale-up') {
+      setRadarIconScale(state.radarIconScale + 0.1);
+      render();
+      return;
+    }
+    if (action === 'radar-icon-scale-reset') {
+      setRadarIconScale(1);
+      render();
+      return;
+    }
+    if (action === 'pressure-icon-scale-down') {
+      setPressureIconScale(state.pressureIconScale - 0.1);
+      render();
+      return;
+    }
+    if (action === 'pressure-icon-scale-up') {
+      setPressureIconScale(state.pressureIconScale + 0.1);
+      render();
+      return;
+    }
+    if (action === 'pressure-icon-scale-reset') {
+      setPressureIconScale(1);
+      render();
+      return;
+    }
+    if (action === 'icon-reset-all') {
+      state.customIconMap = {};
+      saveCustomIconMap();
+      setRadarIconScale(1);
+      setPressureIconScale(1);
       render();
       return;
     }
@@ -2131,6 +2556,44 @@
       render();
       return;
     }
+  });
+
+  document.addEventListener('input', event => {
+    const input = event.target.closest('input[data-action="color-change"]');
+    if (!input) return;
+    const key = input.dataset.colorKey;
+    if (!(key in defaultColorSettings) || !/^#[0-9a-f]{6}$/i.test(input.value)) return;
+    const previousColor = colorSetting(key);
+    state.colorSettings = { ...(state.colorSettings || {}), [key]: input.value };
+    saveColorSettings();
+    const modal = $('.custom-wradar-modal');
+    modal?.style.setProperty(`--custom-radar-color-${key}`, input.value);
+    const label = input.parentElement?.querySelector('b');
+    if (label) label.textContent = input.value;
+    document.querySelectorAll(`[data-preview-color="${key}"]`).forEach(element => {
+      if (element.closest('.custom-radar-preview-score')) element.style.color = input.value;
+      else element.style.background = input.value;
+    });
+    document.querySelectorAll('svg [fill], svg [stroke], svg stop[stop-color]').forEach(element => {
+      ['fill', 'stroke', 'stop-color'].forEach(attribute => {
+        if (String(element.getAttribute(attribute) || '').toLowerCase() === String(previousColor).toLowerCase()) {
+          element.setAttribute(attribute, input.value);
+        }
+      });
+    });
+  });
+  const finishColorPickerInteraction = () => {
+    if (!state.colorPickerActive) return;
+    state.colorPickerActive = false;
+    state.interactingUntil = 0;
+    scheduleRender();
+  };
+  document.addEventListener('change', event => {
+    if (!event.target.matches('input[data-action="color-change"]')) return;
+    setTimeout(finishColorPickerInteraction, 120);
+  });
+  window.addEventListener('focus', () => {
+    if (state.colorPickerActive) setTimeout(finishColorPickerInteraction, 220);
   });
 
   document.addEventListener('wheel', event => {
@@ -2234,9 +2697,17 @@
     window.traderWRadarRealMod?.showOverlayMenu?.();
   });
   document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || !state.fontMenuOpen) return;
-    state.fontMenuOpen = false;
-    render();
+    if (event.key !== 'Escape') return;
+    if (state.showIconGallery) {
+      state.showIconGallery = false;
+      localStorage.setItem('custom_wradar_mod_show_icon_gallery', '0');
+      render();
+      return;
+    }
+    if (state.fontMenuOpen) {
+      state.fontMenuOpen = false;
+      render();
+    }
   });
   document.addEventListener('pointerdown', event => {
     if (event.target.closest('.custom-radar-comment-list')) state.interactingUntil = Date.now() + 700;
@@ -2274,6 +2745,43 @@
     document.addEventListener('pointerup', onEnd, true);
     document.addEventListener('pointercancel', onEnd, true);
   }, true);
+  window.addEventListener('storage', event => {
+    if (!String(event.key || '').startsWith('custom_wradar_mod_')) return;
+    if (event.key === 'custom_wradar_mod_component_settings') {
+      try { state.componentSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
+    } else if (event.key === 'custom_wradar_mod_color_settings') {
+      try { state.colorSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
+    } else if (event.key === 'custom_wradar_mod_alert_settings') {
+      try { state.alertSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
+    } else if (event.key === 'custom_wradar_mod_show_auto_summary') {
+      state.showAutoSummary = event.newValue !== '0';
+    } else if (event.key === 'custom_wradar_mod_radar_icon_scale') {
+      state.radarIconScale = Number(event.newValue) || 1;
+    } else if (event.key === 'custom_wradar_mod_pressure_icon_scale') {
+      state.pressureIconScale = Number(event.newValue) || 1;
+    } else if (event.key === 'custom_wradar_mod_icon_map') {
+      try { state.customIconMap = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
+    } else if (event.key === 'custom_wradar_mod_font_scale') {
+      state.fontScale = Number(event.newValue) || 1;
+    } else if (event.key === 'custom_wradar_mod_overlay_opacity') {
+      state.overlayOpacity = Number(event.newValue) || 1;
+    } else if (event.key === 'custom_wradar_mod_overlay_content_mode') {
+      state.overlayContentMode = event.newValue || 'full';
+    } else if (event.key === 'custom_wradar_mod_show_pressure_chart') {
+      state.showPressureChart = event.newValue === '1';
+      if (state.showPressureChart) scheduleSofascorePressureGraph(true);
+    } else if (event.key === 'custom_wradar_mod_show_radar_pressure_chart') {
+      state.showRadarPressureChart = event.newValue === '1';
+      if (state.showRadarPressureChart) scheduleSofascorePlayerEvents(true);
+    } else if (event.key === 'custom_wradar_mod_heatmap_mode') {
+      state.heatmapMode = event.newValue || 'off';
+    } else if (event.key === 'custom_wradar_mod_heatmap_style') {
+      state.heatmapStyle = event.newValue || 'candles';
+    } else {
+      return;
+    }
+    render();
+  });
   window.addEventListener('beforeunload', () => {
     if (state.feedId) window.traderWRadarRealMod?.stopFeed?.(state.feedId);
     clearTimeout(state.sofascoreGraphTimer);

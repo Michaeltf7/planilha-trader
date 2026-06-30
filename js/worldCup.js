@@ -28,7 +28,7 @@ const WorldCup = {
         timer: null,
         started: false
     },
-    syncCacheKey: 'worldcup_sync_cache_v6',
+    syncCacheKey: 'worldcup_sync_cache_v7',
 
     groups: {
         A: ['Mexico', 'South Africa', 'South Korea', 'Czech Republic'],
@@ -1464,7 +1464,11 @@ const WorldCup = {
 
     applyExternalMatches(matches) {
         this.ensureBaseGroups();
-        const byKey = new Map(this.matches.map(match => [this.getMatchKey(match), match]));
+        // SofaScore changes placeholders such as W76 to the winning team while
+        // preserving the event ID. Replace the previous Sofa snapshot so the
+        // old placeholder cannot survive as a duplicate fixture.
+        const localMatches = this.matches.filter(match => !match.sofascoreId && match.source !== 'Sofascore');
+        const byKey = new Map(localMatches.map(match => [this.getMatchKey(match), match]));
         matches.forEach(match => {
             const normalized = this.normalizeExternalMatch(match);
             if (!normalized.home || !normalized.away || !normalized.date) return;
