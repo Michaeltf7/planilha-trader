@@ -40,6 +40,14 @@
     alertRuntime: { signature: '', firedAt: {}, visualUntil: 0, message: '' },
     colorPickerActive: false,
     showAutoSummary: localStorage.getItem('custom_wradar_mod_show_auto_summary') !== '0',
+    showLiveIntelligence: localStorage.getItem('custom_wradar_mod_show_live_intelligence') !== '0',
+    intelligenceSettings: (() => {
+      try {
+        return JSON.parse(localStorage.getItem('custom_wradar_mod_intelligence_settings') || '{}') || {};
+      } catch (_) {
+        return {};
+      }
+    })(),
     customIconMap: (() => {
       try {
         return JSON.parse(localStorage.getItem('custom_wradar_mod_icon_map') || '{}') || {};
@@ -129,15 +137,20 @@
     enabled: false, sound: true, visual: true, notification: false,
     pressure: true, sequence: true, shots: true, redCard: true, goalChance: true
   };
+  const defaultIntelligenceSettings = {
+    balance: true, sequence: true, danger: true, dominance: true, comparison: true, sustained: true
+  };
   const componentSetting = key => ({
     ...(defaultComponentSettings[key] || { scale: 1, opacity: 1 }),
     ...(state.componentSettings?.[key] || {})
   });
   const colorSetting = key => state.colorSettings?.[key] || defaultColorSettings[key];
   const alertSetting = key => state.alertSettings?.[key] ?? defaultAlertSettings[key];
+  const intelligenceSetting = key => state.intelligenceSettings?.[key] ?? defaultIntelligenceSettings[key];
   const saveComponentSettings = () => localStorage.setItem('custom_wradar_mod_component_settings', JSON.stringify(state.componentSettings || {}));
   const saveColorSettings = () => localStorage.setItem('custom_wradar_mod_color_settings', JSON.stringify(state.colorSettings || {}));
   const saveAlertSettings = () => localStorage.setItem('custom_wradar_mod_alert_settings', JSON.stringify(state.alertSettings || {}));
+  const saveIntelligenceSettings = () => localStorage.setItem('custom_wradar_mod_intelligence_settings', JSON.stringify(state.intelligenceSettings || {}));
   const clampComponentScale = value => Math.max(0.6, Math.min(1.5, Math.round((Number(value) || 1) * 20) / 20));
   const clampComponentOpacity = value => Math.max(0.2, Math.min(1, Math.round((Number(value) || 1) * 10) / 10));
   const clampIconScale = value => Math.max(0.7, Math.min(1.6, Math.round((Number(value) || 1) * 20) / 20));
@@ -194,6 +207,7 @@
     fontScale: state.fontScale, overlayOpacity: state.overlayOpacity, content: state.overlayContentMode,
     pressure: state.showPressureChart, radarPressure: state.showRadarPressureChart,
     heatmapMode: state.heatmapMode, heatmapStyle: state.heatmapStyle,
+    liveIntelligence: state.showLiveIntelligence,
     componentSettings: state.componentSettings
   });
   const applyVisualProfile = profile => {
@@ -209,12 +223,14 @@
     state.showRadarPressureChart = config.radarPressure ?? state.showRadarPressureChart;
     state.heatmapMode = config.heatmapMode || state.heatmapMode;
     state.heatmapStyle = config.heatmapStyle || state.heatmapStyle;
+    state.showLiveIntelligence = config.liveIntelligence ?? state.showLiveIntelligence;
     if (config.componentSettings) state.componentSettings = config.componentSettings;
     localStorage.setItem('custom_wradar_mod_overlay_content_mode', state.overlayContentMode);
     localStorage.setItem('custom_wradar_mod_show_pressure_chart', state.showPressureChart ? '1' : '0');
     localStorage.setItem('custom_wradar_mod_show_radar_pressure_chart', state.showRadarPressureChart ? '1' : '0');
     localStorage.setItem('custom_wradar_mod_heatmap_mode', state.heatmapMode);
     localStorage.setItem('custom_wradar_mod_heatmap_style', state.heatmapStyle);
+    localStorage.setItem('custom_wradar_mod_show_live_intelligence', state.showLiveIntelligence ? '1' : '0');
     saveComponentSettings();
     state.visualProfile = profile;
     localStorage.setItem('custom_wradar_mod_visual_profile', profile);
@@ -227,8 +243,9 @@
     summary: { order: 2, span: 5, height: 0 },
     sofascore: { order: 3, span: 12, height: 0 },
     'radar-pressure': { order: 4, span: 12, height: 0 },
-    heatmap: { order: 5, span: 12, height: 0 },
-    alerts: { order: 6, span: 12, height: 0 }
+    intelligence: { order: 5, span: 12, height: 0 },
+    heatmap: { order: 6, span: 12, height: 0 },
+    alerts: { order: 7, span: 12, height: 0 }
   };
   const cardLayoutFor = id => {
     const fallback = defaultCardLayout[id] || { order: 99, span: 12, height: 0 };
@@ -659,9 +676,9 @@
     return `<i class='custom-radar-event-icon ${escapeHtml(type)} ${escapeHtml(side)} bx ${map[type] || map.neutral}'></i>`;
   };
   const visualProfilePresets = {
-    compact: { fontScale: 0.72, overlayOpacity: 0.8, content: 'events', pressure: false, radarPressure: false, heatmapMode: 'match', heatmapStyle: 'bar' },
-    full: { fontScale: 1, overlayOpacity: 1, content: 'full', pressure: true, radarPressure: true, heatmapMode: 'teams', heatmapStyle: 'candles' },
-    streaming: { fontScale: 0.82, overlayOpacity: 0.8, content: 'full', pressure: true, radarPressure: false, heatmapMode: 'match', heatmapStyle: 'wave' }
+    compact: { fontScale: 0.72, overlayOpacity: 0.8, content: 'events', pressure: false, radarPressure: false, heatmapMode: 'match', heatmapStyle: 'bar', liveIntelligence: false },
+    full: { fontScale: 1, overlayOpacity: 1, content: 'full', pressure: true, radarPressure: true, heatmapMode: 'teams', heatmapStyle: 'candles', liveIntelligence: true },
+    streaming: { fontScale: 0.82, overlayOpacity: 0.8, content: 'full', pressure: true, radarPressure: false, heatmapMode: 'match', heatmapStyle: 'wave', liveIntelligence: true }
   };
   const personalizationTabs = [
     ['profiles', 'Perfis', 'bx-bookmark'], ['alerts', 'Alertas', 'bx-bell'], ['colors', 'Cores', 'bx-palette'],
@@ -707,7 +724,7 @@
     const alertsPanel = `<div class="custom-radar-personalization-panel custom-radar-settings-grid">
       <section><h4>Funcionamento</h4>${toggleControl('alert-setting', 'enabled', 'Ativar alertas', alertSetting('enabled'))}${toggleControl('alert-setting', 'sound', 'Som curto', alertSetting('sound'))}${toggleControl('alert-setting', 'visual', 'Destaque visual', alertSetting('visual'))}${toggleControl('alert-setting', 'notification', 'Notificacao do sistema', alertSetting('notification'))}</section>
       <section><h4>Regras</h4>${toggleControl('alert-setting', 'pressure', 'Pressao crescente', alertSetting('pressure'))}${toggleControl('alert-setting', 'sequence', 'Sequencia de ataques perigosos', alertSetting('sequence'))}${toggleControl('alert-setting', 'shots', 'Muitos remates', alertSetting('shots'))}${toggleControl('alert-setting', 'redCard', 'Cartao vermelho', alertSetting('redCard'))}${toggleControl('alert-setting', 'goalChance', 'Possivel momento de gol', alertSetting('goalChance'))}</section>
-      <section><h4>Resumo automatico</h4>${toggleControl('summary-toggle', 'summary', 'Exibir no Radar MOD', state.showAutoSummary)}<p>Descreve somente o ritmo recente, sem indicar mercado.</p></section>
+      <section><h4>Inteligencia ao vivo</h4>${toggleControl('summary-toggle', 'summary', 'Exibir resumo automatico', state.showAutoSummary)}${toggleControl('intelligence-toggle', 'intelligence', 'Exibir analise avancada', state.showLiveIntelligence)}<p>Descreve ritmo, perigo, dominio e pressao sem indicar mercado.</p></section>
     </div>`;
     const colorLabels = { home: 'Time da casa', away: 'Time visitante', cold: 'Frio', warm: 'Atencao', hot: 'Quente', danger: 'Muito perigoso' };
     const colorsPanel = `<div class="custom-radar-personalization-panel custom-radar-color-grid">${Object.entries(colorLabels).map(([key, label]) => `<label><span>${label}</span><input type="color" value="${escapeHtml(colorSetting(key))}" data-action="color-change" data-color-key="${key}"><b>${escapeHtml(colorSetting(key))}</b></label>`).join('')}<button data-action="colors-reset"><i class='bx bx-reset'></i> Restaurar cores</button></div>`;
@@ -911,6 +928,144 @@
     if (pulse.sequence >= 4) return { tone: 'watch', text: 'Sequencia ofensiva em andamento.' };
     if (total >= 20) return { tone: 'watch', text: 'Jogo ativo, com pressao alternada.' };
     return { tone: 'calm', text: 'Ritmo controlado neste momento.' };
+  };
+  const liveIntelligenceData = (data, clock, names) => {
+    const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
+    const latest = parseGameSeconds(clock) ?? Math.max(0, ...items.map(item => parseGameSeconds(commentTime(item)) || 0));
+    const entries = items.map(item => {
+      const seconds = parseGameSeconds(commentTime(item));
+      const heat = heatEventScore(item);
+      const side = item?.side === 'away' ? 'away' : (item?.side === 'home' ? 'home' : '');
+      return { item, seconds, heat, side };
+    }).filter(entry => entry.seconds !== null && entry.seconds <= latest && entry.side && entry.heat && entry.heat.score > 0);
+    const recent = entries.filter(entry => latest - entry.seconds <= 300);
+    const weighted = side => recent.filter(entry => entry.side === side).reduce((total, entry) => {
+      const age = Math.max(0, latest - entry.seconds);
+      const recency = 0.3 + (0.7 * Math.max(0, 1 - (age / 300)));
+      return total + (entry.heat.score * recency);
+    }, 0);
+    const sequenceBonus = side => {
+      const dangerous = recent.filter(entry => entry.side === side && entry.heat.type === 'dangerous').sort((a, b) => a.seconds - b.seconds);
+      let streak = 0;
+      let best = 0;
+      let previous = null;
+      dangerous.forEach(entry => {
+        streak = previous !== null && entry.seconds - previous <= 45 ? streak + 1 : 1;
+        best = Math.max(best, streak);
+        previous = entry.seconds;
+      });
+      return Math.max(0, best - 1) * 3;
+    };
+    const rawHome = weighted('home') + sequenceBonus('home');
+    const rawAway = weighted('away') + sequenceBonus('away');
+    const dangerIndex = value => Math.min(100, Math.round(100 * (1 - Math.exp(-Math.max(0, value) / 30))));
+
+    const binSeconds = 15;
+    const binCount = 20;
+    const bins = Array.from({ length: binCount }, (_, index) => ({ index, home: 0, away: 0 }));
+    recent.forEach(entry => {
+      const age = latest - entry.seconds;
+      const index = Math.max(0, Math.min(binCount - 1, binCount - 1 - Math.floor(age / binSeconds)));
+      bins[index][entry.side] += entry.heat.score;
+    });
+    const dominanceBins = Array.from({ length: 10 }, (_, index) => {
+      const segment = bins.slice(index * 2, (index * 2) + 2);
+      const home = segment.reduce((sum, bin) => sum + bin.home, 0);
+      const away = segment.reduce((sum, bin) => sum + bin.away, 0);
+      return { home, away, leader: Math.abs(home - away) >= 3 ? (home > away ? 'home' : 'away') : '' };
+    });
+    const currentLeader = Math.abs(rawHome - rawAway) >= 6 ? (rawHome > rawAway ? 'home' : 'away') : '';
+    let sustainedBins = 0;
+    for (let index = dominanceBins.length - 1; index >= 0; index -= 1) {
+      if (!currentLeader || dominanceBins[index].leader !== currentLeader) break;
+      sustainedBins += 1;
+    }
+    const dominanceSeconds = sustainedBins * 30;
+    const dominantName = currentLeader ? (names[currentLeader] || (currentLeader === 'home' ? 'Mandante' : 'Visitante')) : '';
+    const dominanceText = currentLeader && dominanceSeconds >= 60
+      ? `${dominantName} assumiu o dominio ha ${Math.max(1, Math.round(dominanceSeconds / 60))} min`
+      : 'Dominio ainda equilibrado';
+
+    const currentTotal = recent.reduce((sum, entry) => sum + entry.heat.score, 0);
+    const elapsedWindows = Math.max(1, latest / 300);
+    const matchAverage = entries.reduce((sum, entry) => sum + entry.heat.score, 0) / elapsedWindows;
+    const paceRatio = matchAverage > 0 ? currentTotal / matchAverage : 0;
+    const paceText = paceRatio >= 1.35 ? 'Acelerando' : paceRatio <= 0.7 ? 'Desacelerando' : 'Ritmo medio';
+    const pacePercent = matchAverage > 0 ? Math.round((paceRatio - 1) * 100) : 0;
+
+    const pressureCandidate = ['home', 'away'].map(side => {
+      const sideEntries = entries.filter(entry => entry.side === side && latest - entry.seconds <= 180).sort((a, b) => b.seconds - a.seconds);
+      if (!sideEntries.length) return { side, score: 0, duration: 0, count: 0, peak: 0 };
+      const chain = [sideEntries[0]];
+      for (let index = 1; index < sideEntries.length; index += 1) {
+        if (chain[chain.length - 1].seconds - sideEntries[index].seconds > 45) break;
+        chain.push(sideEntries[index]);
+      }
+      const score = chain.reduce((sum, entry) => sum + entry.heat.score, 0);
+      let peak = 0;
+      chain.forEach(anchor => {
+        const minuteScore = chain.filter(entry => anchor.seconds - entry.seconds >= 0 && anchor.seconds - entry.seconds <= 60).reduce((sum, entry) => sum + entry.heat.score, 0);
+        peak = Math.max(peak, minuteScore);
+      });
+      return { side, score, count: chain.length, duration: chain.length > 1 ? chain[0].seconds - chain[chain.length - 1].seconds : 0, peak };
+    }).sort((a, b) => b.score - a.score)[0];
+    const sustained = pressureCandidate.count >= 3 && pressureCandidate.score >= 14;
+    const pressureName = names[pressureCandidate.side] || (pressureCandidate.side === 'home' ? 'Mandante' : 'Visitante');
+    const pressureText = sustained
+      ? `${pressureName}: ${pressureCandidate.count} acoes em ${Math.max(1, Math.round(pressureCandidate.duration / 60))} min`
+      : 'Sem pressao sustentada agora';
+    const dominanceTotal = rawHome + rawAway;
+    const homeShare = dominanceTotal > 0 ? Math.round((rawHome / dominanceTotal) * 100) : 50;
+    const sequenceLabels = {
+      dangerous: ['AP', 'Ataque perigoso'], 'shot-on-target': ['CG', 'Remate certeiro'], woodwork: ['TRV', 'Remate na trave'],
+      shot: ['REM', 'Remate'], 'blocked-shot': ['BLQ', 'Remate bloqueado'], corner: ['ESC', 'Escanteio'], attack: ['ATQ', 'Ataque']
+    };
+    const offensiveSequence = recent
+      .filter(entry => sequenceLabels[entry.heat.type])
+      .sort((a, b) => a.seconds - b.seconds)
+      .slice(-5)
+      .map(entry => ({
+        side: entry.side,
+        short: sequenceLabels[entry.heat.type][0],
+        label: sequenceLabels[entry.heat.type][1],
+        minute: Math.max(0, Math.floor(entry.seconds / 60))
+      }));
+
+    return {
+      latest, bins, homeIndex: dangerIndex(rawHome), awayIndex: dangerIndex(rawAway),
+      homeShare, awayShare: 100 - homeShare, offensiveSequence, dominanceText,
+      paceText, pacePercent, sustained, pressureText, pressurePeak: Math.round(pressureCandidate.peak)
+    };
+  };
+  const liveIntelligenceHtml = (data, clock, names) => {
+    const insight = liveIntelligenceData(data, clock, names);
+    const hasActivity = insight.homeIndex > 0 || insight.awayIndex > 0;
+    const showBalance = intelligenceSetting('balance');
+    const showSequence = intelligenceSetting('sequence');
+    const showCards = intelligenceSetting('dominance') || intelligenceSetting('comparison') || intelligenceSetting('sustained');
+    if (!showBalance && !showSequence && !intelligenceSetting('danger') && !showCards) {
+      return `<div class="custom-radar-intelligence-placeholder"><i class='bx bx-brain'></i><span>Selecione ao menos um indicador no menu Inteligencia ao vivo.</span></div>`;
+    }
+    return `<div class="custom-radar-intelligence ${hasActivity ? '' : 'is-empty'}">
+      ${showBalance || showSequence ? `<div class="custom-radar-dominance-balance">
+        <div class="custom-radar-intelligence-head"><strong><i class='bx bx-transfer-alt'></i> Balanca de dominio</strong><span>ultimos 5 min</span></div>
+        ${showBalance ? `<div class="custom-radar-dominance-labels"><b>${escapeHtml(teamAbbr(names.home))} ${insight.homeShare}%</b><b>${insight.awayShare}% ${escapeHtml(teamAbbr(names.away))}</b></div>
+        <div class="custom-radar-dominance-track"><i class="home" style="width:${insight.homeShare}%"></i><i class="away" style="width:${insight.awayShare}%"></i><span style="left:${insight.homeShare}%"></span></div>` : ''}
+        ${showSequence ? `<div class="custom-radar-offensive-sequence">
+          ${insight.offensiveSequence.length ? insight.offensiveSequence.map(event => `<span class="${event.side}" title="${escapeHtml(`${event.minute}' · ${event.label}`)}"><b>${escapeHtml(event.short)}</b><small>${event.minute}'</small></span>`).join('<i class="bx bx-chevron-right"></i>') : '<em>Sem sequencia ofensiva recente</em>'}
+        </div>` : ''}
+      </div>` : ''}
+      ${intelligenceSetting('danger') ? `<div class="custom-radar-danger-index">
+        <div><span>${escapeHtml(teamAbbr(names.home))}</span><strong>${insight.homeIndex}</strong><i><b style="width:${insight.homeIndex}%"></b></i></div>
+        <div><span>${escapeHtml(teamAbbr(names.away))}</span><strong>${insight.awayIndex}</strong><i><b style="width:${insight.awayIndex}%"></b></i></div>
+        <small>Indice de perigo</small>
+      </div>` : ''}
+      ${showCards ? `<div class="custom-radar-intelligence-cards">
+        ${intelligenceSetting('dominance') ? `<div><i class='bx bx-transfer'></i><span>Mudanca de dominio</span><strong>${escapeHtml(insight.dominanceText)}</strong></div>` : ''}
+        ${intelligenceSetting('comparison') ? `<div class="pace-${insight.paceText === 'Acelerando' ? 'up' : insight.paceText === 'Desacelerando' ? 'down' : 'stable'}"><i class='bx bx-trending-up'></i><span>Comparador</span><strong>${escapeHtml(insight.paceText)} ${insight.pacePercent ? `(${insight.pacePercent > 0 ? '+' : ''}${insight.pacePercent}%)` : ''}</strong></div>` : ''}
+        ${intelligenceSetting('sustained') ? `<div class="${insight.sustained ? 'active' : ''}"><i class='bx bxs-flame'></i><span>Pressao sustentada</span><strong>${escapeHtml(insight.pressureText)}${insight.sustained ? ` · pico ${insight.pressurePeak}` : ''}</strong></div>` : ''}
+      </div>` : ''}
+    </div>`;
   };
   const playAlertSound = () => {
     try {
@@ -1947,6 +2102,9 @@
     const statsPanelHtml = `<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}</div>`;
     const sofascorePanelHtml = pressureChartActive ? pressureChartHtml(data, clock, names) : '';
     const radarPressurePanelHtml = state.showRadarPressureChart ? radarModPressureChartHtml(data, clock, names) : '';
+    const intelligencePanelHtml = state.showLiveIntelligence
+      ? liveIntelligenceHtml(data, clock, names)
+      : (state.layoutEditMode ? `<div class="custom-radar-intelligence-placeholder"><i class='bx bx-brain'></i><span>Ative a analise avancada na Central de Personalizacao.</span></div>` : '');
     const heatPanelHtml = heatmapActive ? heatmapHtml(data, clock, heatmapMode, names) : '';
     const editModuleHtml = (id, label, html) => {
       if (!html) return '';
@@ -1965,11 +2123,12 @@
         ${editModuleHtml('stats', 'Estatisticas', statsPanelHtml)}
         ${editModuleHtml('sofascore', 'Pressao SofaScore', sofascorePanelHtml)}
         ${editModuleHtml('radar-pressure', 'Pressao Radar MOD', radarPressurePanelHtml)}
+        ${editModuleHtml('intelligence', 'Inteligencia ao vivo', intelligencePanelHtml)}
         ${editModuleHtml('heatmap', 'Mapa de calor', heatPanelHtml)}
         ${editModuleHtml('summary', 'Resumo automatico', summaryHtml)}
         ${editModuleHtml('alerts', 'Alertas', alertModuleHtml)}
       </div>`;
-    const regularMainHtml = `${liveFeedHtml}<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${sofascorePanelHtml}${radarPressurePanelHtml}${heatPanelHtml}</div>${alertBannerHtml}${summaryHtml}`;
+    const regularMainHtml = `${liveFeedHtml}<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${sofascorePanelHtml}${radarPressurePanelHtml}${intelligencePanelHtml}${heatPanelHtml}</div>${alertBannerHtml}${summaryHtml}`;
     modal.setAttribute('data-layout-edit', state.layoutEditMode ? '1' : '0');
     content.innerHTML = `
       <div class="custom-radar-window-toolbar ${state.toolbarCollapsed ? 'is-collapsed' : ''}">
@@ -2180,6 +2339,10 @@
     showRadarPressureChart: !!state.showRadarPressureChart,
     heatmapMode: state.heatmapMode,
     heatmapStyle: state.heatmapStyle,
+    showLiveIntelligence: !!state.showLiveIntelligence,
+    intelligenceSettings: Object.fromEntries(Object.keys(defaultIntelligenceSettings).map(key => [key, intelligenceSetting(key)])),
+    alertSettings: Object.fromEntries(Object.keys(defaultAlertSettings).map(key => [key, alertSetting(key)])),
+    showAutoSummary: !!state.showAutoSummary,
     layoutEditMode: !!state.layoutEditMode
   });
   window.__customRadarNativeMenuAction = payload => {
@@ -2210,6 +2373,21 @@
     } else if (action === 'heatmap-style' && ['candles', 'dots', 'wave', 'bar'].includes(value)) {
       state.heatmapStyle = value;
       localStorage.setItem('custom_wradar_mod_heatmap_style', state.heatmapStyle);
+    } else if (action === 'toggle-live-intelligence') {
+      state.showLiveIntelligence = !state.showLiveIntelligence;
+      localStorage.setItem('custom_wradar_mod_show_live_intelligence', state.showLiveIntelligence ? '1' : '0');
+    } else if (action === 'intelligence-setting' && Object.prototype.hasOwnProperty.call(defaultIntelligenceSettings, value)) {
+      state.intelligenceSettings = { ...(state.intelligenceSettings || {}), [value]: !intelligenceSetting(value) };
+      saveIntelligenceSettings();
+    } else if (action === 'toggle-alerts') {
+      state.alertSettings = { ...(state.alertSettings || {}), enabled: !alertSetting('enabled') };
+      saveAlertSettings();
+    } else if (action === 'alert-setting' && Object.prototype.hasOwnProperty.call(defaultAlertSettings, value) && value !== 'enabled') {
+      state.alertSettings = { ...(state.alertSettings || {}), [value]: !alertSetting(value) };
+      saveAlertSettings();
+    } else if (action === 'toggle-auto-summary') {
+      state.showAutoSummary = !state.showAutoSummary;
+      localStorage.setItem('custom_wradar_mod_show_auto_summary', state.showAutoSummary ? '1' : '0');
     } else if (action === 'toggle-layout-editor') {
       state.layoutEditMode = !state.layoutEditMode;
       state.interactingUntil = Date.now() + 500;
@@ -2412,6 +2590,13 @@
       const input = target.closest('input');
       state.showAutoSummary = !!input?.checked;
       localStorage.setItem('custom_wradar_mod_show_auto_summary', state.showAutoSummary ? '1' : '0');
+      render();
+      return;
+    }
+    if (action === 'intelligence-toggle') {
+      const input = target.closest('input');
+      state.showLiveIntelligence = !!input?.checked;
+      localStorage.setItem('custom_wradar_mod_show_live_intelligence', state.showLiveIntelligence ? '1' : '0');
       render();
       return;
     }
@@ -2753,8 +2938,12 @@
       try { state.colorSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
     } else if (event.key === 'custom_wradar_mod_alert_settings') {
       try { state.alertSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
+    } else if (event.key === 'custom_wradar_mod_intelligence_settings') {
+      try { state.intelligenceSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
     } else if (event.key === 'custom_wradar_mod_show_auto_summary') {
       state.showAutoSummary = event.newValue !== '0';
+    } else if (event.key === 'custom_wradar_mod_show_live_intelligence') {
+      state.showLiveIntelligence = event.newValue !== '0';
     } else if (event.key === 'custom_wradar_mod_radar_icon_scale') {
       state.radarIconScale = Number(event.newValue) || 1;
     } else if (event.key === 'custom_wradar_mod_pressure_icon_scale') {

@@ -1147,6 +1147,8 @@ async function showLiveRadarMenu(item) {
   const heatmapStyle = ['candles', 'dots', 'wave', 'bar'].includes(radarState.heatmapStyle)
     ? radarState.heatmapStyle
     : 'candles';
+  const intelligenceSettings = radarState.intelligenceSettings || {};
+  const alertSettings = radarState.alertSettings || {};
   const configuredPositionSlots = readCustomRadarPositionSlots();
   const occupiedPositionSlots = occupiedCustomRadarSlots(item);
   const positionSlotIds = ['1', '2', '3', '4', '5', '6'];
@@ -1216,6 +1218,36 @@ async function showLiveRadarMenu(item) {
             { label: 'Barra ao vivo', type: 'radio', checked: heatmapStyle === 'bar', click: () => sendAction('heatmap-style', 'bar') }
           ]
         }
+      ]
+    },
+    {
+      label: 'Inteligencia ao vivo',
+      submenu: [
+        { label: 'Ativar modulo', type: 'checkbox', checked: !!radarState.showLiveIntelligence, click: () => sendAction('toggle-live-intelligence') },
+        { type: 'separator' },
+        { label: 'Balanca de dominio', type: 'checkbox', checked: intelligenceSettings.balance !== false, click: () => sendAction('intelligence-setting', 'balance') },
+        { label: 'Sequencia ofensiva', type: 'checkbox', checked: intelligenceSettings.sequence !== false, click: () => sendAction('intelligence-setting', 'sequence') },
+        { label: 'Indice de perigo', type: 'checkbox', checked: intelligenceSettings.danger !== false, click: () => sendAction('intelligence-setting', 'danger') },
+        { label: 'Mudanca de dominio', type: 'checkbox', checked: intelligenceSettings.dominance !== false, click: () => sendAction('intelligence-setting', 'dominance') },
+        { label: 'Comparador de periodos', type: 'checkbox', checked: intelligenceSettings.comparison !== false, click: () => sendAction('intelligence-setting', 'comparison') },
+        { label: 'Pressao sustentada', type: 'checkbox', checked: intelligenceSettings.sustained !== false, click: () => sendAction('intelligence-setting', 'sustained') }
+      ]
+    },
+    {
+      label: 'Alertas e resumo',
+      submenu: [
+        { label: 'Ativar alertas', type: 'checkbox', checked: !!alertSettings.enabled, click: () => sendAction('toggle-alerts') },
+        { label: 'Som', type: 'checkbox', checked: alertSettings.sound !== false, click: () => sendAction('alert-setting', 'sound') },
+        { label: 'Destaque visual', type: 'checkbox', checked: alertSettings.visual !== false, click: () => sendAction('alert-setting', 'visual') },
+        { label: 'Notificacao do sistema', type: 'checkbox', checked: !!alertSettings.notification, click: () => sendAction('alert-setting', 'notification') },
+        { type: 'separator' },
+        { label: 'Pressao crescente', type: 'checkbox', checked: alertSettings.pressure !== false, click: () => sendAction('alert-setting', 'pressure') },
+        { label: 'Ataques perigosos', type: 'checkbox', checked: alertSettings.sequence !== false, click: () => sendAction('alert-setting', 'sequence') },
+        { label: 'Muitos remates', type: 'checkbox', checked: alertSettings.shots !== false, click: () => sendAction('alert-setting', 'shots') },
+        { label: 'Cartao vermelho', type: 'checkbox', checked: alertSettings.redCard !== false, click: () => sendAction('alert-setting', 'redCard') },
+        { label: 'Momento perigoso', type: 'checkbox', checked: alertSettings.goalChance !== false, click: () => sendAction('alert-setting', 'goalChance') },
+        { type: 'separator' },
+        { label: 'Resumo automatico', type: 'checkbox', checked: !!radarState.showAutoSummary, click: () => sendAction('toggle-auto-summary') }
       ]
     },
     {
