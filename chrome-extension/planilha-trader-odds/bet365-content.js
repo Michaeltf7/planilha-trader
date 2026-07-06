@@ -345,12 +345,16 @@
       const targetMap = firstHalfHeading ? ht : ft;
       const primary = text === 'partida gols'
         || (firstHalfHeading && text.includes('gols') && !text.includes('mais opcoes'));
-      rowsFromGoalMarket(goalMarketContainer(heading)).forEach(row => {
-        const scoped = { ...row, scope: targetMap === ht ? 'HT' : 'FT', primary };
+      const marketRows = rowsFromGoalMarket(goalMarketContainer(heading));
+      marketRows.forEach((row, rowIndex) => {
+        // Only the first visual row of the principal block is the limit line.
+        // Marking every row as primary made the last line overwrite the first.
+        const isPrimaryLine = primary && rowIndex === 0;
+        const scoped = { ...row, scope: targetMap === ht ? 'HT' : 'FT', primary: isPrimaryLine };
         const current = targetMap.get(row.line);
-        if (!current || primary) targetMap.set(row.line, scoped);
-        if (primary && targetMap === ht) htPrimary = row.line;
-        if (primary && targetMap === ft) ftPrimary = row.line;
+        if (!current || isPrimaryLine) targetMap.set(row.line, scoped);
+        if (isPrimaryLine && targetMap === ht && htPrimary === null) htPrimary = row.line;
+        if (isPrimaryLine && targetMap === ft && ftPrimary === null) ftPrimary = row.line;
       });
     });
     return {
