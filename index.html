@@ -25,23 +25,23 @@
             </div>
 
             <ul class="nav-links">
-                <li>
-                    <a href="#" class="active" data-view="dashboard">
-                        <i class='bx bx-grid-alt'></i>
-                        <span class="link_name">Dashboard</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" data-view="central-analise">
-                        <i class='bx bx-analyse'></i>
-                        <span class="link_name">Central de Análise</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" data-view="desempenho">
-                        <i class='bx bx-calendar-check'></i>
-                        <span class="link_name">Desempenho</span>
-                    </a>
+                <li class="nav-group" data-nav-group="bet-management">
+                    <button type="button" class="nav-group-toggle" aria-expanded="false">
+                        <i class='bx bx-briefcase-alt-2'></i>
+                        <span class="link_name">Gestão de Apostas</span>
+                        <i class='bx bx-chevron-down nav-group-chevron'></i>
+                    </button>
+                    <ul class="nav-submenu">
+                        <li><a href="#" class="active" data-view="dashboard"><i class='bx bx-grid-alt'></i><span class="link_name">Dashboard</span></a></li>
+                        <li><a href="#" data-view="central-analise"><i class='bx bx-analyse'></i><span class="link_name">Central de Análise</span></a></li>
+                        <li><a href="#" data-view="desempenho"><i class='bx bx-calendar-check'></i><span class="link_name">Desempenho</span></a></li>
+                        <li><a href="#" data-view="entradas"><i class='bx bx-list-ul'></i><span class="link_name">Entradas</span></a></li>
+                        <li><a href="#" data-view="metodos"><i class='bx bx-target-lock'></i><span class="link_name">Métodos</span></a></li>
+                        <li><a href="#" data-view="ligas"><i class='bx bx-trophy'></i><span class="link_name">Por Liga</span></a></li>
+                        <li><a href="#" data-view="times"><i class='bx bx-shield-quarter'></i><span class="link_name">Por Time</span></a></li>
+                        <li><a href="#" data-view="financas"><i class='bx bx-wallet'></i><span class="link_name">Saque / Depósito</span></a></li>
+                        <li><a href="#" data-view="ciclos"><i class='bx bx-reset'></i><span class="link_name">Método de Ciclos</span></a></li>
+                    </ul>
                 </li>
                 <li>
                     <a href="#" data-view="calendario">
@@ -71,42 +71,6 @@
                     <a href="#" data-view="escada">
                         <i class='bx bx-bar-chart-alt-2'></i>
                         <span class="link_name">Simulador Escada</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" data-view="entradas">
-                        <i class='bx bx-list-ul'></i>
-                        <span class="link_name">Entradas</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" data-view="metodos">
-                        <i class='bx bx-target-lock'></i>
-                        <span class="link_name">Métodos</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" data-view="ligas">
-                        <i class='bx bx-trophy'></i>
-                        <span class="link_name">Por Liga</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" data-view="times">
-                        <i class='bx bx-shield-quarter'></i>
-                        <span class="link_name">Por Time</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" data-view="financas">
-                        <i class='bx bx-wallet'></i>
-                        <span class="link_name">Saque / Depósito</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" data-view="ciclos">
-                        <i class='bx bx-reset'></i>
-                        <span class="link_name">Método de Ciclos</span>
                     </a>
                 </li>
                 <li>

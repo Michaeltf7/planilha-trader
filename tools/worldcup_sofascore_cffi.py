@@ -32,7 +32,11 @@ except Exception as exc:
     sys.exit(0)
 
 
-API = "https://www.sofascore.com/api/v1"
+API_BASES = [
+    "https://www.sofascore.com/api/v1",
+    "https://api.sofascore.com/api/v1",
+    "https://api.sofascore.app/api/v1",
+]
 TOURNAMENT_ID = 16
 try:
     BR_TZ = ZoneInfo("America/Sao_Paulo") if ZoneInfo else timezone(timedelta(hours=-3))
@@ -66,27 +70,28 @@ TEAM_ALIASES = {
 
 
 def api_get(path, timeout=25, retries=3):
-    url = path if path.startswith("http") else f"{API}{path}"
     last_error = None
-    for attempt in range(retries):
-        try:
-            response = requests.get(
-                url,
-                headers=HEADERS,
-                impersonate=random.choice(PROFILES),
-                timeout=timeout,
-            )
-            if response.status_code == 404:
-                return None
-            if response.status_code in (403, 429, 503):
-                last_error = f"HTTP {response.status_code}: {response.text[:160]}"
-                time.sleep(min(8, 1.5 * (attempt + 1)))
-                continue
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            last_error = str(exc)
-            time.sleep(min(5, 0.8 * (attempt + 1)))
+    urls = [path] if path.startswith("http") else [f"{base}{path}" for base in API_BASES]
+    for url in urls:
+        for attempt in range(retries):
+            try:
+                response = requests.get(
+                    url,
+                    headers=HEADERS,
+                    impersonate=random.choice(PROFILES),
+                    timeout=timeout,
+                )
+                if response.status_code == 404:
+                    break
+                if response.status_code in (403, 429, 503):
+                    last_error = f"{url} - HTTP {response.status_code}: {response.text[:160]}"
+                    time.sleep(min(4, 0.8 * (attempt + 1)))
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except Exception as exc:
+                last_error = f"{url} - {exc}"
+                time.sleep(min(3, 0.5 * (attempt + 1)))
     raise RuntimeError(last_error or "falha desconhecida")
 
 
@@ -740,11 +745,15 @@ def normalize_calendar_event(event, odds_by_event=None, image_cache=None):
         "homeTeam": {
             "id": home_id,
             "name": team_name(home_team),
+            "countryCode": str((home_team.get("country") or {}).get("alpha2") or "").upper(),
+            "national": bool(home_team.get("national")),
             "imageUrl": cached_image(f"team:{home_id}", logo_url(home_id)),
         },
         "awayTeam": {
             "id": away_id,
             "name": team_name(away_team),
+            "countryCode": str((away_team.get("country") or {}).get("alpha2") or "").upper(),
+            "national": bool(away_team.get("national")),
             "imageUrl": cached_image(f"team:{away_id}", logo_url(away_id)),
         },
         "homeScore": {"current": int(home_score.get("current"))} if has_score and home_score.get("current") is not None else None,
@@ -752,8 +761,11 @@ def normalize_calendar_event(event, odds_by_event=None, image_cache=None):
         "tournament": {
             "id": tournament.get("id") or tournament.get("uniqueTournament", {}).get("id") or 0,
             "name": tournament.get("name") or "Competicao",
+            "priority": int(tournament.get("priority") or 0),
+            "userCount": int(tournament.get("userCount") or 0),
             "category": {
                 "name": category.get("name") or "",
+                "countryCode": str((category.get("country") or {}).get("alpha2") or category.get("alpha2") or "").upper(),
             },
             "logo": tournament_logo_data or tournament_logo_url,
             "logoData": tournament_logo_data,
@@ -765,18 +777,66 @@ def normalize_calendar_event(event, odds_by_event=None, image_cache=None):
 
 
 def fetch_calendar_date(date_key):
-    events_data = api_get(f"/sport/football/scheduled-events/{date_key}", timeout=30, retries=3) or {}
+    started_at = time.monotonic()
     try:
-        odds_data = api_get(f"/sport/football/odds/1x2/{date_key}", timeout=20, retries=2) or {}
-    except Exception:
-        odds_data = {}
-    events = events_data.get("events") or []
-    odds_by_event = odds_data.get("odds") or {}
-    if not isinstance(odds_by_event, dict):
-        odds_by_event = {}
-    image_cache = fetch_calendar_images(events)
+        requested_date = datetime.strptime(date_key, "%Y-%m-%d").date()
+    except ValueError:
+        raise RuntimeError("data invalida para o calendario")
+
+    # SofaScore removed the global scheduled-events route. Its web calendar now
+    # exposes a daily category index and one event route per category. Query the
+    # next UTC day as well because Brazil's local day ends after midnight UTC.
+    utc_date_keys = [
+        requested_date.isoformat(),
+        (requested_date + timedelta(days=1)).isoformat(),
+    ]
+    category_targets = set()
+    index_errors = []
+    for utc_date_key in utc_date_keys:
+        try:
+            index_data = api_get(
+                f"/sport/football/{utc_date_key}/0/categories",
+                timeout=20,
+                retries=2,
+            ) or {}
+            for item in index_data.get("categories") or []:
+                category_id = (item.get("category") or {}).get("id")
+                if category_id and int(item.get("totalEvents") or 0) > 0:
+                    category_targets.add((utc_date_key, int(category_id)))
+        except Exception as exc:
+            index_errors.append(f"{utc_date_key}: {exc}")
+
+    if not category_targets:
+        raise RuntimeError("indice diario do SofaScore indisponivel: " + " | ".join(index_errors))
+
+    def fetch_category_events(target):
+        utc_date_key, category_id = target
+        try:
+            data = api_get(
+                f"/category/{category_id}/scheduled-events/{utc_date_key}",
+                timeout=20,
+                retries=2,
+            ) or {}
+            return data.get("events") or [], None
+        except Exception as exc:
+            return [], f"{utc_date_key}/{category_id}: {exc}"
+
+    unique_events = {}
+    category_errors = []
+    with ThreadPoolExecutor(max_workers=min(12, len(category_targets))) as executor:
+        futures = [executor.submit(fetch_category_events, target) for target in category_targets]
+        for future in as_completed(futures):
+            category_events, error = future.result()
+            if error:
+                category_errors.append(error)
+            for event in category_events:
+                event_id = event.get("id")
+                if event_id:
+                    unique_events[event_id] = event
+
+    events = list(unique_events.values())
     matches = [
-        normalize_calendar_event(event, odds_by_event, image_cache)
+        normalize_calendar_event(event, {}, {})
         for event in events
         if event.get("homeTeam") and event.get("awayTeam") and event.get("startTimestamp")
     ]
@@ -789,6 +849,12 @@ def fetch_calendar_date(date_key):
         "date": date_key,
         "count": len(matches),
         "matches": matches,
+        "elapsedMs": int((time.monotonic() - started_at) * 1000),
+        "assetsDeferred": True,
+        "transport": "categories",
+        "categoriesFetched": len(category_targets),
+        "partial": bool(index_errors or category_errors),
+        "errors": (index_errors + category_errors)[:12],
     }
 
 
@@ -1072,9 +1138,8 @@ def fetch_calendar_from_tournaments(date_key, queries):
             unique_events[event_id] = event
 
     events = list(unique_events.values())
-    image_cache = fetch_calendar_images(events)
     matches = [
-        normalize_calendar_event(event, {}, image_cache)
+        normalize_calendar_event(event, {}, {})
         for event in events
         if event.get("homeTeam") and event.get("awayTeam") and event.get("startTimestamp")
     ]
@@ -1096,6 +1161,9 @@ def fetch_calendar_from_tournaments(date_key, queries):
 def normalize_standing_row(row):
     team = row.get("team") or {}
     team_id = team.get("id")
+    promotion = row.get("promotion") or {}
+    if isinstance(promotion, str):
+        promotion = {"name": promotion}
     form = []
     for item in row.get("form", []) or []:
         if isinstance(item, str):
@@ -1117,6 +1185,10 @@ def normalize_standing_row(row):
         "goalDiff": row.get("scoreDiffFormatted") or row.get("scoreDiff"),
         "points": row.get("points"),
         "form": form,
+        "promotion": {
+            "id": promotion.get("id") if isinstance(promotion, dict) else None,
+            "name": (promotion.get("name") or promotion.get("text") or promotion.get("shortName") or promotion.get("description") or "") if isinstance(promotion, dict) else "",
+        },
     }
 
 

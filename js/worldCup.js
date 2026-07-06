@@ -157,6 +157,7 @@ const WorldCup = {
     ],
 
     render() {
+        if (typeof App !== 'undefined' && App.currentView !== 'copa-mundo') return;
         const container = document.getElementById('app-container');
         if (!container) return;
         this.loadFavorites();

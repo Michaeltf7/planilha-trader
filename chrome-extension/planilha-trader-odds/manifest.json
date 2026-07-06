@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Planilha Trader - Radar de Odds",
+  "version": "0.7.0",
+  "description": "Conecta odds publicas da Betfair Exchange e bet365 ao Planilha Trader.",
+  "permissions": ["tabs", "storage", "alarms"],
+  "host_permissions": [
+    "http://127.0.0.1:38465/*",
+    "https://www.betfair.bet.br/exchange/plus/*",
+    "https://www.bet365.bet.br/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.betfair.bet.br/exchange/plus/*"],
+      "js": ["team-matcher.js", "betfair-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.bet365.bet.br/*"],
+      "js": ["team-matcher.js", "bet365-content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Planilha Trader - Radar de Odds"
+  }
+}

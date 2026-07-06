@@ -137,6 +137,32 @@ contextBridge.exposeInMainWorld('traderWRadarRealMod', {
   }
 });
 
+contextBridge.exposeInMainWorld('traderPublicOdds', {
+  openWindow: payload => ipcRenderer.invoke('public-odds:open-window', payload),
+  openOverlay: payload => ipcRenderer.invoke('public-odds:open-overlay', payload),
+  highlight: payload => ipcRenderer.invoke('public-odds:highlight', payload),
+  start: payload => ipcRenderer.invoke('public-odds:start', payload),
+  stop: feedId => ipcRenderer.invoke('public-odds:stop', feedId),
+  showDiagnostics: feedId => ipcRenderer.invoke('public-odds:diagnostics', feedId),
+  toggleAlwaysOnTop: () => ipcRenderer.invoke('public-odds:toggle-always-on-top'),
+  resizeLayout: layout => ipcRenderer.invoke('public-odds:resize-layout', layout),
+  resizeGoalSides: count => ipcRenderer.invoke('public-odds:resize-goal-sides', count),
+  setLayoutMinimum: layout => ipcRenderer.invoke('public-odds:set-layout-minimum', layout),
+  showMenu: () => ipcRenderer.send('public-odds:show-menu'),
+  onUpdate: callback => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('public-odds:update', listener);
+    return () => ipcRenderer.removeListener('public-odds:update', listener);
+  },
+  onMenuAction: callback => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('public-odds:menu-action', listener);
+    return () => ipcRenderer.removeListener('public-odds:menu-action', listener);
+  }
+});
+
 contextBridge.exposeInMainWorld('traderWorldCupData', {
   sync: () => ipcRenderer.invoke('worldcup:sync'),
   syncEspn: () => ipcRenderer.invoke('worldcup:espn-sync'),

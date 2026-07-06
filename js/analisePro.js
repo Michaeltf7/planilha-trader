@@ -3,7 +3,9 @@ const AnalisePro = {
     games: [],
     currentPlanningDate: '',
     calendarSource: '',
+    calendarSourceMeta: null,
     activeCalendarLeagueId: 'all',
+    calendarShowAllCompetitions: false,
     calendarStatusFilter: localStorage.getItem('pro_calendar_status_filter') || 'all',
     calendarLayoutMode: localStorage.getItem('pro_calendar_layout_mode') || 'cards',
     theoBorgesMatchesCache: {},
@@ -97,6 +99,7 @@ const AnalisePro = {
                 <div class="pro-header-card calendar-header-card">
                     <div class="pro-header-info">
                         <h2><i class='bx bx-calendar-event'></i> Calendario de Jogos</h2>
+                        <p id="calendar-source-status" class="calendar-source-status" data-status="loading">Preparando calendario...</p>
                     </div>
                     <div class="pro-header-actions calendar-header-actions">
                         <div class="calendar-search-wrapper">
@@ -144,6 +147,23 @@ const AnalisePro = {
         loader.style.display = 'flex';
 
         const loadToken = ++this.calendarLoadToken;
+        const persistentCache = !force ? this.getCachedCalendarGames(selectedDate) : null;
+
+        if (persistentCache?.games?.length) {
+            this.games = persistentCache.games;
+            this.gamesCacheDate = selectedDate;
+            this.gamesCacheAt = Number(persistentCache.savedAt) || Date.now();
+            this.calendarSource = persistentCache.source || 'Sofascore (cache)';
+            this.calendarSourceMeta = {
+                ...(persistentCache.sourceMeta || {}),
+                status: 'cache',
+                refreshing: true,
+                savedAt: persistentCache.savedAt,
+                stale: persistentCache.stale
+            };
+            this.renderList(this.games);
+            loader.style.display = 'none';
+        }
 
         try {
             if (force) this.teamLogoMisses = {};
@@ -154,12 +174,31 @@ const AnalisePro = {
             // Salva cache por data para o Planejamento DiÃ¡rio
             let cacheHistory = JSON.parse(localStorage.getItem('pro_games_cache_history')) || {};
             const cachedGames = Array.isArray(cacheHistory[selectedDate]) ? cacheHistory[selectedDate] : [];
-            const mergedGames = this.mergeRadarDailyGames(fetchedGames, [...cachedGames, ...gamesInMemory]);
+            let networkGames = fetchedGames.length ? fetchedGames : (persistentCache?.games || []);
+            if (persistentCache?.games?.length && this.calendarSource === 'Radar Futebol') {
+                const cachedSofascoreGames = persistentCache.games.filter(game => game?.source === 'sofascore');
+                if (cachedSofascoreGames.length) {
+                    networkGames = this.enrichSofascoreGamesWithRadar(cachedSofascoreGames, fetchedGames);
+                    this.calendarSource = 'Sofascore (cache) + Radar Futebol';
+                    this.calendarSourceMeta = {
+                        ...(this.calendarSourceMeta || {}),
+                        status: 'fallback-cache',
+                        source: this.calendarSource,
+                        count: networkGames.length,
+                        savedAt: persistentCache.savedAt
+                    };
+                }
+            }
+            const mergedGames = this.mergeRadarDailyGames(networkGames, [...cachedGames, ...gamesInMemory]);
             this.games = mergedGames;
-            if (this.games.length > 0 && !this.calendarSource) this.calendarSource = 'Sofascore';
+            if (this.calendarSourceMeta) this.calendarSourceMeta.refreshing = false;
             this.renderList(this.games);
             this.gamesCacheDate = selectedDate;
             this.gamesCacheAt = Date.now();
+            this.setCachedCalendarGames(selectedDate, this.games, {
+                source: this.calendarSource,
+                sourceMeta: this.calendarSourceMeta
+            });
             loader.style.display = 'none';
             
             // Cleanup cacheHistory para evitar QuotaExceededError
@@ -197,6 +236,11 @@ const AnalisePro = {
                 if (Array.isArray(radarGames) && radarGames.length) {
                     baseGames = this.enrichSofascoreGamesWithRadar(baseGames, radarGames);
                     this.calendarSource = 'Sofascore + Radar Futebol';
+                    this.calendarSourceMeta = {
+                        ...(this.calendarSourceMeta || {}),
+                        source: this.calendarSource,
+                        count: baseGames.length
+                    };
                 }
             }
 
@@ -205,6 +249,10 @@ const AnalisePro = {
 
             this.games = gamesWithLogos;
             this.renderList(this.games);
+            this.setCachedCalendarGames(selectedDate, this.games, {
+                source: this.calendarSource,
+                sourceMeta: this.calendarSourceMeta
+            });
 
             const history = cacheHistory || JSON.parse(localStorage.getItem('pro_games_cache_history')) || {};
             history[selectedDate] = this.games;
@@ -288,9 +336,58 @@ const AnalisePro = {
     },
 
     getCalendarLeagueName(game) {
-        const category = game?.tournament?.category?.name || '';
+        const category = this.localizeRegionName(
+            game?.tournament?.category?.countryCode,
+            game?.tournament?.category?.name || ''
+        );
         const name = game?.tournament?.name || 'Competição';
         return category ? `${category}: ${name}` : name;
+    },
+
+    localizeRegionName(countryCode, fallback = '') {
+        const code = String(countryCode || '').trim().toUpperCase();
+        if (code && typeof Intl?.DisplayNames === 'function') {
+            try {
+                return new Intl.DisplayNames(['pt-BR'], { type: 'region' }).of(code) || fallback;
+            } catch (_) {}
+        }
+        return fallback;
+    },
+
+    localizeSofascoreTeam(team = {}) {
+        if (!team?.national || !team?.countryCode) return team;
+        const originalName = String(team.name || '').trim();
+        const suffixMatch = originalName.match(/\b(U-?\d{2,3}|Women|W|Olympic)\b.*$/i);
+        const suffix = suffixMatch
+            ? suffixMatch[0].replace(/^Women\b/i, 'Feminino').replace(/^Olympic\b/i, 'Olímpico')
+            : '';
+        const localizedCountry = this.localizeRegionName(team.countryCode, originalName);
+        return {
+            ...team,
+            name: `${localizedCountry}${suffix ? ` ${suffix}` : ''}`.trim()
+        };
+    },
+
+    getCalendarLeaguePriority(game) {
+        const priority = Number(game?.tournament?.priority) || 0;
+        const popularity = Number(game?.tournament?.userCount) || 0;
+        return (priority * 1000000000) + popularity;
+    },
+
+    sortCalendarLeagues(leagues, favorites = []) {
+        return [...leagues].sort((a, b) => {
+            const aFav = favorites.some(item => String(item) === String(a.id));
+            const bFav = favorites.some(item => String(item) === String(b.id));
+            if (aFav !== bFav) return aFav ? -1 : 1;
+            if ((b.priority || 0) !== (a.priority || 0)) return (b.priority || 0) - (a.priority || 0);
+            if (Boolean(a.hasLive) !== Boolean(b.hasLive)) return a.hasLive ? -1 : 1;
+            return (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name, 'pt-BR');
+        });
+    },
+
+    toggleCalendarCompetitionVisibility() {
+        this.calendarShowAllCompetitions = !this.calendarShowAllCompetitions;
+        this.renderList(this.games);
     },
 
     getCalendarTournamentLogoCache() {
@@ -436,16 +533,20 @@ const AnalisePro = {
         return {
             games: item.games,
             stale: age > freshMs,
-            savedAt: item.savedAt
+            savedAt: item.savedAt,
+            source: item.source || '',
+            sourceMeta: item.sourceMeta || null
         };
     },
 
-    setCachedCalendarGames(dateKey, games) {
+    setCachedCalendarGames(dateKey, games, metadata = {}) {
         if (!dateKey || !Array.isArray(games)) return;
         const cache = this.readCalendarGamesCache();
         cache[this.getCalendarGamesCacheKey(dateKey)] = {
             savedAt: Date.now(),
-            games
+            games,
+            source: String(metadata.source || this.calendarSource || ''),
+            sourceMeta: metadata.sourceMeta || this.calendarSourceMeta || null
         };
 
         const keys = Object.keys(cache).sort((a, b) => (cache[b]?.savedAt || 0) - (cache[a]?.savedAt || 0));
@@ -608,10 +709,15 @@ const AnalisePro = {
                     id,
                     name: this.getCalendarLeagueName(game),
                     logoHtml: this.renderTournamentLogo(game, 22),
-                    count: 0
+                    count: 0,
+                    priority: this.getCalendarLeaguePriority(game),
+                    hasLive: false
                 });
             }
-            leagues.get(id).count += 1;
+            const league = leagues.get(id);
+            league.count += 1;
+            league.priority = Math.max(league.priority, this.getCalendarLeaguePriority(game));
+            league.hasLive = league.hasLive || this.getCalendarGameStatus(game) === 'live';
         });
 
         if (leagues.size <= 1) {
@@ -624,15 +730,17 @@ const AnalisePro = {
         const activeId = this.activeCalendarLeagueId || 'all';
         const total = this.games.length;
         const filteredCount = gamesList.length;
-        const chips = Array.from(leagues.values())
-            .sort((a, b) => {
-                const aFav = favorites.some(item => String(item) === String(a.id));
-                const bFav = favorites.some(item => String(item) === String(b.id));
-                if (aFav && !bFav) return -1;
-                if (!aFav && bFav) return 1;
-                return b.count - a.count || a.name.localeCompare(b.name);
-            })
-            .slice(0, 24)
+        const sortedLeagues = this.sortCalendarLeagues(Array.from(leagues.values()), favorites);
+        const primaryLimit = 12;
+        const visibleLeagues = this.calendarShowAllCompetitions
+            ? sortedLeagues
+            : sortedLeagues.filter((league, index) =>
+                index < primaryLimit ||
+                favorites.some(item => String(item) === String(league.id)) ||
+                String(activeId) === String(league.id)
+            );
+        const hiddenLeagueCount = Math.max(0, sortedLeagues.length - visibleLeagues.length);
+        const chips = visibleLeagues
             .map(league => `
                 <button type="button" class="calendar-league-chip ${String(activeId) === String(league.id) ? 'active' : ''} ${favorites.some(item => String(item) === String(league.id)) ? 'is-favorite' : ''}" onclick="AnalisePro.setCalendarLeagueFilter(decodeURIComponent('${this.escapeAttr(encodeURIComponent(league.id))}'))" title="${this.escapeHtml(league.name)}">
                     ${league.logoHtml}
@@ -648,6 +756,12 @@ const AnalisePro = {
                 <em>${total}</em>
             </button>
             ${chips}
+            ${sortedLeagues.length > primaryLimit ? `
+                <button type="button" class="calendar-competitions-toggle" onclick="AnalisePro.toggleCalendarCompetitionVisibility()">
+                    <i class='bx ${this.calendarShowAllCompetitions ? 'bx-chevron-up' : 'bx-plus'}'></i>
+                    <span>${this.calendarShowAllCompetitions ? 'Mostrar principais' : `Mostrar todas (${hiddenLeagueCount})`}</span>
+                </button>
+            ` : ''}
             ${activeId !== 'all' ? `<span class="calendar-league-filter-meta">${filteredCount} jogos filtrados</span>` : ''}
         `;
     },
@@ -841,11 +955,35 @@ const AnalisePro = {
     renderList(gamesList) {
         const listContainer = document.getElementById('pro-calendar-list');
         const favorites = JSON.parse(localStorage.getItem('pro_fav_leagues')) || [];
-        const sourceText = document.querySelector('.pro-header-info p');
+        const sourceText = document.getElementById('calendar-source-status');
         if (sourceText) {
-            sourceText.textContent = this.calendarSource
-                ? `Agenda e resultados via ${this.calendarSource}.`
-                : 'Agenda e resultados em tempo real.';
+            const counts = (gamesList || []).reduce((result, game) => {
+                const source = String(game?.source || '').toLowerCase();
+                if (source === 'sofascore') result.sofascore += 1;
+                else if (source === 'radarfutebol') result.radar += 1;
+                else result.other += 1;
+                return result;
+            }, { sofascore: 0, radar: 0, other: 0 });
+            const parts = [];
+            if (counts.sofascore) parts.push(`Sofascore: ${counts.sofascore}`);
+            if (counts.radar) parts.push(`Radar Futebol: ${counts.radar}`);
+            if (counts.other) parts.push(`Outras fontes: ${counts.other}`);
+            const meta = this.calendarSourceMeta || {};
+            const suffix = meta.refreshing
+                ? ' - atualizando...'
+                : meta.status === 'cache'
+                    ? ' - cache local'
+                    : meta.elapsedMs ? ` - ${Math.round(meta.elapsedMs / 100) / 10}s` : '';
+            sourceText.textContent = `${parts.join(' + ') || this.calendarSource || 'Sem jogos'}${suffix}`;
+            sourceText.dataset.status = meta.error ? 'error' : (meta.refreshing ? 'loading' : (meta.status || 'live'));
+            sourceText.title = [
+                `Fonte: ${this.calendarSource || 'indisponivel'}`,
+                meta.transport === 'categories' ? `Coleta: indice diario por categorias (${meta.categoriesFetched || 0})` : '',
+                meta.savedAt ? `Cache salvo em: ${new Date(meta.savedAt).toLocaleString('pt-BR')}` : '',
+                meta.error ? `Falha: ${meta.error}` : '',
+                meta.warning ? `Aviso: ${meta.warning}` : '',
+                meta.generatedAt ? `Gerado em: ${meta.generatedAt}` : ''
+            ].filter(Boolean).join('\n');
         }
         
         // Estrutura de favoritos por data
@@ -901,23 +1039,27 @@ const AnalisePro = {
                     id: tourId,
                     name: this.getCalendarLeagueName(game),
                     logoHtml: this.renderTournamentLogo(game, 26),
+                    priority: this.getCalendarLeaguePriority(game),
+                    hasLive: false,
                     games: []
                 };
             }
             acc[tourId].games.push(game);
+            acc[tourId].priority = Math.max(acc[tourId].priority, this.getCalendarLeaguePriority(game));
+            acc[tourId].hasLive = acc[tourId].hasLive || this.getCalendarGameStatus(game) === 'live';
             return acc;
         }, {});
 
-        const sortedIds = Object.keys(grouped).sort((a, b) => {
-            const aFav = favorites.includes(Number(a)) || favorites.includes(String(a));
-            const bFav = favorites.includes(Number(b)) || favorites.includes(String(b));
-            if (aFav && !bFav) return -1;
-            if (!aFav && bFav) return 1;
-            return grouped[a].name.localeCompare(grouped[b].name);
-        });
+        const sortedGroups = this.sortCalendarLeagues(Object.values(grouped), favorites);
+        const primaryLimit = 12;
+        const visibleGroups = this.calendarShowAllCompetitions || activeLeagueId !== 'all'
+            ? sortedGroups
+            : sortedGroups.filter((tour, index) =>
+                index < primaryLimit || favorites.some(item => String(item) === String(tour.id))
+            );
 
-        sortedIds.forEach(id => {
-            const tour = grouped[id];
+        visibleGroups.forEach(tour => {
+            const id = tour.id;
             const isFav = favorites.includes(Number(id)) || favorites.includes(String(id));
             const section = document.createElement('div');
             section.className = `tournament-section ${listMode ? 'calendar-list-section' : ''} ${isFav ? 'is-favorite' : ''}`;
@@ -938,6 +1080,18 @@ const AnalisePro = {
             `;
             listContainer.appendChild(section);
         });
+
+        if (activeLeagueId === 'all' && sortedGroups.length > primaryLimit) {
+            const remaining = Math.max(0, sortedGroups.length - visibleGroups.length);
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'calendar-show-all-button';
+            toggle.onclick = () => this.toggleCalendarCompetitionVisibility();
+            toggle.innerHTML = this.calendarShowAllCompetitions
+                ? `<i class='bx bx-chevron-up'></i> Mostrar apenas competições principais`
+                : `<i class='bx bx-plus'></i> Mostrar todas as competições (${remaining})`;
+            listContainer.appendChild(toggle);
+        }
     },
 
     toggleFavorite(id) {
@@ -1129,11 +1283,20 @@ const AnalisePro = {
         if (window.traderCalendarData?.byDate) {
             const result = await this.withTimeout(
                 window.traderCalendarData.byDate({ date: dateKey }),
-                8000,
+                30000,
                 null
             );
             if (!result) throw new Error('Sofascore demorou para responder.');
             if (!result?.ok) throw new Error(result?.error || 'Sofascore nao retornou jogos.');
+            this.lastSofascoreResponseMeta = {
+                elapsedMs: Number(result.elapsedMs) || 0,
+                generatedAt: result.generatedAt || '',
+                count: Number(result.count) || 0,
+                transport: result.transport || '',
+                categoriesFetched: Number(result.categoriesFetched) || 0,
+                partial: Boolean(result.partial),
+                errors: Array.isArray(result.errors) ? result.errors : []
+            };
             let matches = (result.matches || []).filter(game =>
                 this.getLocalDateKey(game.startTimestamp) === dateKey
             ).map(game => this.normalizeSofascoreCalendarGame(game));
@@ -1182,9 +1345,18 @@ const AnalisePro = {
             source: 'sofascore',
             sourceLabel: 'Sofascore',
             sofascoreId: Number(game.sofascoreId || game.id) || null,
+            homeTeam: this.localizeSofascoreTeam(game.homeTeam || {}),
+            awayTeam: this.localizeSofascoreTeam(game.awayTeam || {}),
             tournament: {
                 ...(game.tournament || {}),
                 logo,
+                category: {
+                    ...(game.tournament?.category || {}),
+                    name: this.localizeRegionName(
+                        game.tournament?.category?.countryCode,
+                        game.tournament?.category?.name || ''
+                    )
+                },
                 logoData: game.tournament?.logoData || (String(logo).startsWith('data:') ? logo : ''),
                 uniqueTournament: game.tournament?.uniqueTournament
                     ? {
@@ -1374,12 +1546,26 @@ const AnalisePro = {
 
     async fetchCalendarGamesByDate(dateKey, force = false) {
         let sofascoreError = null;
+        const startedAt = Date.now();
         try {
             const sofascoreGames = await this.fetchSofascoreGamesByDate(dateKey);
             if (sofascoreGames.length > 0) {
                 this.calendarSource = 'Sofascore';
+                this.calendarSourceMeta = {
+                    status: 'live',
+                    source: 'Sofascore',
+                    count: sofascoreGames.length,
+                    elapsedMs: this.lastSofascoreResponseMeta?.elapsedMs || (Date.now() - startedAt),
+                    generatedAt: this.lastSofascoreResponseMeta?.generatedAt || '',
+                    transport: this.lastSofascoreResponseMeta?.transport || '',
+                    categoriesFetched: this.lastSofascoreResponseMeta?.categoriesFetched || 0,
+                    partial: Boolean(this.lastSofascoreResponseMeta?.partial),
+                    warning: this.lastSofascoreResponseMeta?.errors?.join(' | ') || '',
+                    error: ''
+                };
                 return sofascoreGames;
             }
+            sofascoreError = new Error('Sofascore respondeu sem jogos para esta data.');
         } catch (error) {
             sofascoreError = error;
             console.warn('Sofascore indisponível:', error);
@@ -1388,9 +1574,23 @@ const AnalisePro = {
         try {
             const games = await this.fetchRadarFutebolGamesByDate(dateKey, force);
             this.calendarSource = games.length > 0 ? 'Radar Futebol' : '';
+            this.calendarSourceMeta = {
+                status: games.length ? 'fallback' : 'error',
+                source: this.calendarSource,
+                count: games.length,
+                elapsedMs: Date.now() - startedAt,
+                error: sofascoreError?.message || ''
+            };
             return games;
         } catch (error) {
             this.calendarSource = '';
+            this.calendarSourceMeta = {
+                status: 'error',
+                source: '',
+                count: 0,
+                elapsedMs: Date.now() - startedAt,
+                error: [sofascoreError?.message, error?.message].filter(Boolean).join(' | ')
+            };
             if (sofascoreError) console.warn('Fallback Radar Futebol também indisponível após falha do Sofascore:', sofascoreError);
             console.warn('Radar Futebol indisponível:', error);
             return [];

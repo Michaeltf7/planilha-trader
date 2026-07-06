@@ -7,6 +7,7 @@
     error: '',
     theme: localStorage.getItem('custom_wradar_mod_theme') || 'dark',
     density: localStorage.getItem('custom_wradar_mod_density') || 'wide',
+    radarLayout: localStorage.getItem('custom_wradar_mod_layout') === 'ticker' ? 'ticker' : 'standard',
     cleanOverlay: true,
     overlayReplica: false,
     showOdds: localStorage.getItem('custom_wradar_mod_show_odds') !== '0',
@@ -69,6 +70,8 @@
     heatmapMode: localStorage.getItem('custom_wradar_mod_heatmap_mode') || (localStorage.getItem('custom_wradar_mod_show_heatmap') === '1' ? 'match' : 'off'),
     heatmapStyle: localStorage.getItem('custom_wradar_mod_heatmap_style') || 'candles',
     heatmapMenuOpen: false,
+    oddsMenuOpen: false,
+    oddsMenuAnchor: '',
     toolbarCollapsed: localStorage.getItem('custom_wradar_mod_toolbar_collapsed') === '1',
     fontScale: Number(localStorage.getItem('custom_wradar_mod_font_scale')) || 1,
     fontMenuOpen: false,
@@ -809,23 +812,63 @@
   };
   const statsHtml = data => {
     const stats = data?.stats || {};
-    const substitutions = (Array.isArray(data?.commentaries) ? data.commentaries : []).reduce((acc, item) => {
-      const text = normalizeMatchText(`${item?.comment || ''} ${item?.all || ''} ${item?.className || ''}`);
-      if (!text.includes('substituicao') && !text.includes('substitution')) return acc;
+    const countedTypes = new Set(['substitution', 'woodwork', 'yellow-card', 'red-card']);
+    const eventCounts = {
+      substitutions: { home: 0, away: 0 },
+      woodwork: { home: 0, away: 0 },
+      yellowCards: { home: 0, away: 0 },
+      redCards: { home: 0, away: 0 }
+    };
+    const countKeyByType = { substitution: 'substitutions', woodwork: 'woodwork', 'yellow-card': 'yellowCards', 'red-card': 'redCards' };
+    const timelineKeyByType = {
+      'shot-on-target': 'shotsOnTarget', shot: 'shotsOffTarget', woodwork: 'woodwork', corner: 'corners',
+      substitution: 'substitutions', dangerous: 'dangerousAttacks', 'yellow-card': 'yellowCards', 'red-card': 'redCards'
+    };
+    const eventMoments = Object.fromEntries(Object.values(timelineKeyByType).map(key => [key, { home: [], away: [] }]));
+    const seenEvents = new Set();
+    (Array.isArray(data?.commentaries) ? data.commentaries : []).forEach(item => {
+      const type = eventType(item);
+      const timelineKey = timelineKeyByType[type];
+      if (!timelineKey) return;
       const side = item?.side === 'away' ? 'away' : 'home';
-      acc[side] += 1;
-      return acc;
-    }, { home: 0, away: 0 });
+      const description = normalizeMatchText(commentText(item?.comment || item?.all || ''));
+      const uniqueKey = `${side}|${type}|${commentTime(item) || ''}|${description}`;
+      if (seenEvents.has(uniqueKey)) return;
+      seenEvents.add(uniqueKey);
+      const moment = commentTime(item);
+      if (moment) eventMoments[timelineKey][side].push(moment);
+      if (countedTypes.has(type)) eventCounts[countKeyByType[type]][side] += 1;
+    });
     const rows = [
-      ['shotsOnTarget', 'Chutes gol', 'bx-target-lock'],
-      ['shotsOffTarget', 'Chutes fora', 'bx-crosshair'],
-      ['corners', 'Escanteios', 'bxs-flag-alt'],
-      ['possession', 'Posse', 'bx-pie-chart-alt-2'],
-      ['substitutions', 'Substituicoes', 'bx-transfer-alt'],
-      ['dangerousAttacks', 'Ataques perigosos', 'bxs-bolt-circle']
+      ['shotsOnTarget', 'Chutes gol', 'Shot On Target', 'bx-target-lock'],
+      ['shotsOffTarget', 'Chutes fora', 'Shot Off Target', 'bx-crosshair'],
+      ['woodwork', 'Bola na trave', 'Shot hits the woodwork', 'bx-radio-circle-marked'],
+      ['corners', 'Escanteios', 'Corner for', 'bxs-flag-alt'],
+      ['possession', 'Posse', '', 'bx-pie-chart-alt-2'],
+      ['substitutions', 'Substituicoes', 'Substitution', 'bx-transfer-alt'],
+      ['dangerousAttacks', 'Ataques perigosos', 'Dangerous Attack by', 'bxs-bolt-circle'],
+      ['yellowCards', 'Cartoes amarelos', 'Yellow Card', 'bx-square'],
+      ['redCards', 'Cartoes vermelhos', 'Red Card', 'bx-square']
     ];
-    const value = (key, side) => key === 'substitutions' ? substitutions[side] : (stats[key]?.[side] || '--');
-    return `<div class="custom-radar-stats-grid">${rows.map(([key, label, icon]) => `<div class="custom-radar-stat ${escapeHtml(key)}" title="${escapeHtml(label)}"><strong><i class='bx ${icon}'></i></strong><span>${escapeHtml(value(key, 'home'))} - ${escapeHtml(value(key, 'away'))}</span></div>`).join('')}</div>`;
+    const value = (key, side) => {
+      if (eventCounts[key]) {
+        const eventValue = Number(eventCounts[key][side]) || 0;
+        const directValue = Number(stats[key]?.[side]);
+        return Math.max(eventValue, Number.isFinite(directValue) ? directValue : 0);
+      }
+      return stats[key]?.[side] ?? '--';
+    };
+    const statIcon = (sample, fallback) => sample
+      ? eventIcon({ comment: sample, all: sample })
+      : `<i class='bx ${fallback}'></i>`;
+    const tooltip = (key, label) => {
+      const moments = eventMoments[key];
+      if (!moments) return `${label}: ${value(key, 'home')} - ${value(key, 'away')}`;
+      const home = moments.home.length ? moments.home.join(', ') : 'nenhum';
+      const away = moments.away.length ? moments.away.join(', ') : 'nenhum';
+      return `${label} | Casa: ${home} | Visitante: ${away}`;
+    };
+    return `<div class="custom-radar-stats-grid">${rows.map(([key, label, sample, fallback]) => `<div class="custom-radar-stat ${escapeHtml(key)}" title="${escapeHtml(tooltip(key, label))}"><strong class="custom-radar-stat-icon">${statIcon(sample, fallback)}</strong><span>${escapeHtml(value(key, 'home'))} - ${escapeHtml(value(key, 'away'))}</span></div>`).join('')}</div>`;
   };
   const pressureHtml = (data, clock) => {
     const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
@@ -834,8 +877,10 @@
       dangerous: { home: 0, away: 0 },
       onTarget: { home: 0, away: 0 }
     };
+    const pressureIcon = sample => eventIcon({ comment: sample, all: sample });
+    const row = (className, sample, label, stat) => `<span class="custom-radar-pressure-item ${className}">${pressureIcon(sample)}<strong>${label}</strong><b>${stat.home}-${stat.away}</b></span>`;
     if (!items.length || period.paused) {
-      return `<div class="custom-radar-pressure" title="Eventos dos ultimos 5 minutos"><small>5m</small><span class="custom-radar-pressure-item dangerous"><i class='bx bxs-bolt-circle'></i><strong>AP</strong><b>0-0</b></span><span class="custom-radar-pressure-item on-target"><i class='bx bx-target-lock'></i><strong>CG</strong><b>0-0</b></span></div>`;
+      return `<div class="custom-radar-pressure" title="Eventos dos ultimos 5 minutos"><small>5m</small>${row('dangerous', 'Dangerous Attack by', 'AP', recent.dangerous)}${row('on-target', 'Shot On Target', 'CG', recent.onTarget)}</div>`;
     }
     let latest = parseGameSeconds(clock) ?? Math.max(...items.map(item => parseGameSeconds(commentTime(item)) ?? 0), 0);
     if (period.period === 'second' && latest < 45 * 60) latest += 45 * 60;
@@ -853,8 +898,7 @@
     const totalHome = recent.dangerous.home + recent.onTarget.home;
     const totalAway = recent.dangerous.away + recent.onTarget.away;
     const leader = totalHome === totalAway ? 'eq' : (totalHome > totalAway ? 'home' : 'away');
-    const row = (className, icon, label, stat) => `<span class="custom-radar-pressure-item ${className}"><i class='bx ${icon}'></i><strong>${label}</strong><b>${stat.home}-${stat.away}</b></span>`;
-    return `<div class="custom-radar-pressure ${leader}" title="Eventos dos ultimos 5 minutos"><small>5m</small>${row('dangerous', 'bxs-bolt-circle', 'AP', recent.dangerous)}${row('on-target', 'bx-target-lock', 'CG', recent.onTarget)}</div>`;
+    return `<div class="custom-radar-pressure ${leader}" title="Eventos dos ultimos 5 minutos"><small>5m</small>${row('dangerous', 'Dangerous Attack by', 'AP', recent.dangerous)}${row('on-target', 'Shot On Target', 'CG', recent.onTarget)}</div>`;
   };
   const heatEventScore = item => {
     const text = normalizeMatchText(`${item?.comment || ''} ${item?.all || ''} ${item?.className || ''}`);
@@ -1967,6 +2011,7 @@
     } : null;
     modal.setAttribute('data-radar-theme', state.theme === 'light' ? 'light' : 'dark');
     modal.setAttribute('data-radar-density', state.density === 'compact' ? 'compact' : 'wide');
+    modal.setAttribute('data-radar-layout', state.radarLayout);
     modal.setAttribute('data-radar-overlay', state.cleanOverlay ? 'clean' : 'panel');
     modal.setAttribute('data-overlay-content-mode', state.overlayContentMode);
     modal.style.setProperty('--custom-radar-font-scale', String(clampFontScale(state.fontScale)));
@@ -2004,6 +2049,16 @@
     const heatmapActive = heatmapMode !== 'off';
     const heatmapLabels = { off: 'Desligado', match: 'Partida', home: 'Casa', away: 'Visitante', teams: 'Times separados' };
     const pressureChartActive = !!state.showPressureChart;
+    const oddsMenuItems = [
+      ['mo', 'MO', 'Match Odds'],
+      ['lht', 'LHT', 'Limite do primeiro tempo'],
+      ['lft', 'LFT', 'Limite da partida'],
+      ['laft', 'LAFT', 'Limite a frente FT']
+    ];
+    const oddsMenuHtml = anchor => `<span class="custom-radar-odds-menu-wrap ${state.oddsMenuOpen && state.oddsMenuAnchor === anchor ? 'is-open' : ''}">
+      <button type="button" class="custom-radar-icon-btn custom-radar-odds-trigger ${state.oddsMenuOpen && state.oddsMenuAnchor === anchor ? 'active' : ''}" data-action="public-odds-menu" data-odds-anchor="${anchor}" title="Mercados Bet365" aria-label="Mercados Bet365" aria-expanded="${state.oddsMenuOpen && state.oddsMenuAnchor === anchor ? 'true' : 'false'}"><span class="custom-radar-bet365-mark"><em>bet</em><b>365</b></span></button>
+      <span class="custom-radar-odds-menu">${oddsMenuItems.map(([mode, label, description]) => `<button type="button" data-action="public-odds-mode" data-odds-mode="${mode}"><b>${label}</b><small>${description}</small></button>`).join('')}</span>
+    </span>`;
     const summary = autoSummary(data, clock, names);
     const summaryHtml = state.showAutoSummary ? `<div class="custom-radar-auto-summary is-${summary.tone}"><i class='bx bx-pulse'></i><strong>${escapeHtml(summary.text)}</strong></div>` : '';
     const alertBannerHtml = state.alertRuntime.visualUntil > Date.now() && state.alertRuntime.message
@@ -2099,6 +2154,27 @@
         <div class="custom-radar-current-event ${escapeHtml(current?.side || '')} ${escapeHtml(type)} ${pinned ? 'is-highlighted' : ''}"><span>${escapeHtml(current?.time || clock || '--')}</span>${eventIcon(current)}<strong>${escapeHtml(currentText)}</strong></div>
         ${listHtml(data)}
       </div>`;
+    const periodInfo = clockPeriodInfo(clock);
+    const normalizedTickerClock = normalizeMatchText(clock);
+    const tickerFinished = normalizedTickerClock.includes('final da partida') || normalizedTickerClock.includes('fim da partida') || normalizedTickerClock.includes('full time') || normalizedTickerClock.includes('match ended');
+    const tickerInterval = periodInfo.period === 'interval';
+    const periodLabel = tickerFinished || tickerInterval ? '' : periodInfo.period === 'second' ? '2T' : '1T';
+    const tickerClock = tickerFinished
+      ? 'Final da Partida'
+      : tickerInterval
+        ? 'Intervalo'
+        : String(clock || '--').replace(/^\s*(?:1|2)\s*[º°oª]?\s*t(?:empo)?\s*[-:|–—]\s*/i, '').trim() || '--';
+    const tickerAdded = tickerFinished || tickerInterval ? '' : added;
+    const tickerInfoHtml = `<div class="custom-radar-ticker-info">
+      <span class="custom-radar-ticker-match">${periodLabel ? `<b>${periodLabel}</b>` : ''}<em>${escapeHtml(tickerClock)}</em>${tickerAdded}<strong>${escapeHtml(teamAbbr(names.home))} ${score.home}-${score.away} ${escapeHtml(teamAbbr(names.away))}</strong></span>
+      ${statsHtml(data)}
+      ${pressureHtml(data, clock)}
+    </div>`;
+    const tickerLiveFeedHtml = `<div class="custom-radar-live-feed custom-radar-ticker-feed">
+      <div class="custom-radar-current-event ${escapeHtml(current?.side || '')} ${escapeHtml(type)} ${pinned ? 'is-highlighted' : ''}"><span>${escapeHtml(current?.time || clock || '--')}</span>${eventIcon(current)}<strong>${escapeHtml(currentText)}</strong></div>
+      ${listHtml(data)}
+      ${tickerInfoHtml}
+    </div>`;
     const statsPanelHtml = `<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}</div>`;
     const sofascorePanelHtml = pressureChartActive ? pressureChartHtml(data, clock, names) : '';
     const radarPressurePanelHtml = state.showRadarPressureChart ? radarModPressureChartHtml(data, clock, names) : '';
@@ -2129,6 +2205,7 @@
         ${editModuleHtml('alerts', 'Alertas', alertModuleHtml)}
       </div>`;
     const regularMainHtml = `${liveFeedHtml}<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${sofascorePanelHtml}${radarPressurePanelHtml}${intelligencePanelHtml}${heatPanelHtml}</div>${alertBannerHtml}${summaryHtml}`;
+    const tickerMainHtml = `${tickerLiveFeedHtml}${sofascorePanelHtml}${radarPressurePanelHtml}${intelligencePanelHtml}${heatPanelHtml}${alertBannerHtml}${summaryHtml}`;
     modal.setAttribute('data-layout-edit', state.layoutEditMode ? '1' : '0');
     content.innerHTML = `
       <div class="custom-radar-window-toolbar ${state.toolbarCollapsed ? 'is-collapsed' : ''}">
@@ -2136,8 +2213,10 @@
         <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="overlay" title="Alternar fundo limpo/painel"><i class='bx bx-layer'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
+        <button type="button" class="custom-radar-icon-btn ${state.radarLayout === 'ticker' ? 'active' : ''}" data-action="radar-layout" title="Alternar layout atual/faixa compacta"><i class='bx bx-list-ul'></i></button>
         <button type="button" class="custom-radar-icon-btn ${pressureChartActive ? 'active pressure-active' : ''}" data-action="pressure-chart" title="${pressureChartActive ? 'Ocultar grafico de pressao' : 'Mostrar grafico de pressao'}"><i class='bx bx-bar-chart-alt-2'></i></button>
         <button type="button" class="custom-radar-icon-btn ${state.showRadarPressureChart ? 'active radar-pressure-active' : ''}" data-action="radar-pressure-chart" title="${state.showRadarPressureChart ? 'Ocultar grafico Radar MOD' : 'Mostrar grafico Radar MOD'}"><i class='bx bx-bar-chart-square'></i></button>
+        ${oddsMenuHtml('toolbar')}
         <button type="button" class="custom-radar-icon-btn ${state.showIconGallery ? 'active' : ''}" data-action="icon-gallery" title="Central de personalizacao"><i class='bx bx-slider-alt'></i></button>
         ${heatmapTopButton}
         <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
@@ -2149,8 +2228,10 @@
           <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="overlay" title="Alternar fundo limpo/painel"><i class='bx bx-layer'></i></button>
           <button type="button" class="custom-radar-icon-btn" data-action="density" title="Alternar formato largo/achatado"><i class='bx bx-expand-horizontal'></i></button>
+          <button type="button" class="custom-radar-icon-btn ${state.radarLayout === 'ticker' ? 'active' : ''}" data-action="radar-layout" title="Alternar layout atual/faixa compacta"><i class='bx bx-list-ul'></i></button>
           <button type="button" class="custom-radar-icon-btn ${pressureChartActive ? 'active pressure-active' : ''}" data-action="pressure-chart" title="${pressureChartActive ? 'Ocultar grafico de pressao' : 'Mostrar grafico de pressao'}"><i class='bx bx-bar-chart-alt-2'></i></button>
           <button type="button" class="custom-radar-icon-btn ${state.showRadarPressureChart ? 'active radar-pressure-active' : ''}" data-action="radar-pressure-chart" title="${state.showRadarPressureChart ? 'Ocultar grafico Radar MOD' : 'Mostrar grafico Radar MOD'}"><i class='bx bx-bar-chart-square'></i></button>
+          ${oddsMenuHtml('header')}
           <button type="button" class="custom-radar-icon-btn ${state.showIconGallery ? 'active' : ''}" data-action="icon-gallery" title="Central de personalizacao"><i class='bx bx-slider-alt'></i></button>
           ${heatmapTopButton}
           <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
@@ -2165,7 +2246,7 @@
       ${state.showIconGallery && !state.overlayReplica ? radarIconGalleryHtml() : ''}
       <div class="custom-radar-layout custom-radar-event-layout">
         <div class="custom-radar-main">
-          ${state.overlayReplica ? overlayMainHtml : regularMainHtml}
+          ${state.radarLayout === 'ticker' ? tickerMainHtml : state.overlayReplica ? overlayMainHtml : regularMainHtml}
         </div>
         <aside class="custom-radar-side custom-radar-tools">
           <div class="custom-radar-controls"><button type="button" class="${state.showOdds ? 'active' : ''}" data-action="odds"><i class='bx bx-money'></i> Odds</button><button type="button" class="${state.showMeta ? 'active' : ''}" data-action="meta"><i class='bx bx-data'></i> IDs</button><button type="button" class="${state.showIconGallery ? 'active' : ''}" data-action="icon-gallery"><i class='bx bx-slider-alt'></i> Personalizar</button><button type="button" class="${pressureChartActive ? 'active' : ''}" data-action="pressure-chart"><i class='bx bx-bar-chart-alt-2'></i> Pressao</button><button type="button" class="${state.showRadarPressureChart ? 'active' : ''}" data-action="radar-pressure-chart"><i class='bx bx-bar-chart-square'></i> Radar MOD</button><button type="button" class="${heatmapActive ? 'active' : ''}" data-action="heatmap-menu"><i class='bx bxs-flame'></i> ${escapeHtml(heatmapLabels[heatmapMode] || 'Calor')}</button><button type="button" class="custom-radar-highlight-action" data-action="highlight"><i class='bx bx-crop'></i> Destacar</button></div>
@@ -2343,6 +2424,7 @@
     intelligenceSettings: Object.fromEntries(Object.keys(defaultIntelligenceSettings).map(key => [key, intelligenceSetting(key)])),
     alertSettings: Object.fromEntries(Object.keys(defaultAlertSettings).map(key => [key, alertSetting(key)])),
     showAutoSummary: !!state.showAutoSummary,
+    radarLayout: state.radarLayout,
     layoutEditMode: !!state.layoutEditMode
   });
   window.__customRadarNativeMenuAction = payload => {
@@ -2352,6 +2434,10 @@
     else if (action === 'font-scale-reset') setFontScale(1);
     else if (action === 'font-scale-up') setFontScale(state.fontScale + 0.08);
     else if (action === 'font-scale') setFontScale(Number(value) || 1);
+    else if (action === 'radar-layout' && ['standard', 'ticker'].includes(value)) {
+      state.radarLayout = value;
+      localStorage.setItem('custom_wradar_mod_layout', value);
+    }
     else if (action === 'overlay-opacity') setOverlayOpacity((Number(value) || 100) / 100);
     else if (action === 'overlay-content' && ['current', 'events', 'full'].includes(value)) {
       state.overlayContentMode = value;
@@ -2404,6 +2490,7 @@
     const target = event.target;
     const action = target.closest('[data-action]')?.getAttribute('data-action');
     const insideFontMenu = !!target.closest('.custom-radar-font-menu');
+    const insideOddsMenu = !!target.closest('.custom-radar-odds-menu-wrap');
     if (action === 'color-change') {
       state.colorPickerActive = true;
       state.interactingUntil = Date.now() + 120000;
@@ -2411,6 +2498,12 @@
     }
     if (state.fontMenuOpen && !insideFontMenu) {
       state.fontMenuOpen = false;
+      render();
+      return;
+    }
+    if (state.oddsMenuOpen && !insideOddsMenu) {
+      state.oddsMenuOpen = false;
+      state.oddsMenuAnchor = '';
       render();
       return;
     }
@@ -2441,6 +2534,12 @@
     if (action === 'density') {
       state.density = state.density === 'compact' ? 'wide' : 'compact';
       localStorage.setItem('custom_wradar_mod_density', state.density);
+      render();
+      return;
+    }
+    if (action === 'radar-layout') {
+      state.radarLayout = state.radarLayout === 'ticker' ? 'standard' : 'ticker';
+      localStorage.setItem('custom_wradar_mod_layout', state.radarLayout);
       render();
       return;
     }
@@ -2551,6 +2650,35 @@
     if (action === 'odds') {
       state.showOdds = !state.showOdds;
       localStorage.setItem('custom_wradar_mod_show_odds', state.showOdds ? '1' : '0');
+      render();
+      return;
+    }
+    if (action === 'public-odds') {
+      const teams = splitTeams(state.event || {});
+      window.traderPublicOdds?.openWindow?.({ home: teams.home, away: teams.away, title: state.event?.name || '' });
+      return;
+    }
+    if (action === 'public-odds-menu') {
+      const anchor = target.closest('[data-odds-anchor]')?.dataset?.oddsAnchor || 'toolbar';
+      const closeCurrent = state.oddsMenuOpen && state.oddsMenuAnchor === anchor;
+      state.oddsMenuOpen = !closeCurrent;
+      state.oddsMenuAnchor = closeCurrent ? '' : anchor;
+      render();
+      return;
+    }
+    if (action === 'public-odds-mode') {
+      const teams = splitTeams(state.event || {});
+      const clock = state.realData?.clock || state.event?.minute || '';
+      const period = clockPeriodInfo(clock).period;
+      const fallback = normalizeScore(state.event || {});
+      const score = {
+        home: Number.isFinite(state.realData?.score?.home) ? state.realData.score.home : Number(fallback.home || 0),
+        away: Number.isFinite(state.realData?.score?.away) ? state.realData.score.away : Number(fallback.away || 0)
+      };
+      const viewMode = target.closest('[data-odds-mode]')?.dataset?.oddsMode || 'mo';
+      state.oddsMenuOpen = false;
+      state.oddsMenuAnchor = '';
+      window.traderPublicOdds?.openOverlay?.({ home: teams.home, away: teams.away, title: state.event?.name || '', viewMode, period, clock, score });
       render();
       return;
     }

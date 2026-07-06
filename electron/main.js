@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const { app, BrowserWindow, ipcMain, Menu, shell, session, nativeImage, dialog, screen } = require('electron');
@@ -8,6 +9,13 @@ const childWindows = new Set();
 const replicaWindows = new Map();
 const nativeReplicaProcesses = new Set();
 const wradarRealModFeeds = new Map();
+const publicOddsFeeds = new Map();
+const extensionOddsSubscriptions = new Map();
+const extensionOddsCommands = new Map();
+let extensionOddsServer = null;
+let extensionOddsLastContact = 0;
+let extensionOddsLastBrowserLaunch = 0;
+const extensionOddsPort = 38465;
 const customWRadarWindowDefaultBounds = { width: 1220, height: 460 };
 const customWRadarWindowMinBounds = { width: 520, height: 260 };
 const customRadarHighlightMinBounds = { width: 260, height: 120 };
@@ -339,7 +347,6 @@ function createExternalWindow(url) {
     autoHideMenuBar: true,
     webPreferences: baseWebPreferences()
   });
-
   childWindows.add(child);
   child.setResizable(true);
   child.setMaximizable(true);
@@ -969,6 +976,113 @@ ipcMain.handle('wradar-real-mod:stop', async (_event, feedId) => {
   return true;
 });
 
+ipcMain.handle('public-odds:start', async (event, rawPayload = {}) => {
+  const payload = normalizePublicOddsPayload(rawPayload);
+  if (!payload) throw new Error('Times invalidos para buscar odds.');
+  const owner = event.sender;
+  const feedId = `extension:${owner.id}`;
+  const sessionId = `match:${normalizeOddsSessionTeam(payload.home)}:${normalizeOddsSessionTeam(payload.away)}`;
+  cleanupExtensionOddsFeed(feedId);
+  extensionOddsSubscriptions.set(feedId, { owner, payload, sessionId });
+  if (!extensionOddsCommands.has(sessionId)) extensionOddsCommands.set(sessionId, { ...payload, feedId: sessionId });
+  owner.once('destroyed', () => cleanupExtensionOddsFeed(feedId));
+  ensureOddsExtensionConnection(Date.now(), owner);
+  setTimeout(() => {
+    if (!owner.isDestroyed()) owner.send('public-odds:update', {
+      feedId,
+      source: 'betfair-extension',
+      data: { status: 'waiting-extension', home: payload.home, away: payload.away, capturedAt: Date.now() }
+    });
+  }, 50);
+  return { feedId, source: 'betfair-extension' };
+});
+
+ipcMain.handle('public-odds:open-window', async (_event, rawPayload = {}) => {
+  const payload = normalizePublicOddsPayload(rawPayload);
+  if (!payload) throw new Error('Times invalidos para abrir o Radar de Odds.');
+  const win = createPublicOddsWindow(payload);
+  return { ok: true, windowId: win.id };
+});
+
+ipcMain.handle('public-odds:open-overlay', async (_event, rawPayload = {}) => {
+  const payload = normalizePublicOddsPayload(rawPayload);
+  if (!payload) throw new Error('Times invalidos para abrir o mercado destacado.');
+  const overlay = createPublicOddsWindow(payload, { overlay: true });
+  return { ok: true, windowId: overlay.id };
+});
+
+ipcMain.handle('public-odds:highlight', async (event, rawPayload = {}) => {
+  const payload = normalizePublicOddsPayload(rawPayload);
+  if (!payload) throw new Error('Times invalidos para destacar o Radar de Odds.');
+  const source = BrowserWindow.fromWebContents(event.sender);
+  const overlay = createPublicOddsWindow(payload, { overlay: true });
+  overlay.webContents.once('did-finish-load', () => {
+    if (source && !source.isDestroyed()) source.close();
+  });
+  return { ok: true, windowId: overlay.id };
+});
+
+ipcMain.handle('public-odds:stop', async (_event, feedId) => {
+  cleanupExtensionOddsFeed(String(feedId || ''));
+  return true;
+});
+
+ipcMain.handle('public-odds:diagnostics', async (_event, feedId) => {
+  const subscription = extensionOddsSubscriptions.get(String(feedId || ''));
+  if (!subscription) return { ok: false };
+  shell.openExternal('https://www.betfair.bet.br/exchange/plus/pt/futebol-apostas-1');
+  return { ok: true, mode: 'chrome-extension' };
+});
+
+ipcMain.handle('public-odds:toggle-always-on-top', async event => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return { ok: false };
+  const next = !win.isAlwaysOnTop();
+  win.setAlwaysOnTop(next, 'screen-saver');
+  return { ok: true, alwaysOnTop: next };
+});
+
+ipcMain.handle('public-odds:resize-layout', async (event, layout) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return { ok: false };
+  const compact = layout === 'compact';
+  const size = compact ? { width: 320, height: 130 } : { width: 760, height: 540 };
+  win.setMinimumSize(compact ? 280 : 520, compact ? 100 : 360);
+  win.setSize(size.width, size.height);
+  return { ok: true, ...size };
+});
+
+ipcMain.handle('public-odds:set-layout-minimum', async (event, layout) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return { ok: false };
+  const compact = layout === 'compact';
+  const minimum = { width: compact ? 280 : 520, height: compact ? 100 : 360 };
+  win.setMinimumSize(minimum.width, minimum.height);
+  const bounds = win.getBounds();
+  if (bounds.width < minimum.width || bounds.height < minimum.height) {
+    win.setSize(Math.max(bounds.width, minimum.width), Math.max(bounds.height, minimum.height));
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('public-odds:resize-goal-sides', async (event, rawCount) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return { ok: false };
+  const count = Number(rawCount) === 1 ? 1 : 2;
+  const bounds = win.getBounds();
+  const height = Math.max(count === 1 ? 105 : 120, bounds.height);
+  const width = count === 1 ? Math.max(135, Math.round(height * 1.29)) : Math.max(240, Math.round(height * 2));
+  win.setAspectRatio(count === 1 ? 1.29 : 2);
+  win.setMinimumSize(count === 1 ? 135 : 240, count === 1 ? 105 : 120);
+  win.setSize(width, height);
+  return { ok: true, width, height };
+});
+
+ipcMain.on('public-odds:show-menu', event => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed()) showPublicOddsMenu(win);
+});
+
 ipcMain.handle('worldcup:espn-sync', async () => {
   return syncWorldCupEspn();
 });
@@ -1116,6 +1230,586 @@ function showReplicaMenu(item) {
   menu.popup({ window: win });
 }
 
+function normalizePublicOddsPayload(payload = {}) {
+  const home = String(payload.home || '').trim();
+  const away = String(payload.away || '').trim();
+  if (!home || !away) return null;
+  const requestedMode = String(payload.viewMode || '').toLowerCase();
+  const legacyModes = { ulht: 'lht', ufht: 'lht', ulft: 'lft', ufft: 'laft', up: 'lft' };
+  const migratedMode = legacyModes[requestedMode] || requestedMode;
+  const viewMode = ['mo', 'lht', 'lft', 'laft'].includes(migratedMode) ? migratedMode : '';
+  const period = ['first', 'interval', 'second'].includes(payload.period) ? payload.period : 'first';
+  return {
+    home,
+    away,
+    title: String(payload.title || `${home} x ${away}`),
+    viewMode,
+    period,
+    clock: String(payload.clock || ''),
+    score: {
+      home: Math.max(0, Number(payload.score?.home) || 0),
+      away: Math.max(0, Number(payload.score?.away) || 0)
+    }
+  };
+}
+
+function normalizeOddsSessionTeam(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function extensionOddsResponse(response, status, data) {
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-headers': 'content-type, x-planilha-trader',
+    'cache-control': 'no-store'
+  });
+  response.end(JSON.stringify(data));
+}
+
+function readOddsBrowserPreference() {
+  const saved = readJsonFile('public-odds-browser.json') || {};
+  return {
+    browser: ['chrome', 'edge', 'brave', 'opera'].includes(saved.browser) ? saved.browser : 'chrome',
+    autoLaunch: saved.autoLaunch !== false
+  };
+}
+
+function browserExecutableCandidates() {
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const localAppData = process.env.LOCALAPPDATA || '';
+  return {
+    chrome: [
+      path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe')
+    ],
+    edge: [
+      path.join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+    ],
+    brave: [
+      path.join(programFiles, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+      path.join(programFilesX86, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+      path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe')
+    ],
+    opera: [
+      path.join(localAppData, 'Programs', 'Opera', 'launcher.exe'),
+      path.join(localAppData, 'Programs', 'Opera GX', 'launcher.exe')
+    ]
+  };
+}
+
+function launchOddsBrowser(browser, force = false) {
+  const preference = readOddsBrowserPreference();
+  const selectedBrowser = ['chrome', 'edge', 'brave', 'opera'].includes(browser) ? browser : preference.browser;
+  if (!force && (!preference.autoLaunch || Date.now() - extensionOddsLastContact < 5000 || Date.now() - extensionOddsLastBrowserLaunch < 12000)) return false;
+  const candidates = browserExecutableCandidates();
+  const executable = (candidates[selectedBrowser] || []).find(candidate => candidate && fs.existsSync(candidate));
+  if (!executable) return false;
+  extensionOddsLastBrowserLaunch = Date.now();
+  try {
+    const child = spawn(executable, ['--no-startup-window'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    });
+    child.unref();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function ensureOddsBrowserAvailable() {
+  return launchOddsBrowser(readOddsBrowserPreference().browser, false);
+}
+
+function ensureOddsExtensionConnection(startedAt, owner) {
+  [0, 2500, 6500, 13000].forEach(delay => {
+    setTimeout(() => {
+      if (owner?.isDestroyed?.() || extensionOddsLastContact >= startedAt) return;
+      ensureOddsBrowserAvailable();
+    }, delay);
+  });
+}
+
+function broadcastExtensionOdds(payload = {}) {
+  const sessionId = String(payload.feedId || '');
+  let accepted = false;
+  extensionOddsSubscriptions.forEach((subscription, feedId) => {
+    if (subscription.sessionId !== sessionId || subscription.owner.isDestroyed()) return;
+    subscription.owner.send('public-odds:update', {
+      feedId,
+      source: 'betfair-extension',
+      data: { ...payload, feedId, capturedAt: Number(payload.capturedAt) || Date.now() }
+    });
+    accepted = true;
+  });
+  return accepted;
+}
+
+function startExtensionOddsServer() {
+  if (extensionOddsServer) return;
+  extensionOddsServer = http.createServer((request, response) => {
+    if (request.method === 'OPTIONS') return extensionOddsResponse(response, 204, {});
+    if (request.headers['x-planilha-trader'] !== 'extension-v1') return extensionOddsResponse(response, 403, { ok: false });
+    const url = new URL(request.url || '/', `http://127.0.0.1:${extensionOddsPort}`);
+    if (request.method === 'GET' && url.pathname === '/commands') {
+      const reportedBrowser = String(url.searchParams.get('browser') || '').toLowerCase();
+      if (reportedBrowser === readOddsBrowserPreference().browser) extensionOddsLastContact = Date.now();
+      return extensionOddsResponse(response, 200, {
+        ok: true,
+        selectedBrowser: readOddsBrowserPreference().browser,
+        commands: Array.from(extensionOddsCommands.entries()).map(([feedId, payload]) => ({ feedId, ...payload }))
+      });
+    }
+    if (request.method === 'GET' && url.pathname === '/status') {
+      return extensionOddsResponse(response, 200, { ok: true, app: 'Planilha Trader', commands: extensionOddsCommands.size });
+    }
+    if (request.method === 'POST' && url.pathname === '/odds') {
+      let body = '';
+      request.on('data', chunk => {
+        if (body.length < 512000) body += chunk;
+      });
+      request.on('end', () => {
+        try {
+          const payload = JSON.parse(body || '{}');
+          const accepted = broadcastExtensionOdds(payload);
+          extensionOddsResponse(response, accepted ? 200 : 404, { ok: accepted });
+        } catch (error) {
+          extensionOddsResponse(response, 400, { ok: false, error: error?.message || 'JSON invalido' });
+        }
+      });
+      return;
+    }
+    extensionOddsResponse(response, 404, { ok: false });
+  });
+  extensionOddsServer.on('error', error => console.warn('Falha no servidor da extensao de odds:', error?.message || error));
+  extensionOddsServer.listen(extensionOddsPort, '127.0.0.1');
+}
+
+function cleanupExtensionOddsFeed(feedId) {
+  const subscription = extensionOddsSubscriptions.get(feedId);
+  extensionOddsSubscriptions.delete(feedId);
+  if (!subscription?.sessionId) return;
+  const inUse = Array.from(extensionOddsSubscriptions.values()).some(item => item.sessionId === subscription.sessionId);
+  if (!inUse) extensionOddsCommands.delete(subscription.sessionId);
+}
+
+function createBetfairPublicWindow(payload) {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    show: false,
+    title: `Betfair Exchange - ${payload.title}`,
+    backgroundColor: '#f5a800',
+    autoHideMenuBar: true,
+    webPreferences: {
+      ...baseWebPreferences(),
+      partition: 'persist:planilha-trader-betfair',
+      backgroundThrottling: false
+    }
+  });
+  win.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+  win.loadURL('https://www.betfair.bet.br/exchange/plus/pt/futebol-apostas-1');
+  return win;
+}
+
+function createPublicOddsWindow(payload, options = {}) {
+  const overlay = !!options.overlay;
+  const widget = overlay && ['mo', 'lht', 'lft', 'laft'].includes(payload.viewMode);
+  const matchWidget = widget && payload.viewMode === 'mo';
+  const fallback = { width: overlay ? (matchWidget ? 280 : (widget ? 360 : 320)) : 760, height: overlay ? (matchWidget ? 140 : (widget ? 180 : 130)) : 540 };
+  const minBounds = overlay ? { width: matchWidget ? 240 : (widget ? 330 : 280), height: matchWidget ? 120 : (widget ? 165 : 100) } : { width: 520, height: 360 };
+  const boundsFile = widget ? `public-odds-overlay-bounds-${payload.viewMode}.json` : 'public-odds-overlay-bounds.json';
+  const saved = overlay ? readJsonFile(boundsFile) : null;
+  const bounds = normalizeWindowBounds(saved, fallback, minBounds);
+  const child = new BrowserWindow({
+    ...bounds,
+    minWidth: minBounds.width,
+    minHeight: minBounds.height,
+    title: `Radar de Odds - ${payload.home} x ${payload.away}`,
+    backgroundColor: overlay ? '#00000000' : '#07111f',
+    autoHideMenuBar: true,
+    resizable: true,
+    maximizable: !overlay,
+    frame: !overlay,
+    transparent: overlay,
+    alwaysOnTop: overlay,
+    skipTaskbar: overlay,
+    webPreferences: baseWebPreferences()
+  });
+  if (widget) child.setAspectRatio(2);
+  childWindows.add(child);
+  child.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  child.on('closed', () => childWindows.delete(child));
+  if (overlay) {
+    const saveBounds = () => {
+      if (!child.isDestroyed()) writeJsonFile(boundsFile, child.getBounds());
+    };
+    child.on('moved', saveBounds);
+    child.on('resized', saveBounds);
+  }
+  const encodedPayload = Buffer.from(JSON.stringify({ ...payload, overlay }), 'utf8').toString('base64url');
+  child.loadFile(path.join(__dirname, 'odds-radar-window.html'), { query: { payload: encodedPayload } });
+  return child;
+}
+
+function scrapeBetfairPublicScript(payload) {
+  return `(() => {
+    const home = ${JSON.stringify(payload.home)};
+    const away = ${JSON.stringify(payload.away)};
+    const normalize = value => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const aliases = {
+      croatia: ['croatia', 'croacia'], morocco: ['morocco', 'marrocos'], germany: ['germany', 'alemanha'], england: ['england', 'inglaterra'],
+      spain: ['spain', 'espanha'], netherlands: ['netherlands', 'holanda', 'paises baixos'], 'ivory coast': ['ivory coast', 'costa do marfim'],
+      'south korea': ['south korea', 'coreia do sul'], usa: ['usa', 'estados unidos', 'eua'], switzerland: ['switzerland', 'suica'],
+      algeria: ['algeria', 'argelia'], egypt: ['egypt', 'egito'], 'cape verde': ['cape verde', 'cabo verde'], japan: ['japan', 'japao'],
+      norway: ['norway', 'noruega'], sweden: ['sweden', 'suecia'], belgium: ['belgium', 'belgica'], france: ['france', 'franca']
+    };
+    const teamKeys = value => {
+      const key = normalize(value);
+      const entry = Object.entries(aliases).find(([canonical, variants]) => canonical === key || variants.includes(key));
+      return entry ? entry[1] : [key];
+    };
+    const homeKeys = teamKeys(home);
+    const awayKeys = teamKeys(away);
+    const includesTeam = (text, keys) => keys.some(key => text.includes(key));
+    const leafs = root => Array.from((root || document).querySelectorAll('a, span, div, p, td, button')).filter(element => !element.children.length);
+    const offers = root => {
+      const text = String(root?.innerText || '').replace(/\\u00a0/g, ' ');
+      const values = [];
+      const regex = /(?:^|\\n)\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:\\n|\\s)+(?:R\\$|£|BRL)\\s*[\\d.,]+/gim;
+      let match;
+      while ((match = regex.exec(text))) values.push(match[1].replace(',', '.'));
+      return values;
+    };
+    const pairNearLabel = matcher => {
+      let best = null;
+      leafs(document).filter(element => matcher(normalize(element.textContent))).forEach(element => {
+        let parent = element;
+        for (let depth = 0; depth < 6 && parent; depth += 1, parent = parent.parentElement) {
+          const values = offers(parent);
+          const raw = String(parent.innerText || '');
+          if (values.length < 2 || raw.length > 700) continue;
+          if (!best || raw.length < best.raw.length) best = { raw, values };
+        }
+      });
+      return best ? { back: best.values[0], lay: best.values[1] } : null;
+    };
+    const onListing = /futebol-apostas-1\\/?$/i.test(location.pathname);
+    if (onListing) {
+      const links = Array.from(document.querySelectorAll('a[href*="apostas-"]')).filter(anchor => {
+        const text = normalize(anchor.innerText);
+        return includesTeam(text, homeKeys) && includesTeam(text, awayKeys);
+      });
+      const anchor = links.sort((a, b) => String(a.innerText || '').length - String(b.innerText || '').length)[0];
+      if (!anchor) return { ok: false, status: 'searching', home, away, capturedAt: Date.now() };
+      let row = anchor;
+      let rowOffers = [];
+      for (let depth = 0; depth < 8 && row; depth += 1, row = row.parentElement) {
+        const values = offers(row);
+        if (values.length >= 6 && String(row.innerText || '').length < 1600) { rowOffers = values; break; }
+      }
+      const prices = rowOffers.length >= 6 ? {
+        home: { back: rowOffers[0], lay: rowOffers[1] },
+        draw: { back: rowOffers[2], lay: rowOffers[3] },
+        away: { back: rowOffers[4], lay: rowOffers[5] }
+      } : {};
+      const eventUrl = String(anchor.href || '').replace('/exchange/plus/pt/pt/', '/exchange/plus/pt/');
+      return { ok: false, status: 'opening-match', home, away, prices, eventUrl, capturedAt: Date.now() };
+    }
+    const prices = {
+      home: pairNearLabel(text => homeKeys.some(key => text === key)),
+      draw: pairNearLabel(text => text === 'empate'),
+      away: pairNearLabel(text => awayKeys.some(key => text === key))
+    };
+    const goalLines = {};
+    leafs(document).forEach(element => {
+      const text = normalize(element.textContent);
+      const selection = text.match(/^(mais|menos) de (\\d+(?:[.,]\\d+)?) gols?$/i);
+      if (!selection) return;
+      const pair = pairNearLabel(value => value === text);
+      if (!pair) return;
+      const line = selection[2].replace(',', '.');
+      goalLines[line] ||= { line };
+      goalLines[line][selection[1] === 'mais' ? 'over' : 'under'] = pair;
+    });
+    const goals = Object.values(goalLines).find(item => item.over && item.under)
+      || Object.values(goalLines).find(item => item.over || item.under)
+      || null;
+    const hasMatchOdds = prices.home || prices.draw || prices.away;
+    return { ok: !!hasMatchOdds, status: hasMatchOdds ? 'found' : 'loading-market', home, away, prices, goals, href: location.href, capturedAt: Date.now() };
+  })()`;
+}
+
+async function showPublicOddsMenu(win) {
+  if (!win || win.isDestroyed()) return;
+  let state = {};
+  try {
+    state = await win.webContents.executeJavaScript('window.__publicOddsMenuState?.() || ({})', true);
+  } catch (_) {}
+  const send = (action, value, key) => {
+    if (!win.isDestroyed()) win.webContents.send('public-odds:menu-action', { action, value, key });
+  };
+  const opacity = Math.round(win.getOpacity() * 100);
+  const browserPreference = readOddsBrowserPreference();
+  Menu.buildFromTemplate([
+    ...(state.viewMode ? [{
+      label: 'Mercado',
+      submenu: [
+        ['mo', 'MO - Match Odds'],
+        ['lht', 'LHT - Limite do primeiro tempo'],
+        ['lft', 'LFT - Limite da partida'],
+        ['laft', 'LAFT - Limite a frente FT']
+      ].map(([key, label]) => ({
+        label,
+        type: 'radio',
+        checked: state.viewMode === key,
+        click: () => send('switch-market', key)
+      }))
+    }] : []),
+    ...(state.viewMode && state.viewMode !== 'mo' ? [{
+      label: 'Exibicao das odds',
+      submenu: [
+        {
+          label: 'Over',
+          type: 'checkbox',
+          checked: state.goalSides?.over !== false,
+          enabled: state.goalSides?.over === false || state.goalSides?.under !== false,
+          click: item => send('show-goal-side', item.checked, 'over')
+        },
+        {
+          label: 'Under',
+          type: 'checkbox',
+          checked: state.goalSides?.under !== false,
+          enabled: state.goalSides?.under === false || state.goalSides?.over !== false,
+          click: item => send('show-goal-side', item.checked, 'under')
+        }
+      ]
+    }] : []),
+    {
+      label: 'Layout',
+      submenu: [
+        { label: 'Comparativo', type: 'radio', checked: state.layoutMode !== 'compact', click: () => send('layout-mode', 'comparison') },
+        { label: 'Compacto', type: 'radio', checked: state.layoutMode === 'compact', click: () => send('layout-mode', 'compact') }
+      ]
+    },
+    {
+      label: 'Fontes',
+      submenu: [
+        { label: 'bet365', type: 'checkbox', checked: state.showBet365 !== false, click: item => send('show-provider', item.checked, 'bet365') }
+      ]
+    },
+    {
+      label: 'Navegador',
+      submenu: [
+        ...[
+          { key: 'chrome', label: 'Google Chrome' },
+          { key: 'edge', label: 'Microsoft Edge' },
+          { key: 'brave', label: 'Brave' },
+          { key: 'opera', label: 'Opera' }
+        ].map(option => ({
+          label: option.label,
+          type: 'radio',
+          checked: browserPreference.browser === option.key,
+          click: () => {
+            writeJsonFile('public-odds-browser.json', { ...browserPreference, browser: option.key });
+            launchOddsBrowser(option.key, true);
+          }
+        })),
+        { type: 'separator' },
+        {
+          label: 'Abrir automaticamente',
+          type: 'checkbox',
+          checked: browserPreference.autoLaunch,
+          click: item => writeJsonFile('public-odds-browser.json', { ...browserPreference, autoLaunch: item.checked })
+        }
+      ]
+    },
+    ...(!state.viewMode ? [{
+      label: 'Match Odds',
+      submenu: [
+        { label: 'Exibir mercado', type: 'checkbox', checked: state.showMatchOdds !== false, click: item => send('show-match-odds', item.checked) },
+        { type: 'separator' },
+        { label: 'Casa', type: 'checkbox', checked: state.outcomes?.home !== false, click: item => send('show-outcome', item.checked, 'home') },
+        { label: 'Empate', type: 'checkbox', checked: state.outcomes?.draw !== false, click: item => send('show-outcome', item.checked, 'draw') },
+        { label: 'Visitante', type: 'checkbox', checked: state.outcomes?.away !== false, click: item => send('show-outcome', item.checked, 'away') }
+      ]
+    },
+    {
+      label: 'Linhas de gols',
+      submenu: [
+        { label: 'Exibir mercado', type: 'checkbox', checked: state.showGoals !== false, click: item => send('show-goals', item.checked) },
+        { type: 'separator' },
+        ...(state.availableGoalLines || []).map(line => ({
+          label: `${line} gols`,
+          type: 'checkbox',
+          checked: state.goalSelectionCustomized ? state.goalLineVisibility?.[line] === true : state.goalLineVisibility?.[line] !== false,
+          click: item => send('show-goal-line', item.checked, line)
+        }))
+      ]
+    }] : []),
+    { label: win.isAlwaysOnTop() ? 'Desligar sempre por cima' : 'Ligar sempre por cima', click: () => win.setAlwaysOnTop(!win.isAlwaysOnTop(), 'screen-saver') },
+    {
+      label: `Opacidade (${opacity}%)`,
+      submenu: [100, 80, 60, 40, 20].map(value => ({ label: `${value}%`, type: 'radio', checked: opacity === value, click: () => win.setOpacity(value / 100) }))
+    },
+    { type: 'separator' },
+    { label: 'Janela normal', click: () => send('restore-window') },
+    { label: 'Fechar', click: () => win.close() }
+  ]).popup({ window: win });
+}
+
+function scrapeBet365PublicScript(payload) {
+  return `(() => {
+    const home = ${JSON.stringify(payload.home)};
+    const away = ${JSON.stringify(payload.away)};
+    const normalize = value => String(value || '')
+      .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const aliases = {
+      croatia: ['croatia', 'croacia'], morocco: ['morocco', 'marrocos'], germany: ['germany', 'alemanha'],
+      england: ['england', 'inglaterra'], spain: ['spain', 'espanha'], netherlands: ['netherlands', 'holanda', 'paises baixos'],
+      'ivory coast': ['ivory coast', 'costa do marfim'], 'south korea': ['south korea', 'coreia do sul'],
+      usa: ['usa', 'estados unidos', 'eua'], switzerland: ['switzerland', 'suica'], algeria: ['algeria', 'argelia'],
+      egypt: ['egypt', 'egito'], 'cape verde': ['cape verde', 'cabo verde'], japan: ['japan', 'japao'],
+      norway: ['norway', 'noruega'], sweden: ['sweden', 'suecia'], belgium: ['belgium', 'belgica'],
+      france: ['france', 'franca'], austria: ['austria'], canada: ['canada'], portugal: ['portugal']
+    };
+    const teamKeys = value => {
+      const key = normalize(value);
+      const entry = Object.entries(aliases).find(([canonical, variants]) => canonical === key || variants.includes(key));
+      return entry ? entry[1] : [key];
+    };
+    const homeKeys = teamKeys(home);
+    const awayKeys = teamKeys(away);
+    const includesTeam = (text, keys) => keys.some(key => text.includes(key));
+    const visible = element => !!element && element.getClientRects().length > 0;
+    const leafs = () => Array.from(document.querySelectorAll('span, div, p')).filter(element => !element.children.length && visible(element));
+    const clickText = text => {
+      const key = normalize(text);
+      const target = leafs().find(element => normalize(element.textContent) === key);
+      const clickable = target?.closest('button, [role="button"], a') || target;
+      if (clickable) clickable.click();
+      return !!clickable;
+    };
+    const findMatchContainer = () => {
+      const candidates = leafs().filter(element => {
+        const value = normalize(element.textContent);
+        return homeKeys.some(key => value === key || value.includes(key) || key.includes(value));
+      });
+      let best = null;
+      candidates.forEach(candidate => {
+        let parent = candidate;
+        for (let depth = 0; depth < 9 && parent; depth += 1, parent = parent.parentElement) {
+          const text = normalize(parent.innerText);
+          if (!includesTeam(text, homeKeys) || !includesTeam(text, awayKeys)) continue;
+          const raw = String(parent.innerText || '').trim();
+          if (raw.length > 900 || !/\\d+[.,]\\d{2}/.test(raw)) continue;
+          if (!best || raw.length < best.raw.length) best = { element: parent, raw };
+        }
+      });
+      return best;
+    };
+    const readPrices = container => {
+      const prices = {};
+      Array.from(container.querySelectorAll('div, button, [role="button"]')).forEach(element => {
+        const lines = String(element.innerText || '').split(/\\n+/).map(value => value.trim()).filter(Boolean);
+        if (lines.length !== 2 || !/^(1|x|2)$/i.test(lines[0]) || !/^\\d+[.,]\\d+$/.test(lines[1])) return;
+        const key = lines[0].toLowerCase() === 'x' ? 'draw' : (lines[0] === '1' ? 'home' : 'away');
+        if (!prices[key]) prices[key] = lines[1].replace(',', '.');
+      });
+      if (Object.keys(prices).length < 2) {
+        const decimals = Array.from(container.querySelectorAll('span'))
+          .map(element => String(element.textContent || '').trim())
+          .filter(value => /^\\d+[.,]\\d{2,3}$/.test(value));
+        if (decimals.length >= 3) [prices.home, prices.draw, prices.away] = decimals.slice(-3).map(value => value.replace(',', '.'));
+      }
+      return prices;
+    };
+    const readGoalLine = () => {
+      const lines = {};
+      Array.from(document.querySelectorAll('div, button, [role="button"]')).forEach(element => {
+        const parts = String(element.innerText || '').split(/\\n+/).map(value => value.trim()).filter(Boolean);
+        if (parts.length < 2 || parts.length > 3) return;
+        const selection = parts[0].match(/^(mais|menos)\\s+de\\s+(\\d+(?:[.,]\\d+)?)(?:\\s+gols?)?$/i);
+        const odd = parts.slice(1).find(value => /^\\d+[.,]\\d+$/.test(value));
+        if (!selection || !odd) return;
+        const line = selection[2].replace(',', '.');
+        lines[line] ||= { line };
+        lines[line][normalize(selection[1]) === 'mais' ? 'over' : 'under'] = odd.replace(',', '.');
+      });
+      return Object.values(lines).find(item => item.over && item.under) || null;
+    };
+    const cookieButton = leafs().find(element => /somente os essenciais|aceitar todos/i.test(String(element.textContent || '')));
+    (cookieButton?.closest('button') || cookieButton)?.click?.();
+    const match = findMatchContainer();
+    if (match) {
+      const prices = readPrices(match.element);
+      const goals = readGoalLine();
+      if (!goals) {
+        const teamTarget = Array.from(match.element.querySelectorAll('span, div, p')).find(element => !element.children.length && includesTeam(normalize(element.textContent), homeKeys));
+        const clickable = teamTarget?.closest('button, [role="button"], a') || teamTarget || match.element;
+        const rect = clickable.getBoundingClientRect();
+        return { ok: false, status: 'opening-match', home, away, prices, clickPoint: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }, capturedAt: Date.now() };
+      }
+      return { ok: Object.keys(prices).length >= 2, status: 'found', home, away, prices, goals, raw: match.raw, capturedAt: Date.now() };
+    }
+    const search = document.querySelector('input[type="search"], input[placeholder*="Pesquisar" i], input[aria-label*="Pesquisar" i]');
+    if (!search) {
+      clickText('Pesquisar');
+      return { ok: false, status: 'opening-search', home, away, capturedAt: Date.now() };
+    }
+    if (!homeKeys.includes(normalize(search.value))) {
+      search.focus();
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(search, home);
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+      search.dispatchEvent(new Event('change', { bubbles: true }));
+      search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+      search.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    }
+    return { ok: false, status: 'searching', home, away, capturedAt: Date.now() };
+  })()`;
+}
+
+async function pollBetfairPublicFeed(feedId) {
+  const feed = publicOddsFeeds.get(feedId);
+  if (!feed || feed.window.isDestroyed() || feed.owner.isDestroyed()) return cleanupPublicOddsFeed(feedId);
+  try {
+    const data = await feed.window.webContents.executeJavaScript(scrapeBetfairPublicScript(feed.payload), true);
+    const signature = JSON.stringify({ status: data?.status, prices: data?.prices, goals: data?.goals, raw: data?.raw });
+    if (signature !== feed.lastSignature) {
+      feed.lastSignature = signature;
+      feed.owner.send('public-odds:update', { feedId, source: 'betfair', data });
+    }
+    if (data?.eventUrl && !feed.eventNavigated) {
+      feed.eventNavigated = true;
+      feed.window.loadURL(data.eventUrl);
+    }
+  } catch (error) {
+    feed.owner.send('public-odds:update', { feedId, source: 'betfair', error: error?.message || 'Falha ao ler a Betfair Exchange.' });
+  } finally {
+    const active = publicOddsFeeds.get(feedId);
+    if (active) active.timer = setTimeout(() => pollBetfairPublicFeed(feedId), 1200);
+  }
+}
+
+function cleanupPublicOddsFeed(feedId) {
+  const feed = publicOddsFeeds.get(feedId);
+  if (!feed) return;
+  clearTimeout(feed.timer);
+  if (!feed.window.isDestroyed()) feed.window.close();
+  publicOddsFeeds.delete(feedId);
+}
+
 async function showLiveRadarMenu(item) {
   if (!item || !item.window || item.window.isDestroyed() || item.menuOpen) return;
   const win = item.window;
@@ -1138,6 +1832,7 @@ async function showLiveRadarMenu(item) {
   };
   const fontPercent = Math.round((Number(radarState.fontScale) || 1) * 100);
   const opacityPercent = Math.round((Number(radarState.overlayOpacity) || 1) * 100);
+  const radarLayout = radarState.radarLayout === 'ticker' ? 'ticker' : 'standard';
   const contentMode = ['current', 'events', 'full'].includes(radarState.overlayContentMode)
     ? radarState.overlayContentMode
     : 'full';
@@ -1154,6 +1849,14 @@ async function showLiveRadarMenu(item) {
   const positionSlotIds = ['1', '2', '3', '4', '5', '6'];
 
   const menu = Menu.buildFromTemplate([
+    {
+      label: 'Layout visual',
+      submenu: [
+        { label: 'Modelo atual', type: 'radio', checked: radarLayout === 'standard', click: () => sendAction('radar-layout', 'standard') },
+        { label: 'Faixa compacta', type: 'radio', checked: radarLayout === 'ticker', click: () => sendAction('radar-layout', 'ticker') }
+      ]
+    },
+    { type: 'separator' },
     {
       label: radarState.layoutEditMode ? 'Concluir edicao do layout' : 'Editar layout',
       type: 'checkbox',
@@ -1949,6 +2652,7 @@ function nativeWindowHandleToDecimal(buffer) {
 app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
 
 app.whenReady().then(() => {
+  startExtensionOddsServer();
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(true));
   const mainWindow = createMainWindow();
   setupAutoUpdater(mainWindow);
@@ -1962,6 +2666,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  if (extensionOddsServer) {
+    extensionOddsServer.close();
+    extensionOddsServer = null;
+  }
   for (const child of nativeReplicaProcesses) {
     try {
       if (!child.killed) child.kill();

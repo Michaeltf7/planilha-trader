@@ -31,7 +31,8 @@ const App = {
     cacheDOM() {
         this.appContainer = document.getElementById('app-container');
         this.pageTitle = document.getElementById('page-title');
-        this.navLinks = document.querySelectorAll('.nav-links a');
+        this.navLinks = document.querySelectorAll('.nav-links a[data-view]');
+        this.navGroups = document.querySelectorAll('.nav-group');
         this.csvInput = document.getElementById('csvFileInput');
         this.themeToggle = document.getElementById('theme-toggle');
         this.versionLabel = document.getElementById('app-version');
@@ -278,6 +279,23 @@ const App = {
                 // Update active class
                 this.navLinks.forEach(l => l.classList.remove('active'));
                 link.classList.add('active');
+            });
+        });
+
+        this.navGroups?.forEach(group => {
+            const toggle = group.querySelector('.nav-group-toggle');
+            const storageKey = `planilha-trader-nav-${group.dataset.navGroup}`;
+            const hasActiveView = Boolean(group.querySelector(`a[data-view="${this.currentView}"]`));
+            const isOpen = false;
+            group.classList.toggle('has-active-view', hasActiveView);
+            group.classList.toggle('is-open', isOpen);
+            toggle?.setAttribute('aria-expanded', String(isOpen));
+            localStorage.setItem(storageKey, 'closed');
+            toggle?.addEventListener('click', () => {
+                const nextOpen = !group.classList.contains('is-open');
+                group.classList.toggle('is-open', nextOpen);
+                toggle.setAttribute('aria-expanded', String(nextOpen));
+                localStorage.setItem(storageKey, nextOpen ? 'open' : 'closed');
             });
         });
         
@@ -1139,6 +1157,15 @@ const App = {
                 }
             });
         }
+        this.navGroups?.forEach(group => {
+            const containsView = Boolean(group.querySelector(`a[data-view="${view}"]`));
+            group.classList.toggle('has-active-view', containsView);
+            if (!containsView) {
+                group.classList.remove('is-open');
+                group.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded', 'false');
+                localStorage.setItem(`planilha-trader-nav-${group.dataset.navGroup}`, 'closed');
+            }
+        });
 
         this.render();
     },

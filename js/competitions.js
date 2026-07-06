@@ -5,12 +5,14 @@ const Competitions = {
     comparison: { home: '', away: '' },
     filters: { search: '', date: 'all' },
     syncState: { started: false, loading: false, lastSync: null, message: 'Escolha uma competição', timer: null },
-    cacheKey: 'competitions_cache_v4',
+    cacheKey: 'competitions_cache_v5',
     syncToken: 0,
     details: {},
     compareDetails: {},
     activeCompareMatchId: null,
     expandedMatchId: null,
+    activeTeam: '',
+    searchTimer: null,
     data: {},
 
     competitions: [
@@ -87,9 +89,14 @@ const Competitions = {
     ],
 
     render() {
+        if (typeof App !== 'undefined' && App.currentView !== 'competicoes') return;
         this.ensureCacheLoaded();
         const container = document.getElementById('app-container');
         if (!container) return;
+        const activeElement = document.activeElement;
+        const searchFocus = activeElement?.id === 'competition-games-search'
+            ? { start: activeElement.selectionStart, end: activeElement.selectionEnd }
+            : null;
         const competition = this.getActiveCompetition();
         if (!competition) {
             container.innerHTML = this.renderCatalog();
@@ -108,7 +115,7 @@ const Competitions = {
                         </div>
                     </div>
                     <div class="comp-header-actions">
-                        <button onclick="Competitions.backToCatalog()"><i class='bx bx-grid-alt'></i> Competições</button>
+                        <button onclick="Competitions.backToCatalog()"><i class='bx bx-arrow-back'></i> Voltar</button>
                         <label class="wc-select comp-season-select"><select onchange="Competitions.setSeason(this.value)">
                             ${competition.seasons.map(season => `<option value="${season.id}" ${String(season.id) === String(competition.seasonId) ? 'selected' : ''}>${season.label}</option>`).join('')}
                         </select></label>
@@ -118,6 +125,12 @@ const Competitions = {
                 ${this.renderContent(data)}
             </div>
         `;
+        if (searchFocus) requestAnimationFrame(() => {
+            const input = document.getElementById('competition-games-search');
+            if (!input) return;
+            input.focus({ preventScroll: true });
+            input.setSelectionRange(searchFocus.start ?? input.value.length, searchFocus.end ?? input.value.length);
+        });
     },
 
     renderCatalog() {
@@ -166,7 +179,7 @@ const Competitions = {
         if (this.activeTab === 'ao-vivo') return this.renderLive(data);
         if (this.activeTab === 'artilheiros') return this.renderLeaders(data);
         if (this.activeTab === 'comparador') return this.renderCompare(data);
-        if (this.activeTab === 'times') return this.renderTeams(data);
+        if (this.activeTab === 'times') return this.activeTeam ? this.renderTeamDetails(data, this.activeTeam) : this.renderTeams(data);
         return this.renderDashboard(data);
     },
 
@@ -191,8 +204,9 @@ const Competitions = {
         const matches = this.getFilteredMatches(data);
         const byDate = this.groupBy(matches, 'date');
         return `
+            ${this.renderUpcomingRound(data)}
             <section class="wc-search-row comp-search-row">
-                <div class="wc-search"><i class='bx bx-search'></i><input value="${this.filters.search}" oninput="Competitions.setSearch(this.value)" placeholder="Buscar time, estadio ou cidade..."></div>
+                <div class="wc-search"><i class='bx bx-search'></i><input id="competition-games-search" value="${this.escapeHtml(this.filters.search)}" oninput="Competitions.setSearch(this.value)" placeholder="Buscar time, estadio ou cidade..."></div>
                 <label class="wc-select"><select onchange="Competitions.setFilter('date', this.value)">
                     <option value="all">Todas as datas</option>
                     ${this.getDates(data).map(date => `<option value="${date}" ${this.filters.date === date ? 'selected' : ''}>${this.formatDate(date)}</option>`).join('')}
@@ -214,17 +228,21 @@ const Competitions = {
     },
 
     renderStandings(data) {
+        const zones = this.getStandingZones(data.standings);
         return `
             <section class="wc-table-panel comp-standings">
                 <table class="wc-table">
                     <thead><tr><th>#</th><th>Time</th><th>J</th><th>V</th><th>E</th><th>D</th><th>GP</th><th>GC</th><th>SG</th><th>PTS</th></tr></thead>
-                    <tbody>${data.standings.map(row => `<tr>
-                        <td><span class="wc-pos p${Math.min(4, row.position || 4)}">${row.position || '-'}</span></td>
+                    <tbody>${data.standings.map(row => {
+                        const zone = this.standingZone(row);
+                        return `<tr title="${zone ? this.escapeHtml(zone.label) : ''}">
+                        <td><span class="wc-pos ${zone ? 'comp-zone-pos' : `p${Math.min(4, row.position || 4)}`}"${zone ? ` style="--comp-zone:${zone.color}"` : ''}>${row.position || '-'}</span></td>
                         <td>${this.renderTeamLogo(row.logoData || row.logo, row.team)} ${row.team}</td>
                         <td>${row.played ?? 0}</td><td>${row.wins ?? 0}</td><td>${row.draws ?? 0}</td><td>${row.losses ?? 0}</td>
                         <td>${row.scoresFor ?? 0}</td><td>${row.scoresAgainst ?? 0}</td><td>${row.goalDiff ?? 0}</td><td>${row.points ?? 0}</td>
-                    </tr>`).join('')}</tbody>
+                    </tr>`; }).join('')}</tbody>
                 </table>
+                ${zones.length ? `<div class="comp-standings-legend">${zones.map(zone => `<span><i style="background:${zone.color}"></i>${this.escapeHtml(zone.label)}</span>`).join('')}</div>` : ''}
             </section>
         `;
     },
@@ -239,12 +257,47 @@ const Competitions = {
             }))
             : this.getTeams(data).map(name => ({ name, logo: this.findTeamLogo(data, name), meta: '', form: this.formFromMatches(data, name) }));
         return `<section class="comp-team-grid">${teams.map(team => `
-            <article class="comp-team-card">
+            <button type="button" class="comp-team-card" onclick="Competitions.openTeam('${this.escapeAttr(team.name)}')">
                 ${this.renderTeamLogo(team.logo, team.name, 'large')}
                 <strong>${team.name}</strong>
                 <span>${team.meta}</span>
                 ${this.formHtml(team.form)}
-            </article>`).join('')}</section>`;
+            </button>`).join('')}</section>`;
+    },
+
+    renderTeamDetails(data, teamName) {
+        const row = (data.standings || []).find(item => item.team === teamName) || {};
+        const profile = this.teamProfile(data, teamName, true);
+        const matches = (data.matches || []).filter(match => match.home === teamName || match.away === teamName);
+        const finished = matches.filter(match => match.status === 'Encerrado').sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)).slice(0, 5);
+        const upcoming = matches.filter(match => match.status !== 'Encerrado').sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)).slice(0, 6);
+        const scorers = (data.scorers || []).filter(item => item.team === teamName).slice(0, 5);
+        const zone = this.standingZone(row);
+        return `
+            <section class="comp-team-detail-head">
+                <button type="button" onclick="Competitions.closeTeam()"><i class='bx bx-arrow-back'></i> Times</button>
+                ${this.renderTeamLogo(row.logoData || row.logo || this.findTeamLogo(data, teamName), teamName, 'large')}
+                <div><span>${this.getActiveCompetition()?.name || ''}</span><h3>${this.escapeHtml(teamName)}</h3><p>${zone ? zone.label : `${row.position || '-'}º lugar`} · ${row.points ?? 0} pontos</p></div>
+            </section>
+            <section class="wc-summary-row comp-team-metrics">
+                ${this.metric('Posição', row.position || '-', 'bx-list-ol')}
+                ${this.metric('Pontos', row.points ?? 0, 'bx-medal')}
+                ${this.metric('Gols marcados', row.scoresFor ?? 0, 'bx-football')}
+                ${this.metric('Gols sofridos', row.scoresAgainst ?? 0, 'bx-shield-x')}
+                ${this.metric('Pontos/jogo', profile.ppg.toFixed(2), 'bx-line-chart')}
+            </section>
+            <section class="comp-team-detail-grid">
+                <article class="wc-panel"><div class="wc-panel-head"><h3>Próximos jogos</h3><span>${upcoming.length}</span></div><div class="comp-next-grid">${upcoming.map(match => this.renderCompactMatch(match)).join('') || this.empty('Sem jogos futuros', 'Nenhuma partida agendada nesta temporada.')}</div></article>
+                <article class="wc-panel"><div class="wc-panel-head"><h3>Forma recente</h3>${this.formHtml(profile.form)}</div><div class="comp-next-grid">${finished.map(match => this.renderCompactMatch(match)).join('') || this.empty('Sem resultados', 'Nenhuma partida encerrada encontrada.')}</div></article>
+                <article class="wc-panel comp-team-numbers"><div class="wc-panel-head"><h3>Desempenho</h3></div>
+                    <div class="comp-stat-row"><span>Gols feitos / jogo</span><strong>${profile.goalsForAvg.toFixed(2)}</strong></div>
+                    <div class="comp-stat-row"><span>Gols sofridos / jogo</span><strong>${profile.goalsAgainstAvg.toFixed(2)}</strong></div>
+                    <div class="comp-stat-row"><span>Over 2.5</span><strong>${profile.over25}%</strong></div>
+                    <div class="comp-stat-row"><span>Ambos marcam</span><strong>${profile.btts}%</strong></div>
+                    <div class="comp-stat-row"><span>Jogos sem sofrer gol</span><strong>${profile.cleanSheets}</strong></div>
+                </article>
+                <article class="wc-panel comp-team-scorers"><div class="wc-panel-head"><h3>Artilheiros</h3></div>${scorers.map((item, index) => `<div><b>${index + 1}</b><span>${this.escapeHtml(item.player || '-')}</span><strong>${item.goals || 0}</strong></div>`).join('') || '<p>Sem artilheiros disponíveis.</p>'}</article>
+            </section>`;
     },
 
     renderLeaders(data) {
@@ -455,6 +508,24 @@ const Competitions = {
         </article>`;
     },
 
+    renderUpcomingRound(data) {
+        const allMatches = Array.isArray(data?.matches) ? data.matches : [];
+        const live = allMatches.filter(match => match.status === 'Ao vivo');
+        const scheduled = allMatches.filter(match => match.status !== 'Encerrado').sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+        const reference = live[0] || scheduled[0];
+        if (!reference) return '';
+        const round = String(reference.round || '').trim();
+        const matches = round
+            ? allMatches.filter(match => String(match.round || '').trim() === round && (live.length ? true : match.status !== 'Encerrado'))
+            : allMatches.filter(match => match.date === reference.date && match.status !== 'Encerrado');
+        const sorted = matches.sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)).slice(0, 12);
+        const title = live.length ? 'Rodada em andamento' : 'Próxima rodada';
+        return `<section class="wc-panel comp-upcoming-round">
+            <div class="wc-panel-head"><div><span>${title}</span><h3>${round ? `Rodada ${this.escapeHtml(round)}` : this.formatLongDate(reference.date)}</h3></div><b>${sorted.length} partidas</b></div>
+            <div class="comp-upcoming-strip">${sorted.map(match => this.renderCompactMatch(match)).join('')}</div>
+        </section>`;
+    },
+
     renderDetails(match) {
         const state = this.details[match.id] || {};
         if (state.loading) return `<section class="wc-match-details"><div class="wc-details-loading"><i class='bx bx-loader-alt bx-spin'></i> Carregando detalhes...</div></section>`;
@@ -592,6 +663,7 @@ const Competitions = {
         this.activeCompareMatchId = null;
         this.comparison = { home: '', away: '' };
         this.expandedMatchId = null;
+        this.activeTeam = '';
         this.filters = { search: '', date: 'all' };
         this.updateSyncMessage();
         this.render();
@@ -599,6 +671,11 @@ const Competitions = {
     },
 
     backToCatalog() {
+        if (this.activeTeam) {
+            this.activeTeam = '';
+            this.render();
+            return;
+        }
         this.activeCompetitionId = null;
         this.expandedMatchId = null;
         this.syncState.message = 'Escolha uma competição';
@@ -625,7 +702,7 @@ const Competitions = {
         if (!this.getCompetitionData().matches.length) this.sync({ silent: true });
     },
 
-    setTab(tab) { this.activeTab = tab; this.render(); },
+    setTab(tab) { this.activeTab = tab; this.activeTeam = ''; this.render(); },
     setLeadersTab(tab) { this.leadersTab = tab; this.render(); },
     setCompareTeam(side, team) {
         this.comparison[side] = team;
@@ -644,6 +721,16 @@ const Competitions = {
         this.render();
         if (matchId) this.loadCompareDetails(matchId);
     },
+    openTeam(teamName) {
+        this.activeTeam = teamName;
+        this.activeTab = 'times';
+        this.expandedMatchId = null;
+        this.render();
+    },
+    closeTeam() {
+        this.activeTeam = '';
+        this.render();
+    },
     async loadCompareDetails(matchId) {
         const match = this.getCompetitionData().matches.find(item => item.id === matchId);
         if (!match || !window.traderCompetitionData?.matchDetails) return;
@@ -660,7 +747,21 @@ const Competitions = {
         if (this.activeCompareMatchId === matchId) this.render();
     },
     setFilter(key, value) { this.filters[key] = value; this.render(); },
-    setSearch(value) { this.filters.search = value; this.render(); },
+    setSearch(value) {
+        this.filters.search = value;
+        clearTimeout(this.searchTimer);
+        this.searchTimer = setTimeout(() => {
+            const input = document.getElementById('competition-games-search');
+            const cursor = input?.selectionStart ?? String(this.filters.search).length;
+            this.render();
+            requestAnimationFrame(() => {
+                const next = document.getElementById('competition-games-search');
+                if (!next) return;
+                next.focus({ preventScroll: true });
+                next.setSelectionRange(Math.min(cursor, next.value.length), Math.min(cursor, next.value.length));
+            });
+        }, 140);
+    },
 
     loadCache() {
         try {
@@ -795,6 +896,30 @@ const Competitions = {
 
     getDates(data) {
         return [...new Set(data.matches.map(match => match.date))].sort();
+    },
+
+    standingZone(row) {
+        const promotion = row?.promotion;
+        const label = String((promotion && typeof promotion === 'object' ? (promotion.name || promotion.text) : promotion) || row?.promotionName || '').trim();
+        if (!label) return null;
+        const normalized = this.normalize(label);
+        let color = '#64748b';
+        if (/champions|libertadores|continental|afc champions/.test(normalized)) color = '#2563eb';
+        else if (/europa|sudamericana/.test(normalized)) color = '#f59e0b';
+        else if (/conference/.test(normalized)) color = '#16a34a';
+        else if (/releg|rebaix|descenso/.test(normalized)) color = '#ef4444';
+        else if (/playoff|qualif|repesc/.test(normalized)) color = '#8b5cf6';
+        else if (/promot|promoc/.test(normalized)) color = '#10b981';
+        return { label, color };
+    },
+
+    getStandingZones(rows) {
+        const seen = new Set();
+        return (rows || []).map(row => this.standingZone(row)).filter(zone => {
+            if (!zone || seen.has(zone.label)) return false;
+            seen.add(zone.label);
+            return true;
+        });
     },
 
     displayStatus(match) {
@@ -1167,6 +1292,12 @@ const Competitions = {
 
     escapeAttr(value) {
         return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    },
+
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        }[char]));
     }
 };
 
