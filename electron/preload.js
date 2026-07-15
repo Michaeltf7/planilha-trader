@@ -177,6 +177,10 @@ contextBridge.exposeInMainWorld('traderCompetitionData', {
 contextBridge.exposeInMainWorld('traderSofascoreData', {
   momentum: (payload) => ipcRenderer.invoke('sofascore:momentum', payload),
   eventDetails: (payload) => ipcRenderer.invoke('sofascore:event-details', payload),
+  matchDetails: (payload) => ipcRenderer.invoke('sofascore:match-details', payload),
+  teamAnalysis: (payload) => ipcRenderer.invoke('sofascore:team-analysis', payload),
+  teamGoalTypes: (payload) => ipcRenderer.invoke('sofascore:team-goal-types', payload),
+  eventStandings: (payload) => ipcRenderer.invoke('sofascore:event-standings', payload),
   tournamentLogo: (payload) => ipcRenderer.invoke('sofascore:tournament-logo', payload),
   tournamentCalendar: (payload) => ipcRenderer.invoke('sofascore:tournament-calendar', payload)
 });

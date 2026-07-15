@@ -227,23 +227,21 @@
 
     body.layout-market-widget .odds-shell { display: block; padding: 0; border: 0; background: transparent; box-shadow: none; }
     body.layout-market-widget .compact-odds-card { position: relative; }
-    .match-odds-strip { position: relative; width: 100%; height: 100%; display: grid; grid-template-rows: 29px minmax(0,1fr); gap: 3px; padding: 6px 7px; border: 1px solid rgba(148,163,184,.3); border-radius: 14px; background: linear-gradient(155deg, rgba(5,11,20,.985), rgba(7,17,31,.985) 55%, rgba(11,22,40,.985)); box-shadow: 0 12px 35px rgba(0,0,0,.48); overflow: hidden; }
-    .match-odds-strip header { min-width: 0; display: grid; grid-template-columns: 27px minmax(0,1fr) 21px; align-items: center; gap: 5px; -webkit-app-region: drag; }
-    .match-odds-strip header > b { height: 20px; display: grid; place-items: center; border-radius: 5px; background: #f8fafc; color: #07111f; font-size: 9px; }
-    .match-odds-strip header > strong { overflow: hidden; color: #f8fafc; font-size: clamp(10px, 3.2cqw, 14px); font-weight: 900; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-    .match-odds-strip header > strong i { margin: 0 4px; color: #64748b; font-style: normal; }
-    .match-odds-strip header button { width: 21px; height: 21px; display: grid; place-items: center; border: 1px solid #334155; border-radius: 5px; background: #101b2c; color: #cbd5e1; cursor: pointer; -webkit-app-region: no-drag; }
+    .match-odds-strip { position: relative; width: 100%; height: 100%; display: grid; grid-template-rows: clamp(26px, 19cqh, 40px) minmax(0,1fr); gap: clamp(3px, 2cqh, 6px); padding: clamp(4px, 2.6cqh, 7px); border: 1px solid rgba(148,163,184,.5); border-radius: clamp(10px, 7cqh, 15px); background: linear-gradient(155deg, rgba(3,8,15,.99), rgba(5,13,23,.99) 58%, rgba(8,20,31,.99)); box-shadow: 0 10px 28px rgba(0,0,0,.52), 0 0 16px rgba(34,197,94,.12); overflow: hidden; }
+    .match-odds-strip header { position: relative; min-width: 0; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(100,116,139,.42); -webkit-app-region: drag; }
+    .match-odds-strip header > strong { overflow: hidden; color: #f8fafc; font-size: clamp(14px, 7cqw, 20px); font-weight: 900; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+    .match-odds-strip header button { position: absolute; right: 0; top: 50%; width: 23px; height: 23px; display: grid; place-items: center; border: 1px solid #334155; border-radius: 6px; background: #101b2c; color: #cbd5e1; cursor: pointer; transform: translateY(-50%); -webkit-app-region: no-drag; }
     .match-strip-head, .match-strip-row { display: grid; grid-template-columns: minmax(38px,.7fr) repeat(2,minmax(62px,1fr)) 17px; align-items: center; gap: 5px; }
     .match-strip-head { color: #64748b; font-size: 7px; font-weight: 900; text-align: center; }
-    .match-strip-rows { min-height: 0; display: grid; grid-template-rows: repeat(3,minmax(0,1fr)); gap: 2px; }
-    .match-strip-row { min-height: 0; padding: 2px 3px; border: 1px solid rgba(51,65,85,.82); border-radius: 7px; background: rgba(12,23,40,.9); }
-    .match-strip-row strong { color: #f1f5f9; font-size: 11px; }
-    .match-strip-row b { min-width: 0; padding: 3px 4px; border-radius: 5px; font-size: clamp(15px, 5cqw, 21px); line-height: 1; text-align: center; }
-    .match-strip-row b.bet365 { background: rgba(23,69,53,.92); color: #36d98b; }
-    .match-strip-row b.betfair { background: rgba(94,63,0,.78); color: #ffb000; }
-    .match-strip-row i { font-size: 14px; text-align: center; }
-    .match-odds-strip.bet365-only .match-strip-row { grid-template-columns: minmax(38px, 48px) minmax(68px, 96px) 22px; justify-content: space-between; gap: 3px; }
-    .match-odds-strip.bet365-only .match-strip-row b.bet365 { width: 100%; justify-self: center; padding-inline: 6px; }
+    .match-strip-rows { min-height: 0; display: grid; grid-template-rows: repeat(3,minmax(0,1fr)); gap: clamp(2px, 1.6cqh, 5px); }
+    .match-strip-row { min-height: 0; display: grid; grid-template-columns: minmax(27px,.62fr) 1px minmax(39px,1fr) clamp(13px,8cqw,22px); align-items: center; gap: clamp(3px, 2.6cqw, 8px); padding: clamp(2px,1.7cqh,3px) clamp(4px,2.8cqw,8px); border: 1px solid rgba(34,197,94,.9); border-radius: clamp(7px,4.8cqh,10px); background: linear-gradient(90deg, rgba(0,55,33,.62), rgba(0,34,24,.82)); box-shadow: inset 0 0 13px rgba(34,197,94,.08); }
+    .match-strip-row strong { overflow: hidden; color: #f8fafc; font-size: clamp(8px, 5.2cqw, 16px); font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+    .match-strip-divider { align-self: stretch; width: 1px; margin-block: 3px; background: rgba(148,163,184,.34); }
+    .match-strip-row b { min-width: 0; padding: 0; font-size: clamp(13px, 8cqw, 26px); line-height: 1; text-align: center; }
+    .match-strip-row b.bet365 { background: transparent; color: #20e477; text-shadow: 0 0 12px rgba(32,228,119,.24); }
+    .match-strip-row i { font-size: clamp(14px, 8cqw, 25px); text-align: center; cursor: help; }
+    .match-odds-strip.bet365-only .match-strip-row { grid-template-columns: minmax(27px,.62fr) 1px minmax(39px,1fr) clamp(13px,8cqw,22px); gap: clamp(3px, 2.6cqw, 8px); }
+    .match-odds-strip.bet365-only .match-strip-row b.bet365 { width: auto; justify-self: stretch; padding: 0; }
     .match-book-head { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; }
     .match-book-head > strong { color: #cbd5e1; font-size: 7px; }
     .match-book-head.bet365 > i { width: 22px; height: 22px; display: grid; place-items: center; align-content: center; border-radius: 5px; background: linear-gradient(180deg,#16875d,#07583e); font-style: normal; line-height: .75; }
@@ -344,10 +342,11 @@
       body.layout-market-widget .compact-rate-values b { font-size: 8px; }
       body.layout-market-widget .premium-secondary-market { grid-template-columns: 67px repeat(2, minmax(64px, 1fr)); }
     }
-    .bet365-goal-strip { container-type: size; position: relative; width: 100%; height: 100%; min-width: 0; display: grid; grid-template-rows: clamp(27px, 18cqh, 38px) minmax(0, 1fr); gap: clamp(3px, 2.4cqh, 6px); padding: clamp(6px, 4cqh, 11px); border: 1px solid rgba(54,217,139,.35); border-radius: clamp(10px, 4cqh, 17px); background: linear-gradient(155deg, rgba(5,11,20,.985), rgba(7,25,25,.985)); box-shadow: 0 12px 35px rgba(0,0,0,.48); overflow: hidden; }
-    .bet365-goal-strip > header { min-width: 0; display: grid; grid-template-columns: minmax(62px,auto) minmax(0,1fr) 24px; align-items: center; gap: 6px; padding-bottom: 3px; border-bottom: 1px solid rgba(148,163,184,.14); -webkit-app-region: drag; }
+    .bet365-goal-strip { container-type: size; position: relative; width: 100%; height: 100%; min-width: 0; display: grid; grid-template-rows: clamp(18px, 22cqh, 34px) minmax(0, 1fr); gap: 0; padding: clamp(2px,2cqh,3px); border: 1px solid rgba(100,116,139,.7); border-radius: clamp(7px, 5cqh, 15px); background: linear-gradient(155deg, rgba(7,12,20,.99), rgba(7,16,24,.99)); box-shadow: 0 10px 30px rgba(0,0,0,.5); overflow: hidden; }
+    .bet365-goal-strip > header { position: relative; min-width: 0; display: grid; place-items: center; padding: 0 clamp(20px,9cqw,30px); border-bottom: 1px solid rgba(148,163,184,.24); -webkit-app-region: drag; }
     .bet365-goal-strip > header .compact-tool { -webkit-app-region: no-drag; }
-    .bet365-goal-strip > header > strong { overflow: hidden; color: #f8fafc; font-size: clamp(11px, 7cqh, 16px); font-weight: 900; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+    .bet365-goal-strip > header .compact-tool { position: absolute; top: 50%; right: 2px; width: clamp(18px,17cqh,23px); height: clamp(18px,17cqh,23px); transform: translateY(-50%); }
+    .bet365-goal-strip > header > strong { overflow: hidden; color: #f8fafc; font-size: clamp(9px, 12cqh, 22px); font-weight: 950; letter-spacing: 0; line-height: 1; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
     .goal-market-badges { display: flex; align-items: center; gap: 4px; }
     .goal-market-badges b, .goal-market-badges em { padding: 3px 5px; border-radius: 5px; font-size: clamp(7px, 4.5cqh, 10px); font-style: normal; font-weight: 900; }
     .goal-market-badges b { background: #e2e8f0; color: #07111f; }
@@ -356,17 +355,17 @@
     .bet365-goal-live .compact-live-status { margin: 0; padding: 0; border: 0; gap: 7px; }
     .bet365-goal-live .compact-live-status b { font-size: clamp(10px, 6cqh, 14px); }
     .bet365-goal-live .compact-live-status em { font-size: clamp(9px, 5.5cqh, 13px) !important; font-weight: 900; }
-    .bet365-goal-pair { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: clamp(4px, 1.7cqw, 8px); }
+    .bet365-goal-pair { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: clamp(2px,1.4cqw,4px); padding-top: clamp(2px,2cqh,3px); }
     .bet365-goal-pair.count-1 { grid-template-columns: minmax(0,1fr); }
-    .bet365-goal-price { min-width: 0; display: grid; grid-template-rows: auto minmax(0,1fr); place-items: center; align-content: center; gap: 0; padding: clamp(2px, 1.2cqh, 5px); border: 1px solid rgba(54,217,139,.42); border-radius: clamp(8px, 3cqh, 12px); background: linear-gradient(180deg, rgba(19,69,53,.94), rgba(9,42,34,.96)); color: #f4e70b; }
-    .bet365-goal-price small { width: 100%; color: #a7f3d0; font-size: clamp(10px, 6.2cqh, 15px); font-weight: 950; line-height: 1; text-align: center; text-shadow: 0 0 8px currentColor; }
-    .bet365-goal-price.over { border-color: rgba(52,211,153,.82); box-shadow: inset 0 3px 0 rgba(52,211,153,.72); }
-    .bet365-goal-price.over small { color: #6ee7b7; }
-    .bet365-goal-price.under { border-color: rgba(245,158,11,.82); background: linear-gradient(180deg, rgba(72,52,18,.94), rgba(43,31,9,.96)); box-shadow: inset 0 3px 0 rgba(245,158,11,.72); }
-    .bet365-goal-price.under small { color: #fbbf24; }
-    .goal-price-value { min-width: 0; display: inline-grid; grid-template-columns: minmax(0,auto) auto; align-items: center; justify-content: center; gap: clamp(5px, 1.8cqw, 11px); }
-    .goal-price-value b { min-width: 0; overflow: hidden; font-size: clamp(24px, 20cqh, 42px); line-height: .92; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-    .goal-price-value > i { font-size: clamp(22px, 16cqh, 34px); font-weight: 900; text-align: center; filter: drop-shadow(0 0 7px currentColor); animation: goalTrendPulse 1.35s ease-in-out infinite; cursor: help; }
+    .bet365-goal-price { min-width: 0; display: grid; grid-template-columns: auto 1px minmax(0,1fr); align-items: center; gap: clamp(3px, 1.4cqw, 9px); padding: clamp(2px, 2.2cqh, 7px) clamp(4px, 1.8cqw, 10px); border: clamp(1px, 1.8cqh, 2px) solid rgba(54,217,139,.75); border-radius: clamp(6px, 5cqh, 14px); background: linear-gradient(135deg, rgba(4,53,31,.96), rgba(3,26,22,.98)); color: #f8fafc; box-shadow: inset 0 0 20px rgba(34,197,94,.08), 0 0 12px rgba(34,197,94,.12); }
+    .bet365-goal-price.over { border-color: #35dc71; }
+    .bet365-goal-price.under { border-color: #f4ad00; background: linear-gradient(135deg, rgba(61,42,3,.97), rgba(32,23,4,.98)); box-shadow: inset 0 0 20px rgba(245,158,11,.08), 0 0 12px rgba(245,158,11,.12); }
+    .goal-side-letter { color: #35dc71; font-size: clamp(14px, 24cqh, 38px); font-weight: 950; line-height: 1; text-shadow: 0 0 9px rgba(53,220,113,.5); }
+    .bet365-goal-price.under .goal-side-letter { color: #f4ad00; text-shadow: 0 0 9px rgba(244,173,0,.5); }
+    .goal-price-divider { align-self: stretch; width: 1px; background: currentColor; opacity: .25; }
+    .goal-price-value { min-width: 0; display: inline-grid; grid-template-columns: minmax(0,auto); align-items: center; justify-content: center; gap: 0; }
+    .goal-price-value b { min-width: 0; overflow: hidden; color: #f8fafc; font-size: clamp(16px, 24cqh, 40px); font-weight: 950; line-height: .92; text-align: center; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+    .goal-price-value > i { font-size: clamp(20px, 20cqh, 32px); font-weight: 900; text-align: center; filter: drop-shadow(0 0 7px currentColor); animation: goalTrendPulse 1.35s ease-in-out infinite; cursor: help; }
     @keyframes goalTrendPulse { 0%,100% { transform: scale(1); opacity: .82; } 50% { transform: scale(1.2); opacity: 1; } }
     .bet365-goal-strip .compact-market-state,
     .match-odds-strip .compact-market-state { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 2px solid rgba(239,68,68,.9); border-radius: inherit; background: rgba(127,29,29,.72); color: #fff; font-size: clamp(13px, 8cqh, 20px); font-weight: 900; text-align: center; backdrop-filter: blur(2px); }
@@ -374,23 +373,18 @@
     .match-odds-strip.is-var .compact-market-state { border-color: #f59e0b; background: rgba(154,52,18,.72); color: #fff7ed; }
     .market-state-symbol { min-width: 38px; min-height: 30px; display: grid; place-items: center; padding: 4px 8px; border-radius: 7px; background: rgba(0,0,0,.35); color: inherit; font-size: clamp(17px, 11cqh, 28px); line-height: 1; box-shadow: 0 0 16px currentColor; }
     @media (max-width: 330px) {
-      .bet365-goal-strip { padding: 6px; }
-      .bet365-goal-price { padding: 5px; }
-      .bet365-goal-price b { font-size: 24px; }
+      .bet365-goal-price { gap: 5px; padding-inline: 6px; }
     }
     @media (max-width: 180px) {
-      .bet365-goal-strip { grid-template-rows: 25px minmax(0,1fr); padding: 4px; gap: 3px; border-radius: 9px; }
-      .bet365-goal-strip > header { grid-template-columns: 34px minmax(0,1fr) 20px; gap: 3px; }
-      .bet365-goal-strip > header > strong { font-size: 9px; }
-      .goal-market-badges { gap: 0; }
-      .goal-market-badges b { padding: 3px 4px; font-size: 7px; }
-      .goal-market-badges em { display: none; }
+      .bet365-goal-strip { grid-template-rows: 23px minmax(0,1fr); border-radius: 8px; }
+      .bet365-goal-strip > header { padding-inline: 23px; }
+      .bet365-goal-strip > header > strong { font-size: 10px; }
       .bet365-goal-strip > header .compact-tool { width: 20px; height: 20px; }
-      .bet365-goal-price { padding: 2px; border-radius: 7px; }
-      .bet365-goal-price small { font-size: 8px; }
+      .bet365-goal-price { grid-template-columns: auto 1px minmax(0,1fr); gap: 3px; padding: 3px 4px; border-width: 1px; border-radius: 6px; }
+      .goal-side-letter { font-size: 17px; }
       .goal-price-value { gap: 3px; }
-      .goal-price-value b { font-size: 21px; }
-      .goal-price-value > i { font-size: 18px; }
+      .goal-price-value b { font-size: 18px; }
+      .goal-price-value > i { font-size: 15px; }
     }
     .market-widget { position: relative; width: 100%; height: 100%; min-width: 0; display: grid; align-content: start; gap: 4px; padding: 7px; border: 1px solid #34465e; border-radius: 8px; background: rgba(3, 10, 20, .96); box-shadow: 0 8px 24px rgba(0,0,0,.42); overflow: hidden; }
     .market-widget > header { height: 22px; display: grid; grid-template-columns: 29px minmax(0,1fr) auto; align-items: center; gap: 6px; -webkit-app-region: drag; }

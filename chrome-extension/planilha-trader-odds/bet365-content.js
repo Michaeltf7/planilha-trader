@@ -1,6 +1,6 @@
 (() => {
   const API = 'http://127.0.0.1:38465/odds';
-  const HEADERS = { 'content-type': 'application/json', 'x-planilha-trader': 'extension-v1' };
+  const BASE_HEADERS = { 'content-type': 'application/json', 'x-planilha-trader': 'extension-v1' };
   let target = null;
   let lastSignature = '';
   let openedMatch = false;
@@ -21,6 +21,7 @@
   let primaryHtGoalLine = null;
   let searchVariantIndex = 0;
   let lastSearchAt = 0;
+  let lastObservedGoals = null;
 
   const normalize = value => String(value || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -86,7 +87,10 @@
     if (signature === lastSignature) return;
     lastSignature = signature;
     try {
-      await fetch(API, { method: 'POST', headers: HEADERS, body: JSON.stringify(payload) });
+      const headers = target.collectorToken
+        ? { ...BASE_HEADERS, 'x-planilha-client': target.collectorToken }
+        : BASE_HEADERS;
+      await fetch(API, { method: 'POST', headers, body: JSON.stringify(payload) });
     } catch (_) {}
   }
 
@@ -365,6 +369,14 @@
     };
   }
 
+  function firstGoalLineAbove(lines, goals, offset = 0) {
+    const ordered = (Array.isArray(lines) ? lines : [])
+      .map(line => Number(line?.line))
+      .filter(line => Number.isFinite(line) && line > goals)
+      .sort((left, right) => left - right);
+    return ordered[offset] ?? null;
+  }
+
   function requestPeriodMarkets() {
     if (periodTabState !== 'idle' || !lastFtGoalLines.length) return;
     const label = leafElements().find(element => {
@@ -567,15 +579,27 @@
     const parsedPrices = parseMatchOdds();
     if (Object.values(parsedPrices).some(Boolean)) lastMatchPrices = parsedPrices;
     const liveMatch = parseLiveMatchState();
-    ensureMoreGoalsExpanded();
-    const parsedGoalMarkets = parseExpandedGoalMarkets();
-    if (parsedGoalMarkets.ft.length) lastFtGoalLines = parsedGoalMarkets.ft;
     const currentGoals = liveMatch
       ? Number(liveMatch.score.home || 0) + Number(liveMatch.score.away || 0)
       : Number(target?.score?.home || 0) + Number(target?.score?.away || 0);
+    const goalChanged = Number.isFinite(lastObservedGoals) && currentGoals !== lastObservedGoals;
+    if (goalChanged) {
+      lastFtGoalLines = [];
+      lastHtGoalLines = [];
+      primaryFtGoalLine = null;
+      primaryHtGoalLine = null;
+      moreGoalsExpandRequested = false;
+      lastGoalExpandClickAt = 0;
+      periodTabState = 'idle';
+      lastSignature = '';
+    }
+    lastObservedGoals = currentGoals;
+    ensureMoreGoalsExpanded();
+    const parsedGoalMarkets = parseExpandedGoalMarkets();
+    if (parsedGoalMarkets.ft.length) lastFtGoalLines = parsedGoalMarkets.ft;
     if (parsedGoalMarkets.ht.length) lastHtGoalLines = parsedGoalMarkets.ht;
-    if (parsedGoalMarkets.ftPrimary) primaryFtGoalLine = parsedGoalMarkets.ftPrimary;
-    if (parsedGoalMarkets.htPrimary) primaryHtGoalLine = parsedGoalMarkets.htPrimary;
+    primaryFtGoalLine = firstGoalLineAbove(lastFtGoalLines, currentGoals);
+    primaryHtGoalLine = firstGoalLineAbove(lastHtGoalLines, currentGoals);
     if (periodTabState === 'requested' && (lastHtGoalLines.length || Date.now() - periodTabRequestedAt > 1800)) restorePopularTab();
     else requestPeriodMarkets();
     const pageText = normalize(document.body?.innerText || '');
@@ -627,6 +651,7 @@
         primaryHtGoalLine = null;
         searchVariantIndex = 0;
         lastSearchAt = 0;
+        lastObservedGoals = null;
       }
       lastSignature = '';
       scan();

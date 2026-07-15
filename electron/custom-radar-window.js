@@ -6,15 +6,16 @@
     realData: null,
     error: '',
     theme: localStorage.getItem('custom_wradar_mod_theme') || 'dark',
-    density: localStorage.getItem('custom_wradar_mod_density') || 'wide',
+    density: localStorage.getItem('custom_wradar_mod_density') || 'compact',
     radarLayout: localStorage.getItem('custom_wradar_mod_layout') === 'ticker' ? 'ticker' : 'standard',
     cleanOverlay: true,
     overlayReplica: false,
-    showOdds: localStorage.getItem('custom_wradar_mod_show_odds') !== '0',
-    showMeta: localStorage.getItem('custom_wradar_mod_show_meta') !== '0',
+    showOdds: localStorage.getItem('custom_wradar_mod_show_odds') === '1',
+    showMeta: localStorage.getItem('custom_wradar_mod_show_meta') === '1',
     showIconGallery: localStorage.getItem('custom_wradar_mod_show_icon_gallery') === '1',
     personalizationTab: localStorage.getItem('custom_wradar_mod_personalization_tab') || 'profiles',
     visualProfile: localStorage.getItem('custom_wradar_mod_visual_profile') || 'custom',
+    scoreHighlight: localStorage.getItem('custom_wradar_mod_score_highlight') !== '0',
     radarIconScale: Number(localStorage.getItem('custom_wradar_mod_radar_icon_scale') || localStorage.getItem('custom_wradar_mod_icon_scale')) || 1,
     pressureIconScale: Number(localStorage.getItem('custom_wradar_mod_pressure_icon_scale') || localStorage.getItem('custom_wradar_mod_icon_scale')) || 1,
     componentSettings: (() => {
@@ -31,17 +32,8 @@
         return {};
       }
     })(),
-    alertSettings: (() => {
-      try {
-        return JSON.parse(localStorage.getItem('custom_wradar_mod_alert_settings') || '{}') || {};
-      } catch (_) {
-        return {};
-      }
-    })(),
-    alertRuntime: { signature: '', firedAt: {}, visualUntil: 0, message: '' },
     colorPickerActive: false,
-    showAutoSummary: localStorage.getItem('custom_wradar_mod_show_auto_summary') !== '0',
-    showLiveIntelligence: localStorage.getItem('custom_wradar_mod_show_live_intelligence') !== '0',
+    showLiveIntelligence: localStorage.getItem('custom_wradar_mod_show_live_intelligence') === '1',
     intelligenceSettings: (() => {
       try {
         return JSON.parse(localStorage.getItem('custom_wradar_mod_intelligence_settings') || '{}') || {};
@@ -82,6 +74,7 @@
     overlayOpacity: Number(localStorage.getItem('custom_wradar_mod_overlay_opacity')) || 1,
     overlayContentMode: localStorage.getItem('custom_wradar_mod_overlay_content_mode') || 'full',
     overlayAlwaysOnTop: true,
+    windowDragging: false,
     layoutEditMode: false,
     cardLayout: (() => {
       try {
@@ -95,13 +88,93 @@
     pinnedIndex: null,
     lastSignature: '',
     interactingUntil: 0,
-    deferredTimer: null
+    deferredTimer: null,
+    renderFrame: 0,
+    widgetHtmlCache: Object.create(null)
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
   }[char]));
+  const memoizedWidgetHtml = (key, signatureValue, factory) => {
+    const signatureText = String(signatureValue ?? '');
+    const cached = state.widgetHtmlCache[key];
+    if (cached?.signature === signatureText) return cached.html;
+    const html = factory();
+    state.widgetHtmlCache[key] = { signature: signatureText, html };
+    return html;
+  };
+  const radarNodeKey = node => {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return '';
+    return node.getAttribute('data-radar-key')
+      || (node.hasAttribute('data-layout-module') ? `module:${node.getAttribute('data-layout-module')}` : '');
+  };
+  const syncRadarAttributes = (current, next) => {
+    [...current.attributes].forEach(attribute => {
+      if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+    });
+    [...next.attributes].forEach(attribute => {
+      if (current.getAttribute(attribute.name) !== attribute.value) {
+        current.setAttribute(attribute.name, attribute.value);
+      }
+    });
+    if (current instanceof HTMLInputElement && next instanceof HTMLInputElement) {
+      if (current !== document.activeElement && current.value !== next.value) current.value = next.value;
+      current.checked = next.checked;
+    }
+  };
+  const reconcileRadarNode = (current, next) => {
+    if (current.isEqualNode(next)) return current;
+    if (current.nodeType !== next.nodeType
+      || (current.nodeType === Node.ELEMENT_NODE && current.nodeName !== next.nodeName)) {
+      const replacement = next.cloneNode(true);
+      current.replaceWith(replacement);
+      return replacement;
+    }
+    if (current.nodeType === Node.TEXT_NODE || current.nodeType === Node.COMMENT_NODE) {
+      if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
+      return current;
+    }
+    syncRadarAttributes(current, next);
+    reconcileRadarChildren(current, next);
+    return current;
+  };
+  const reconcileRadarChildren = (currentParent, nextParent) => {
+    const nextChildren = [...nextParent.childNodes];
+    nextChildren.forEach((nextChild, index) => {
+      const key = radarNodeKey(nextChild);
+      let currentChild = currentParent.childNodes[index] || null;
+      if (key) {
+        const keyedChild = [...currentParent.children].find(child => radarNodeKey(child) === key);
+        if (keyedChild && keyedChild !== currentChild) {
+          currentParent.insertBefore(keyedChild, currentChild);
+          currentChild = keyedChild;
+        } else if (!keyedChild && currentChild) {
+          const inserted = nextChild.cloneNode(true);
+          currentParent.insertBefore(inserted, currentChild);
+          currentChild = inserted;
+        }
+      }
+      if (!currentChild) {
+        currentParent.appendChild(nextChild.cloneNode(true));
+        return;
+      }
+      reconcileRadarNode(currentChild, nextChild);
+    });
+    while (currentParent.childNodes.length > nextChildren.length) {
+      currentParent.lastChild.remove();
+    }
+  };
+  const updateRadarContent = (content, html) => {
+    const template = document.createElement('template');
+    template.innerHTML = html.trim();
+    if (!content.childNodes.length) {
+      content.appendChild(template.content.cloneNode(true));
+      return;
+    }
+    reconcileRadarChildren(content, template.content);
+  };
   const radarIconSrc = fileName => encodeURI(`../icones radar mod/${fileName}`);
   const defaultRadarIconMap = {
     attack: { name: 'attack.png', src: radarIconSrc('attack.png') },
@@ -136,10 +209,6 @@
   const defaultColorSettings = {
     home: '#38bdf8', away: '#a78bfa', cold: '#22c55e', warm: '#facc15', hot: '#f97316', danger: '#ef4444'
   };
-  const defaultAlertSettings = {
-    enabled: false, sound: true, visual: true, notification: false,
-    pressure: true, sequence: true, shots: true, redCard: true, goalChance: true
-  };
   const defaultIntelligenceSettings = {
     balance: true, sequence: true, danger: true, dominance: true, comparison: true, sustained: true
   };
@@ -148,11 +217,9 @@
     ...(state.componentSettings?.[key] || {})
   });
   const colorSetting = key => state.colorSettings?.[key] || defaultColorSettings[key];
-  const alertSetting = key => state.alertSettings?.[key] ?? defaultAlertSettings[key];
   const intelligenceSetting = key => state.intelligenceSettings?.[key] ?? defaultIntelligenceSettings[key];
   const saveComponentSettings = () => localStorage.setItem('custom_wradar_mod_component_settings', JSON.stringify(state.componentSettings || {}));
   const saveColorSettings = () => localStorage.setItem('custom_wradar_mod_color_settings', JSON.stringify(state.colorSettings || {}));
-  const saveAlertSettings = () => localStorage.setItem('custom_wradar_mod_alert_settings', JSON.stringify(state.alertSettings || {}));
   const saveIntelligenceSettings = () => localStorage.setItem('custom_wradar_mod_intelligence_settings', JSON.stringify(state.intelligenceSettings || {}));
   const clampComponentScale = value => Math.max(0.6, Math.min(1.5, Math.round((Number(value) || 1) * 20) / 20));
   const clampComponentOpacity = value => Math.max(0.2, Math.min(1, Math.round((Number(value) || 1) * 10) / 10));
@@ -243,13 +310,17 @@
   const defaultCardLayout = {
     radar: { order: 0, span: 12, height: 0 },
     stats: { order: 1, span: 12, height: 0 },
-    summary: { order: 2, span: 5, height: 0 },
-    sofascore: { order: 3, span: 12, height: 0 },
-    'radar-pressure': { order: 4, span: 12, height: 0 },
-    intelligence: { order: 5, span: 12, height: 0 },
-    heatmap: { order: 6, span: 12, height: 0 },
-    alerts: { order: 7, span: 12, height: 0 }
+    sofascore: { order: 2, span: 12, height: 0 },
+    'radar-pressure': { order: 3, span: 12, height: 0 },
+    intelligence: { order: 4, span: 12, height: 0 },
+    heatmap: { order: 5, span: 12, height: 0 }
   };
+  if (localStorage.getItem('custom_wradar_mod_free_layout') === '1') {
+    state.cardLayout = {};
+    localStorage.removeItem('custom_wradar_mod_card_layout');
+    localStorage.removeItem('custom_wradar_mod_free_layout');
+  }
+  const cloneJson = value => JSON.parse(JSON.stringify(value ?? null));
   const cardLayoutFor = id => {
     const fallback = defaultCardLayout[id] || { order: 99, span: 12, height: 0 };
     const saved = state.cardLayout?.[id] || {};
@@ -273,14 +344,6 @@
     state.cardLayout = {};
     localStorage.removeItem('custom_wradar_mod_card_layout');
   };
-  if (state.cardLayout?.alerts && !state.cardLayout?.summary) {
-    state.cardLayout = {
-      ...state.cardLayout,
-      summary: { ...state.cardLayout.alerts },
-      alerts: { ...defaultCardLayout.alerts }
-    };
-    localStorage.setItem('custom_wradar_mod_card_layout', JSON.stringify(state.cardLayout));
-  }
   const commentText = text => String(text || '').replace(/\s+/g, ' ').trim()
     .replace(/(Intervalo)(?:\s*Intervalo)+/gi, '$1')
     .replace(/(Half Time)(?:\s*Half Time)+/gi, '$1');
@@ -684,7 +747,7 @@
     streaming: { fontScale: 0.82, overlayOpacity: 0.8, content: 'full', pressure: true, radarPressure: false, heatmapMode: 'match', heatmapStyle: 'wave', liveIntelligence: true }
   };
   const personalizationTabs = [
-    ['profiles', 'Perfis', 'bx-bookmark'], ['alerts', 'Alertas', 'bx-bell'], ['colors', 'Cores', 'bx-palette'],
+    ['profiles', 'Perfis', 'bx-bookmark'], ['colors', 'Cores', 'bx-palette'],
     ['components', 'Componentes', 'bx-layout'], ['icons', 'Icones', 'bx-image']
   ];
   const componentLabels = { score: 'Placar', events: 'Eventos', stats: 'Estatisticas', charts: 'Graficos', heatmap: 'Mapa de calor' };
@@ -724,20 +787,15 @@
       ].map(([key, label, description, icon]) => `<button class="custom-radar-profile-card ${state.visualProfile === key ? 'active' : ''}" data-action="profile-apply" data-profile="${key}"><i class='bx ${icon}'></i><strong>${label}</strong><small>${description}</small></button>`).join('')}</div>
       <div class="custom-radar-profile-actions"><button data-action="profile-save-custom"><i class='bx bx-save'></i> Salvar como Personalizado</button><small>Fonte, opacidade e componentes ficam neste perfil. Posicao e tamanho seguem as memorias 1, 2 e 3 da janela destacada.</small></div>
     </div>`;
-    const alertsPanel = `<div class="custom-radar-personalization-panel custom-radar-settings-grid">
-      <section><h4>Funcionamento</h4>${toggleControl('alert-setting', 'enabled', 'Ativar alertas', alertSetting('enabled'))}${toggleControl('alert-setting', 'sound', 'Som curto', alertSetting('sound'))}${toggleControl('alert-setting', 'visual', 'Destaque visual', alertSetting('visual'))}${toggleControl('alert-setting', 'notification', 'Notificacao do sistema', alertSetting('notification'))}</section>
-      <section><h4>Regras</h4>${toggleControl('alert-setting', 'pressure', 'Pressao crescente', alertSetting('pressure'))}${toggleControl('alert-setting', 'sequence', 'Sequencia de ataques perigosos', alertSetting('sequence'))}${toggleControl('alert-setting', 'shots', 'Muitos remates', alertSetting('shots'))}${toggleControl('alert-setting', 'redCard', 'Cartao vermelho', alertSetting('redCard'))}${toggleControl('alert-setting', 'goalChance', 'Possivel momento de gol', alertSetting('goalChance'))}</section>
-      <section><h4>Inteligencia ao vivo</h4>${toggleControl('summary-toggle', 'summary', 'Exibir resumo automatico', state.showAutoSummary)}${toggleControl('intelligence-toggle', 'intelligence', 'Exibir analise avancada', state.showLiveIntelligence)}<p>Descreve ritmo, perigo, dominio e pressao sem indicar mercado.</p></section>
-    </div>`;
     const colorLabels = { home: 'Time da casa', away: 'Time visitante', cold: 'Frio', warm: 'Atencao', hot: 'Quente', danger: 'Muito perigoso' };
     const colorsPanel = `<div class="custom-radar-personalization-panel custom-radar-color-grid">${Object.entries(colorLabels).map(([key, label]) => `<label><span>${label}</span><input type="color" value="${escapeHtml(colorSetting(key))}" data-action="color-change" data-color-key="${key}"><b>${escapeHtml(colorSetting(key))}</b></label>`).join('')}<button data-action="colors-reset"><i class='bx bx-reset'></i> Restaurar cores</button></div>`;
     const componentsPanel = `<div class="custom-radar-personalization-panel"><div class="custom-radar-component-grid">${Object.entries(componentLabels).map(([key, label]) => {
       const setting = componentSetting(key);
       return `<div class="custom-radar-component-row"><strong>${label}</strong><span>Escala</span><button data-action="component-scale-down" data-component="${key}"><i class='bx bx-minus'></i></button><b>${Math.round(setting.scale * 100)}%</b><button data-action="component-scale-up" data-component="${key}"><i class='bx bx-plus'></i></button><span>Opacidade</span><button data-action="component-opacity-down" data-component="${key}"><i class='bx bx-minus'></i></button><b>${Math.round(setting.opacity * 100)}%</b><button data-action="component-opacity-up" data-component="${key}"><i class='bx bx-plus'></i></button></div>`;
-    }).join('')}</div><button data-action="components-reset"><i class='bx bx-reset'></i> Restaurar componentes</button></div>`;
+    }).join('')}</div><div class="custom-radar-component-options">${toggleControl('score-highlight', 'scoreHighlight', 'Destacar numeros do placar', state.scoreHighlight)}</div><button data-action="components-reset"><i class='bx bx-reset'></i> Restaurar componentes</button></div>`;
     const previewHtml = `<section class="custom-radar-personalization-preview" aria-label="Visualizacao previa">
       <header><span>Visualizacao previa</span><small>Atualizacao imediata</small></header>
-      <div class="custom-radar-preview-score"><b data-preview-color="home" style="color:${colorSetting('home')}">CASA</b><strong>1 x 0</strong><b data-preview-color="away" style="color:${colorSetting('away')}">FORA</b></div>
+      <div class="custom-radar-preview-score"><b data-preview-color="home" style="color:${colorSetting('home')}">CASA</b><strong class="${state.scoreHighlight ? 'custom-radar-score-highlight' : ''}">1 x 0</strong><b data-preview-color="away" style="color:${colorSetting('away')}">FORA</b></div>
       <div class="custom-radar-preview-event"><i class='bx bx-target-lock'></i><span>62'18''</span><strong>Remate certeiro</strong></div>
       <div class="custom-radar-preview-stats"><span>AP 18-11</span><span>CG 5-2</span><span>ESC 6-3</span></div>
       <div class="custom-radar-preview-chart"><i data-preview-color="away" style="height:35%;background:${colorSetting('away')}"></i><i data-preview-color="home" style="height:55%;background:${colorSetting('home')}"></i><i data-preview-color="home" style="height:80%;background:${colorSetting('home')}"></i><i data-preview-color="away" style="height:42%;background:${colorSetting('away')}"></i><i data-preview-color="home" style="height:68%;background:${colorSetting('home')}"></i></div>
@@ -753,7 +811,7 @@
           </div>
           <nav class="custom-radar-personalization-tabs">${personalizationTabs.map(([key, label, icon]) => `<button class="${tab === key ? 'active' : ''}" data-action="personalization-tab" data-tab="${key}"><i class='bx ${icon}'></i><span>${label}</span></button>`).join('')}</nav>
           ${tab === 'colors' || tab === 'components' || tab === 'profiles' ? previewHtml : ''}
-          ${tab === 'profiles' ? profilePanel : tab === 'alerts' ? alertsPanel : tab === 'colors' ? colorsPanel : tab === 'components' ? componentsPanel : ''}
+          ${tab === 'profiles' ? profilePanel : tab === 'colors' ? colorsPanel : tab === 'components' ? componentsPanel : ''}
           <div class="custom-radar-personalization-controls">
             <div class="custom-radar-personalization-scale">
               <span><i class='bx bx-list-ul'></i> Icones no Radar</span>
@@ -810,7 +868,7 @@
     const map = [['Casa', raw.home], ['Empate', raw.draw], ['Fora', raw.away], ['Over 2.5', raw.over25], ['Under 2.5', raw.under25]];
     return map.map(([label, item]) => ({ label, value: item?.value ?? item ?? '' })).filter(item => item.value !== '');
   };
-  const statsHtml = data => {
+  const statsHtml = (data, extraHtml = '') => {
     const stats = data?.stats || {};
     const countedTypes = new Set(['substitution', 'woodwork', 'yellow-card', 'red-card']);
     const eventCounts = {
@@ -868,7 +926,50 @@
       const away = moments.away.length ? moments.away.join(', ') : 'nenhum';
       return `${label} | Casa: ${home} | Visitante: ${away}`;
     };
-    return `<div class="custom-radar-stats-grid">${rows.map(([key, label, sample, fallback]) => `<div class="custom-radar-stat ${escapeHtml(key)}" title="${escapeHtml(tooltip(key, label))}"><strong class="custom-radar-stat-icon">${statIcon(sample, fallback)}</strong><span>${escapeHtml(value(key, 'home'))} - ${escapeHtml(value(key, 'away'))}</span></div>`).join('')}</div>`;
+    return `<div class="custom-radar-stats-grid">${rows.map(([key, label, sample, fallback]) => `<div class="custom-radar-stat ${escapeHtml(key)}" title="${escapeHtml(tooltip(key, label))}"><strong class="custom-radar-stat-icon">${statIcon(sample, fallback)}</strong><span>${escapeHtml(value(key, 'home'))} - ${escapeHtml(value(key, 'away'))}</span></div>`).join('')}${extraHtml}</div>`;
+  };
+  const layoutProfileSnapshot = () => ({
+    version: 3,
+    cardLayout: cloneJson(state.cardLayout || {}),
+    radarLayout: state.radarLayout,
+    fontScale: state.fontScale,
+    overlayOpacity: state.overlayOpacity,
+    overlayContentMode: state.overlayContentMode,
+    radarIconScale: state.radarIconScale,
+    pressureIconScale: state.pressureIconScale,
+    componentSettings: cloneJson(state.componentSettings || {}),
+    heatmapMode: state.heatmapMode,
+    heatmapStyle: state.heatmapStyle,
+    showPressureChart: !!state.showPressureChart,
+    showRadarPressureChart: !!state.showRadarPressureChart,
+    showLiveIntelligence: !!state.showLiveIntelligence
+  });
+  const applyLayoutProfileSnapshot = profile => {
+    if (!profile || typeof profile !== 'object') return false;
+    state.cardLayout = Number(profile.version) >= 4 ? {} : cloneJson(profile.cardLayout || {});
+    if (['standard', 'ticker'].includes(profile.radarLayout)) state.radarLayout = profile.radarLayout;
+    setFontScale(profile.fontScale ?? state.fontScale);
+    setOverlayOpacity(profile.overlayOpacity ?? state.overlayOpacity);
+    if (['current', 'events', 'full'].includes(profile.overlayContentMode)) state.overlayContentMode = profile.overlayContentMode;
+    setRadarIconScale(profile.radarIconScale ?? state.radarIconScale);
+    setPressureIconScale(profile.pressureIconScale ?? state.pressureIconScale);
+    if (profile.componentSettings && typeof profile.componentSettings === 'object') state.componentSettings = cloneJson(profile.componentSettings);
+    if (['off', 'match', 'home', 'away', 'teams'].includes(profile.heatmapMode)) state.heatmapMode = profile.heatmapMode;
+    if (['candles', 'dots', 'wave', 'bar'].includes(profile.heatmapStyle)) state.heatmapStyle = profile.heatmapStyle;
+    state.showPressureChart = profile.showPressureChart ?? state.showPressureChart;
+    state.showRadarPressureChart = profile.showRadarPressureChart ?? state.showRadarPressureChart;
+    state.showLiveIntelligence = profile.showLiveIntelligence ?? state.showLiveIntelligence;
+    saveCardLayout();
+    saveComponentSettings();
+    localStorage.setItem('custom_wradar_mod_layout', state.radarLayout);
+    localStorage.setItem('custom_wradar_mod_overlay_content_mode', state.overlayContentMode);
+    localStorage.setItem('custom_wradar_mod_heatmap_mode', state.heatmapMode);
+    localStorage.setItem('custom_wradar_mod_heatmap_style', state.heatmapStyle);
+    localStorage.setItem('custom_wradar_mod_show_pressure_chart', state.showPressureChart ? '1' : '0');
+    localStorage.setItem('custom_wradar_mod_show_radar_pressure_chart', state.showRadarPressureChart ? '1' : '0');
+    localStorage.setItem('custom_wradar_mod_show_live_intelligence', state.showLiveIntelligence ? '1' : '0');
+    render();
+    return true;
   };
   const pressureHtml = (data, clock) => {
     const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
@@ -958,20 +1059,6 @@
         }
       });
     return result;
-  };
-  const autoSummary = (data, clock, names) => {
-    const pulse = recentMatchPulse(data, clock, 600);
-    const total = pulse.home + pulse.away;
-    const difference = Math.abs(pulse.home - pulse.away);
-    if (!total) return { tone: 'calm', text: 'Jogo sem pressao relevante nos ultimos minutos.' };
-    if (pulse.onTarget >= 3 || total >= 48) return { tone: 'danger', text: 'Ritmo muito alto e chegadas perigosas recentes.' };
-    if (difference >= 12) {
-      const leader = pulse.home > pulse.away ? (names.home || 'Mandante') : (names.away || 'Visitante');
-      return { tone: 'hot', text: `${leader} pressiona com mais intensidade.` };
-    }
-    if (pulse.sequence >= 4) return { tone: 'watch', text: 'Sequencia ofensiva em andamento.' };
-    if (total >= 20) return { tone: 'watch', text: 'Jogo ativo, com pressao alternada.' };
-    return { tone: 'calm', text: 'Ritmo controlado neste momento.' };
   };
   const liveIntelligenceData = (data, clock, names) => {
     const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
@@ -1110,61 +1197,6 @@
         ${intelligenceSetting('sustained') ? `<div class="${insight.sustained ? 'active' : ''}"><i class='bx bxs-flame'></i><span>Pressao sustentada</span><strong>${escapeHtml(insight.pressureText)}${insight.sustained ? ` · pico ${insight.pressurePeak}` : ''}</strong></div>` : ''}
       </div>` : ''}
     </div>`;
-  };
-  const playAlertSound = () => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.frequency.value = 740;
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-      oscillator.connect(gain).connect(ctx.destination);
-      oscillator.start();
-      oscillator.stop(ctx.currentTime + 0.25);
-      oscillator.onended = () => ctx.close().catch(() => {});
-    } catch (_) {}
-  };
-  const evaluateAlerts = (data, clock, names) => {
-    if (!alertSetting('enabled')) return;
-    const pulseTwoMinutes = recentMatchPulse(data, clock, 120);
-    const pulse = recentMatchPulse(data, clock, 180);
-    const sixMinutes = recentMatchPulse(data, clock, 360);
-    const previousHome = Math.max(0, sixMinutes.home - pulse.home);
-    const previousAway = Math.max(0, sixMinutes.away - pulse.away);
-    const isFresh = seconds => seconds >= 0 && pulse.latest - seconds <= 30;
-    const candidates = [];
-    if (alertSetting('redCard') && pulse.redCards && isFresh(pulse.lastRedCardAt)) candidates.push(['red-card', 'Cartao vermelho registrado']);
-    if (alertSetting('goalChance') && pulseTwoMinutes.onTarget >= 3 && isFresh(pulseTwoMinutes.lastOnTargetAt)) candidates.push(['goal-chance', 'Muitas finalizacoes perigosas']);
-    const leadingPressure = Math.max(pulse.home, pulse.away);
-    const previousPressure = pulse.home > pulse.away ? previousHome : previousAway;
-    if (alertSetting('pressure') && leadingPressure >= 18 && leadingPressure >= Math.max(6, previousPressure * 1.4) && isFresh(pulse.lastPressureAt)) {
-      const leader = pulse.home > pulse.away ? (names.home || 'Mandante') : (names.away || 'Visitante');
-      candidates.push(['pressure', `Pressao crescente: ${leader}`]);
-    }
-    if (alertSetting('sequence') && pulse.sequence >= 4 && isFresh(pulse.lastDangerousAt)) candidates.push(['sequence', 'Sequencia de ataques perigosos detectada']);
-    if (alertSetting('shots') && pulse.shots >= 5 && isFresh(pulse.lastShotAt)) candidates.push(['shots', 'Muitos remates nos ultimos 3 minutos']);
-    const selected = candidates[0];
-    if (!selected) return;
-    const [kind, message] = selected;
-    const signature = `${kind}|${Math.floor((pulse.latest || 0) / 60)}`;
-    const now = Date.now();
-    let sharedAlert = {};
-    try { sharedAlert = JSON.parse(localStorage.getItem('custom_wradar_mod_last_alert') || '{}'); } catch (_) {}
-    if (state.alertRuntime.signature === signature || now - (state.alertRuntime.firedAt[kind] || 0) < 35000 || now - (Number(sharedAlert.at) || 0) < 35000) return;
-    state.alertRuntime.signature = signature;
-    state.alertRuntime.firedAt[kind] = now;
-    state.alertRuntime.message = message;
-    state.alertRuntime.visualUntil = alertSetting('visual') ? now + 5000 : 0;
-    localStorage.setItem('custom_wradar_mod_last_alert', JSON.stringify({ signature, at: now }));
-    if (alertSetting('sound')) playAlertSound();
-    if (alertSetting('notification') && 'Notification' in window) {
-      const show = () => new Notification('Radar MOD', { body: message });
-      if (Notification.permission === 'granted') show();
-      else if (Notification.permission !== 'denied') Notification.requestPermission().then(permission => permission === 'granted' && show());
-    }
   };
   const heatTimeMultiplier = seconds => {
     const minute = Math.max(0, Math.floor((Number(seconds) || 0) / 60));
@@ -1981,14 +2013,14 @@
     const items = Array.isArray(data?.commentaries) ? data.commentaries : [];
     const focusedKey = commentKey(getFocusedComment(data) || getLastComment(data));
     const visibleItems = focusedKey ? items.filter(item => commentKey(item) !== focusedKey) : items;
-    if (!visibleItems.length) return `<div class="custom-radar-comment-list is-empty"><div><i class='bx bx-loader-alt bx-spin'></i> Aguardando comentarios do scoreboard...</div></div>`;
-    return `<div class="custom-radar-comment-list">${visibleItems.map(item => {
+    if (!visibleItems.length) return `<div class="custom-radar-comment-list is-empty" data-radar-key="comment-list"><div><i class='bx bx-loader-alt bx-spin'></i> Aguardando comentarios do scoreboard...</div></div>`;
+    return `<div class="custom-radar-comment-list" data-radar-key="comment-list">${visibleItems.map(item => {
       const time = commentTime(item);
       const type = eventType(item);
       const key = commentKey(item);
       const encoded = encodeURIComponent(key);
       const pinned = key === state.pinnedKey || Number(item.index) === Number(state.pinnedIndex);
-      return `<button type="button" class="custom-radar-comment ${escapeHtml(item.side || '')} ${escapeHtml(type)} ${pinned ? 'is-pinned' : ''}" data-index="${Number(item.index)}" data-key="${encoded}" title="Lance do jogo"><span>${escapeHtml(time || '--')}</span>${eventIcon(item)}<strong>${escapeHtml(commentText(item.comment || item.all || '-'))}</strong></button>`;
+      return `<button type="button" class="custom-radar-comment ${escapeHtml(item.side || '')} ${escapeHtml(type)} ${pinned ? 'is-pinned' : ''}" data-radar-key="comment:${escapeHtml(encoded)}" data-index="${Number(item.index)}" data-key="${encoded}" title="Lance do jogo"><span>${escapeHtml(time || '--')}</span>${eventIcon(item)}<strong>${escapeHtml(commentText(item.comment || item.all || '-'))}</strong></button>`;
     }).join('')}</div>`;
   };
   const signature = data => JSON.stringify({
@@ -2034,8 +2066,6 @@
     };
     const names = { home: data?.homeName || teams.home, away: data?.awayName || teams.away };
     const clock = data?.clock || event.minute || (event.whInPlay ? 'Ao vivo' : 'Pre-live');
-    evaluateAlerts(data, clock, names);
-    modal.classList.toggle('has-active-alert', state.alertRuntime.visualUntil > Date.now());
     const added = addedTimeHtml(data, clock);
     const current = getFocusedComment(data) || getLastComment(data);
     const pinned = (!!state.pinnedKey || Number.isInteger(state.pinnedIndex)) && !!current;
@@ -2055,17 +2085,14 @@
       ['lft', 'LFT', 'Limite da partida'],
       ['laft', 'LAFT', 'Limite a frente FT']
     ];
-    const oddsMenuHtml = anchor => `<span class="custom-radar-odds-menu-wrap ${state.oddsMenuOpen && state.oddsMenuAnchor === anchor ? 'is-open' : ''}">
+    const oddsMenuButtonsHtml = oddsMenuItems.map(([mode, label, description]) => `<button type="button" data-action="public-odds-mode" data-odds-mode="${mode}"><b>${label}</b><small>${description}</small></button>`).join('');
+    const oddsMenuHtml = anchor => `<span class="custom-radar-odds-menu-wrap is-${anchor} ${state.oddsMenuOpen && state.oddsMenuAnchor === anchor ? 'is-open' : ''}">
       <button type="button" class="custom-radar-icon-btn custom-radar-odds-trigger ${state.oddsMenuOpen && state.oddsMenuAnchor === anchor ? 'active' : ''}" data-action="public-odds-menu" data-odds-anchor="${anchor}" title="Mercados Bet365" aria-label="Mercados Bet365" aria-expanded="${state.oddsMenuOpen && state.oddsMenuAnchor === anchor ? 'true' : 'false'}"><span class="custom-radar-bet365-mark"><em>bet</em><b>365</b></span></button>
-      <span class="custom-radar-odds-menu">${oddsMenuItems.map(([mode, label, description]) => `<button type="button" data-action="public-odds-mode" data-odds-mode="${mode}"><b>${label}</b><small>${description}</small></button>`).join('')}</span>
+      ${anchor === 'stats' ? '' : `<span class="custom-radar-odds-menu">${oddsMenuButtonsHtml}</span>`}
     </span>`;
-    const summary = autoSummary(data, clock, names);
-    const summaryHtml = state.showAutoSummary ? `<div class="custom-radar-auto-summary is-${summary.tone}"><i class='bx bx-pulse'></i><strong>${escapeHtml(summary.text)}</strong></div>` : '';
-    const alertBannerHtml = state.alertRuntime.visualUntil > Date.now() && state.alertRuntime.message
-      ? `<div class="custom-radar-alert-banner"><i class='bx bx-bell'></i><strong>${escapeHtml(state.alertRuntime.message)}</strong></div>` : '';
-    const alertModuleHtml = alertBannerHtml || (state.layoutEditMode
-      ? `<div class="custom-radar-alert-placeholder"><i class='bx bx-bell'></i><span>O alerta aparecera aqui quando uma regra for disparada.</span></div>`
-      : '');
+    const statsOddsFloatingMenu = state.oddsMenuOpen && state.oddsMenuAnchor === 'stats'
+      ? `<div class="custom-radar-stats-odds-floating">${oddsMenuButtonsHtml}</div>`
+      : '';
     const heatmapMenu = `
       <div class="custom-radar-heat-menu ${state.heatmapMenuOpen ? 'is-open' : ''}">
         ${[
@@ -2148,10 +2175,13 @@
         ${heatmapMenu}
       </span>
     `;
+    const miniScoreHtml = `<div class="custom-radar-mini-score"><span class="home">${escapeHtml(teamAbbr(names.home))}</span><strong class="${state.scoreHighlight ? 'custom-radar-score-highlight' : ''}">${score.home}x${score.away}</strong><span class="away">${escapeHtml(teamAbbr(names.away))}</span></div>`;
+    const miniClockHtml = `<div class="custom-radar-mini-time"><span>${escapeHtml(clock || '--')}</span>${added}</div>`;
+    const currentEventHtml = `<div class="custom-radar-current-event ${escapeHtml(current?.side || '')} ${escapeHtml(type)} ${pinned ? 'is-highlighted' : ''}"><span>${escapeHtml(current?.time || clock || '--')}</span>${eventIcon(current)}<strong>${escapeHtml(currentText)}</strong></div>`;
     const liveFeedHtml = `
-      <div class="custom-radar-live-feed">
-        <div class="custom-radar-mini-info"><div class="custom-radar-mini-stack"><div class="custom-radar-mini-score"><span class="home">${escapeHtml(teamAbbr(names.home))}</span><strong>${score.home}x${score.away}</strong><span class="away">${escapeHtml(teamAbbr(names.away))}</span></div><div class="custom-radar-mini-time"><span>${escapeHtml(clock || '--')}</span>${added}</div></div></div>
-        <div class="custom-radar-current-event ${escapeHtml(current?.side || '')} ${escapeHtml(type)} ${pinned ? 'is-highlighted' : ''}"><span>${escapeHtml(current?.time || clock || '--')}</span>${eventIcon(current)}<strong>${escapeHtml(currentText)}</strong></div>
+      <div class="custom-radar-live-feed" data-radar-key="live-feed">
+        <div class="custom-radar-mini-info"><div class="custom-radar-mini-stack">${miniScoreHtml}${miniClockHtml}</div></div>
+        ${currentEventHtml}
         ${listHtml(data)}
       </div>`;
     const periodInfo = clockPeriodInfo(clock);
@@ -2165,23 +2195,57 @@
         ? 'Intervalo'
         : String(clock || '--').replace(/^\s*(?:1|2)\s*[º°oª]?\s*t(?:empo)?\s*[-:|–—]\s*/i, '').trim() || '--';
     const tickerAdded = tickerFinished || tickerInterval ? '' : added;
+    const statsOddsShortcut = state.overlayReplica ? oddsMenuHtml('stats') : '';
     const tickerInfoHtml = `<div class="custom-radar-ticker-info">
-      <span class="custom-radar-ticker-match">${periodLabel ? `<b>${periodLabel}</b>` : ''}<em>${escapeHtml(tickerClock)}</em>${tickerAdded}<strong>${escapeHtml(teamAbbr(names.home))} ${score.home}-${score.away} ${escapeHtml(teamAbbr(names.away))}</strong></span>
-      ${statsHtml(data)}
+      <span class="custom-radar-ticker-match">${periodLabel ? `<b>${periodLabel}</b>` : ''}<em>${escapeHtml(tickerClock)}</em>${tickerAdded}<strong><span>${escapeHtml(teamAbbr(names.home))}</span><mark class="${state.scoreHighlight ? 'custom-radar-score-highlight' : ''}">${score.home}-${score.away}</mark><span>${escapeHtml(teamAbbr(names.away))}</span></strong></span>
+      ${statsHtml(data, statsOddsShortcut)}
       ${pressureHtml(data, clock)}
     </div>`;
-    const tickerLiveFeedHtml = `<div class="custom-radar-live-feed custom-radar-ticker-feed">
-      <div class="custom-radar-current-event ${escapeHtml(current?.side || '')} ${escapeHtml(type)} ${pinned ? 'is-highlighted' : ''}"><span>${escapeHtml(current?.time || clock || '--')}</span>${eventIcon(current)}<strong>${escapeHtml(currentText)}</strong></div>
+    const tickerLiveFeedHtml = `<div class="custom-radar-live-feed custom-radar-ticker-feed" data-radar-key="ticker-feed">
+      ${currentEventHtml}
       ${listHtml(data)}
       ${tickerInfoHtml}
     </div>`;
-    const statsPanelHtml = `<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}</div>`;
-    const sofascorePanelHtml = pressureChartActive ? pressureChartHtml(data, clock, names) : '';
-    const radarPressurePanelHtml = state.showRadarPressureChart ? radarModPressureChartHtml(data, clock, names) : '';
+    const statsPanelHtml = `<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data, statsOddsShortcut)}${pressureHtml(data, clock)}</div>`;
+    const commentarySignature = (Array.isArray(data?.commentaries) ? data.commentaries : [])
+      .map(item => commentKey(item))
+      .join('|');
+    const sofascorePanelHtml = pressureChartActive
+      ? memoizedWidgetHtml('sofascore-pressure', JSON.stringify([
+        state.sofascoreGraphPoints,
+        state.sofascoreGraphError,
+        names.home,
+        names.away,
+        colorSetting('home'),
+        colorSetting('away')
+      ]), () => pressureChartHtml(data, clock, names))
+      : '';
+    const radarPressurePanelHtml = state.showRadarPressureChart
+      ? memoizedWidgetHtml('radar-pressure', JSON.stringify([
+        commentarySignature,
+        state.sofascorePlayerEvents,
+        names.home,
+        names.away,
+        state.pressureIconScale,
+        state.customIconMap,
+        colorSetting('home'),
+        colorSetting('away')
+      ]), () => radarModPressureChartHtml(data, clock, names))
+      : '';
     const intelligencePanelHtml = state.showLiveIntelligence
       ? liveIntelligenceHtml(data, clock, names)
       : (state.layoutEditMode ? `<div class="custom-radar-intelligence-placeholder"><i class='bx bx-brain'></i><span>Ative a analise avancada na Central de Personalizacao.</span></div>` : '');
-    const heatPanelHtml = heatmapActive ? heatmapHtml(data, clock, heatmapMode, names) : '';
+    const heatClockSeconds = parseGameSeconds(clock);
+    const heatPanelHtml = heatmapActive
+      ? memoizedWidgetHtml('heatmap', JSON.stringify([
+        commentarySignature,
+        heatClockSeconds === null ? String(clock || '') : Math.floor(heatClockSeconds / 300),
+        heatmapMode,
+        heatmapStyle,
+        names.home,
+        names.away
+      ]), () => heatmapHtml(data, clock, heatmapMode, names))
+      : '';
     const editModuleHtml = (id, label, html) => {
       if (!html) return '';
       const layout = cardLayoutFor(id);
@@ -2195,20 +2259,22 @@
     };
     const overlayMainHtml = `
       <div class="custom-radar-module-grid ${state.layoutEditMode ? 'is-editing' : ''}">
-        ${editModuleHtml('radar', 'Radar e eventos', liveFeedHtml)}
+        ${editModuleHtml(
+          'radar',
+          state.radarLayout === 'ticker' ? 'Faixa compacta e eventos' : 'Radar e eventos',
+          state.radarLayout === 'ticker' ? tickerLiveFeedHtml : liveFeedHtml
+        )}
         ${editModuleHtml('stats', 'Estatisticas', statsPanelHtml)}
         ${editModuleHtml('sofascore', 'Pressao SofaScore', sofascorePanelHtml)}
         ${editModuleHtml('radar-pressure', 'Pressao Radar MOD', radarPressurePanelHtml)}
         ${editModuleHtml('intelligence', 'Inteligencia ao vivo', intelligencePanelHtml)}
         ${editModuleHtml('heatmap', 'Mapa de calor', heatPanelHtml)}
-        ${editModuleHtml('summary', 'Resumo automatico', summaryHtml)}
-        ${editModuleHtml('alerts', 'Alertas', alertModuleHtml)}
       </div>`;
-    const regularMainHtml = `${liveFeedHtml}<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${sofascorePanelHtml}${radarPressurePanelHtml}${intelligencePanelHtml}${heatPanelHtml}</div>${alertBannerHtml}${summaryHtml}`;
-    const tickerMainHtml = `${tickerLiveFeedHtml}${sofascorePanelHtml}${radarPressurePanelHtml}${intelligencePanelHtml}${heatPanelHtml}${alertBannerHtml}${summaryHtml}`;
+    const regularMainHtml = `${liveFeedHtml}<div class="custom-radar-footer-stats"><div class="custom-radar-footer-title"><i class='bx bx-bar-chart-alt-2'></i><strong>Estatisticas ao vivo</strong></div>${statsHtml(data)}${pressureHtml(data, clock)}${sofascorePanelHtml}${radarPressurePanelHtml}${intelligencePanelHtml}${heatPanelHtml}</div>`;
+    const tickerMainHtml = `${tickerLiveFeedHtml}${sofascorePanelHtml}${radarPressurePanelHtml}${intelligencePanelHtml}${heatPanelHtml}`;
     modal.setAttribute('data-layout-edit', state.layoutEditMode ? '1' : '0');
-    content.innerHTML = `
-      <div class="custom-radar-window-toolbar ${state.toolbarCollapsed ? 'is-collapsed' : ''}">
+    const nextContentHtml = `
+      <div class="custom-radar-window-toolbar ${state.toolbarCollapsed ? 'is-collapsed' : ''}" data-radar-key="window-toolbar">
         <button type="button" class="custom-radar-icon-btn custom-radar-toolbar-toggle" data-action="toolbar-toggle" title="${state.toolbarCollapsed ? 'Expandir controles' : 'Recolher controles'}" aria-label="${state.toolbarCollapsed ? 'Expandir controles' : 'Recolher controles'}"><i class='bx ${state.toolbarCollapsed ? 'bx-chevron-left' : 'bx-chevron-right'}'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="overlay" title="Alternar fundo limpo/painel"><i class='bx bx-layer'></i></button>
@@ -2222,7 +2288,7 @@
         <button type="button" class="custom-radar-icon-btn" data-action="highlight" title="Destacar area"><i class='bx bx-crop'></i></button>
         <button type="button" class="custom-radar-icon-btn" data-action="close" title="Fechar"><i class='bx bx-x'></i></button>
       </div>
-      <header class="custom-radar-header">
+      <header class="custom-radar-header" data-radar-key="header">
         <div class="custom-radar-title"><span class="custom-radar-kicker">MOD proprio ${data ? 'ao vivo' : 'conectando'}</span><h2>${escapeHtml(names.home)} <span>vs</span> ${escapeHtml(names.away)}</h2><p>${escapeHtml(state.error || event.name || '')}</p></div>
         <div class="custom-radar-actions">
           <button type="button" class="custom-radar-icon-btn" data-action="theme" title="Alternar tema"><i class='bx ${state.theme === 'light' ? 'bx-moon' : 'bx-sun'}'></i></button>
@@ -2238,27 +2304,26 @@
           <button type="button" class="custom-radar-icon-btn" data-action="close" title="Fechar"><i class='bx bx-x'></i></button>
         </div>
       </header>
-      <div class="custom-radar-scorebar">
+      <div class="custom-radar-scorebar" data-radar-key="scorebar">
         <div class="custom-radar-team home">${renderLogo(event.i, names.home)}<strong>${escapeHtml(names.home)}</strong></div>
         <div class="custom-radar-score"><span>${score.home}</span><small>${escapeHtml(clock || '--')} ${added}</small><span>${score.away}</span></div>
         <div class="custom-radar-team away"><strong>${escapeHtml(names.away)}</strong>${renderLogo(event.j, names.away)}</div>
       </div>
       ${state.showIconGallery && !state.overlayReplica ? radarIconGalleryHtml() : ''}
-      <div class="custom-radar-layout custom-radar-event-layout">
-        <div class="custom-radar-main">
-          ${state.radarLayout === 'ticker' ? tickerMainHtml : state.overlayReplica ? overlayMainHtml : regularMainHtml}
+      <div class="custom-radar-layout custom-radar-event-layout" data-radar-key="event-layout">
+        <div class="custom-radar-main" data-radar-key="main">
+          ${state.overlayReplica ? overlayMainHtml : state.radarLayout === 'ticker' ? tickerMainHtml : regularMainHtml}
         </div>
-        <aside class="custom-radar-side custom-radar-tools">
+        <aside class="custom-radar-side custom-radar-tools" data-radar-key="tools">
           <div class="custom-radar-controls"><button type="button" class="${state.showOdds ? 'active' : ''}" data-action="odds"><i class='bx bx-money'></i> Odds</button><button type="button" class="${state.showMeta ? 'active' : ''}" data-action="meta"><i class='bx bx-data'></i> IDs</button><button type="button" class="${state.showIconGallery ? 'active' : ''}" data-action="icon-gallery"><i class='bx bx-slider-alt'></i> Personalizar</button><button type="button" class="${pressureChartActive ? 'active' : ''}" data-action="pressure-chart"><i class='bx bx-bar-chart-alt-2'></i> Pressao</button><button type="button" class="${state.showRadarPressureChart ? 'active' : ''}" data-action="radar-pressure-chart"><i class='bx bx-bar-chart-square'></i> Radar MOD</button><button type="button" class="${heatmapActive ? 'active' : ''}" data-action="heatmap-menu"><i class='bx bxs-flame'></i> ${escapeHtml(heatmapLabels[heatmapMode] || 'Calor')}</button><button type="button" class="custom-radar-highlight-action" data-action="highlight"><i class='bx bx-crop'></i> Destacar</button></div>
           ${state.showOdds ? `<div class="custom-radar-card"><h3><i class='bx bx-line-chart'></i> William Hill</h3><div class="custom-radar-odds-grid">${odds(event).map(item => `<div class="custom-radar-odd"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`).join('') || '<p class="custom-radar-muted">Odds indisponiveis para este evento.</p>'}</div></div>` : ''}
           ${state.showMeta ? `<div class="custom-radar-card"><h3><i class='bx bx-fingerprint'></i> Fontes</h3><dl class="custom-radar-meta"><dt>Event ID</dt><dd>${escapeHtml(event.id || '-')}</dd><dt>WH Entity</dt><dd>${escapeHtml(event.rawEntityId || '-')}</dd><dt>ID Bolsa</dt><dd>${escapeHtml(idBolsa || '-')}</dd><dt>Sofascore</dt><dd>${escapeHtml(event.sofascoreId || '-')}</dd><dt>365Scores</dt><dd>${escapeHtml(event.scores365PartnerId || event.matchId || '-')}</dd></dl></div>` : ''}
           <div class="custom-radar-links">${sportUrl ? `<a href="${escapeHtml(sportUrl)}" target="_blank"><i class='bx bx-world'></i> Widget mRadar</a>` : ''}<a href="${escapeHtml(whUrl)}" target="_blank"><i class='bx bx-crosshair'></i> WRadar original</a>${event.packLink ? `<a href="${escapeHtml(event.packLink)}" target="_blank"><i class='bx bx-football'></i> Packball</a>` : ''}</div>
         </aside>
       </div>
-      ${fontMenu}`;
-    if (state.overlayReplica) {
-      content.insertAdjacentHTML('beforeend', '<button type="button" class="custom-radar-resize-handle" title="Redimensionar"></button>');
-    }
+      ${fontMenu}${statsOddsFloatingMenu}
+      ${state.overlayReplica ? '<button type="button" class="custom-radar-resize-handle" data-radar-key="resize-handle" title="Redimensionar"></button>' : ''}`;
+    updateRadarContent(content, nextContentHtml);
     restoreScroll(previousScroll);
   }
 
@@ -2272,11 +2337,16 @@
 
   function scheduleRender() {
     clearTimeout(state.deferredTimer);
+    if (state.windowDragging) return;
     if (state.colorPickerActive || Date.now() < state.interactingUntil) {
       state.deferredTimer = setTimeout(scheduleRender, 260);
       return;
     }
-    requestAnimationFrame(render);
+    if (state.renderFrame) return;
+    state.renderFrame = requestAnimationFrame(() => {
+      state.renderFrame = 0;
+      render();
+    });
   }
 
   function setupOverlayDrag() {
@@ -2286,7 +2356,11 @@
       moved: false,
       pointerId: null,
       startX: 0,
-      startY: 0
+      startY: 0,
+      frame: 0,
+      pendingPoint: null,
+      lastX: null,
+      lastY: null
     };
     const pointFromEvent = event => ({
       x: Number(event.screenX) || 0,
@@ -2302,6 +2376,8 @@
       drag.pointerId = event.pointerId;
       drag.startX = event.screenX;
       drag.startY = event.screenY;
+      state.windowDragging = true;
+      document.body.classList.add('is-window-moving');
       window.traderWRadarRealMod.dragOverlayWindow({ phase: 'start', ...pointFromEvent(event) });
       event.target.setPointerCapture?.(event.pointerId);
     }, true);
@@ -2311,7 +2387,18 @@
       if (Math.abs(event.screenX - drag.startX) > 3 || Math.abs(event.screenY - drag.startY) > 3) {
         drag.moved = true;
       }
-      window.traderWRadarRealMod.dragOverlayWindow({ phase: 'move', ...pointFromEvent(event) });
+      drag.pendingPoint = pointFromEvent(event);
+      if (!drag.frame) {
+        drag.frame = requestAnimationFrame(() => {
+          drag.frame = 0;
+          const point = drag.pendingPoint;
+          drag.pendingPoint = null;
+          if (!drag.active || !point || (point.x === drag.lastX && point.y === drag.lastY)) return;
+          drag.lastX = point.x;
+          drag.lastY = point.y;
+          window.traderWRadarRealMod.dragOverlayWindow({ phase: 'move', ...point });
+        });
+      }
       if (drag.moved) {
         event.preventDefault();
         event.stopPropagation();
@@ -2320,9 +2407,18 @@
 
     const endDrag = event => {
       if (!drag.active || event.pointerId !== drag.pointerId) return;
+      if (drag.frame) cancelAnimationFrame(drag.frame);
+      drag.frame = 0;
+      if (drag.pendingPoint && (drag.pendingPoint.x !== drag.lastX || drag.pendingPoint.y !== drag.lastY)) {
+        window.traderWRadarRealMod.dragOverlayWindow({ phase: 'move', ...drag.pendingPoint });
+      }
       window.traderWRadarRealMod.dragOverlayWindow({ phase: 'end' });
       drag.active = false;
       drag.pointerId = null;
+      drag.pendingPoint = null;
+      state.windowDragging = false;
+      document.body.classList.remove('is-window-moving');
+      scheduleRender();
     };
 
     document.addEventListener('pointerup', endDrag, true);
@@ -2422,18 +2518,42 @@
     heatmapStyle: state.heatmapStyle,
     showLiveIntelligence: !!state.showLiveIntelligence,
     intelligenceSettings: Object.fromEntries(Object.keys(defaultIntelligenceSettings).map(key => [key, intelligenceSetting(key)])),
-    alertSettings: Object.fromEntries(Object.keys(defaultAlertSettings).map(key => [key, alertSetting(key)])),
-    showAutoSummary: !!state.showAutoSummary,
+    radarIconScale: state.radarIconScale,
+    pressureIconScale: state.pressureIconScale,
+    componentSettings: state.componentSettings || {},
     radarLayout: state.radarLayout,
-    layoutEditMode: !!state.layoutEditMode
+    layoutEditMode: !!state.layoutEditMode,
+    layoutProfile: layoutProfileSnapshot()
   });
+  window.__customRadarLayoutProfile = () => layoutProfileSnapshot();
+  window.__customRadarApplyLayoutProfile = profile => applyLayoutProfileSnapshot(profile);
   window.__customRadarNativeMenuAction = payload => {
     const action = String(payload?.action || '');
     const value = payload?.value;
+    const updateComponentScale = (key, direction) => {
+      if (!componentLabels[key]) return;
+      const current = componentSetting(key);
+      if (direction === 'down') current.scale = clampComponentScale(current.scale - 0.1);
+      else if (direction === 'up') current.scale = clampComponentScale(current.scale + 0.1);
+      else current.scale = 1;
+      state.componentSettings = { ...(state.componentSettings || {}), [key]: current };
+      saveComponentSettings();
+      state.visualProfile = 'custom';
+      localStorage.setItem('custom_wradar_mod_visual_profile', 'custom');
+    };
     if (action === 'font-scale-down') setFontScale(state.fontScale - 0.08);
     else if (action === 'font-scale-reset') setFontScale(1);
     else if (action === 'font-scale-up') setFontScale(state.fontScale + 0.08);
     else if (action === 'font-scale') setFontScale(Number(value) || 1);
+    else if (action === 'radar-icon-scale-down') setRadarIconScale(state.radarIconScale - 0.1);
+    else if (action === 'radar-icon-scale-reset') setRadarIconScale(1);
+    else if (action === 'radar-icon-scale-up') setRadarIconScale(state.radarIconScale + 0.1);
+    else if (action === 'pressure-icon-scale-down') setPressureIconScale(state.pressureIconScale - 0.1);
+    else if (action === 'pressure-icon-scale-reset') setPressureIconScale(1);
+    else if (action === 'pressure-icon-scale-up') setPressureIconScale(state.pressureIconScale + 0.1);
+    else if (action === 'component-scale-down') updateComponentScale(value, 'down');
+    else if (action === 'component-scale-reset') updateComponentScale(value, 'reset');
+    else if (action === 'component-scale-up') updateComponentScale(value, 'up');
     else if (action === 'radar-layout' && ['standard', 'ticker'].includes(value)) {
       state.radarLayout = value;
       localStorage.setItem('custom_wradar_mod_layout', value);
@@ -2465,20 +2585,13 @@
     } else if (action === 'intelligence-setting' && Object.prototype.hasOwnProperty.call(defaultIntelligenceSettings, value)) {
       state.intelligenceSettings = { ...(state.intelligenceSettings || {}), [value]: !intelligenceSetting(value) };
       saveIntelligenceSettings();
-    } else if (action === 'toggle-alerts') {
-      state.alertSettings = { ...(state.alertSettings || {}), enabled: !alertSetting('enabled') };
-      saveAlertSettings();
-    } else if (action === 'alert-setting' && Object.prototype.hasOwnProperty.call(defaultAlertSettings, value) && value !== 'enabled') {
-      state.alertSettings = { ...(state.alertSettings || {}), [value]: !alertSetting(value) };
-      saveAlertSettings();
-    } else if (action === 'toggle-auto-summary') {
-      state.showAutoSummary = !state.showAutoSummary;
-      localStorage.setItem('custom_wradar_mod_show_auto_summary', state.showAutoSummary ? '1' : '0');
-    } else if (action === 'toggle-layout-editor') {
+      } else if (action === 'toggle-layout-editor') {
       state.layoutEditMode = !state.layoutEditMode;
       state.interactingUntil = Date.now() + 500;
     } else if (action === 'reset-card-layout') {
       resetCardLayout();
+    } else if (action === 'apply-layout-profile') {
+      applyLayoutProfileSnapshot(value);
     }
     state.fontMenuOpen = false;
     state.heatmapMenuOpen = false;
@@ -2490,7 +2603,7 @@
     const target = event.target;
     const action = target.closest('[data-action]')?.getAttribute('data-action');
     const insideFontMenu = !!target.closest('.custom-radar-font-menu');
-    const insideOddsMenu = !!target.closest('.custom-radar-odds-menu-wrap');
+    const insideOddsMenu = !!target.closest('.custom-radar-odds-menu-wrap, .custom-radar-stats-odds-floating');
     if (action === 'color-change') {
       state.colorPickerActive = true;
       state.interactingUntil = Date.now() + 120000;
@@ -2707,20 +2820,6 @@
       render();
       return;
     }
-    if (action === 'alert-setting') {
-      const input = target.closest('input[data-setting]');
-      if (!input) return;
-      state.alertSettings = { ...(state.alertSettings || {}), [input.dataset.setting]: !!input.checked };
-      saveAlertSettings();
-      return;
-    }
-    if (action === 'summary-toggle') {
-      const input = target.closest('input');
-      state.showAutoSummary = !!input?.checked;
-      localStorage.setItem('custom_wradar_mod_show_auto_summary', state.showAutoSummary ? '1' : '0');
-      render();
-      return;
-    }
     if (action === 'intelligence-toggle') {
       const input = target.closest('input');
       state.showLiveIntelligence = !!input?.checked;
@@ -2730,7 +2829,16 @@
     }
     if (action === 'components-reset') {
       state.componentSettings = {};
+      state.scoreHighlight = false;
       saveComponentSettings();
+      localStorage.setItem('custom_wradar_mod_score_highlight', '0');
+      render();
+      return;
+    }
+    if (action === 'score-highlight') {
+      const input = target.closest('input');
+      state.scoreHighlight = !!input?.checked;
+      localStorage.setItem('custom_wradar_mod_score_highlight', state.scoreHighlight ? '1' : '0');
       render();
       return;
     }
@@ -3064,12 +3172,8 @@
       try { state.componentSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
     } else if (event.key === 'custom_wradar_mod_color_settings') {
       try { state.colorSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
-    } else if (event.key === 'custom_wradar_mod_alert_settings') {
-      try { state.alertSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
     } else if (event.key === 'custom_wradar_mod_intelligence_settings') {
       try { state.intelligenceSettings = JSON.parse(event.newValue || '{}') || {}; } catch (_) {}
-    } else if (event.key === 'custom_wradar_mod_show_auto_summary') {
-      state.showAutoSummary = event.newValue !== '0';
     } else if (event.key === 'custom_wradar_mod_show_live_intelligence') {
       state.showLiveIntelligence = event.newValue !== '0';
     } else if (event.key === 'custom_wradar_mod_radar_icon_scale') {

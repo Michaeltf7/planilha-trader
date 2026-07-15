@@ -22,3 +22,31 @@ if (-not $pnpm) {
 
 Set-Location $root
 pnpm run publish:release
+
+$package = Get-Content -Path (Join-Path $root 'package.json') -Raw | ConvertFrom-Json
+$version = [string]$package.version
+$requiredAssets = @(
+    "Planilha-Trader-Setup-$version.exe",
+    "Planilha-Trader-Setup-$version.exe.blockmap",
+    'latest.yml'
+)
+
+$missingAssets = $requiredAssets
+for ($attempt = 1; $attempt -le 8; $attempt += 1) {
+    $release = Invoke-RestMethod `
+        -Uri "https://api.github.com/repos/Michaeltf7/planilha-trader/releases/tags/v$version" `
+        -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; 'User-Agent' = 'PlanilhaTraderPublisher' }
+
+    $assetNames = @($release.assets | ForEach-Object { $_.name })
+    $missingAssets = @($requiredAssets | Where-Object { $assetNames -notcontains $_ })
+    if ($missingAssets.Count -eq 0) {
+        break
+    }
+    Start-Sleep -Seconds 5
+}
+
+if ($missingAssets.Count -gt 0) {
+    throw "Publicacao incompleta da versao $version. Assets faltando no GitHub: $($missingAssets -join ', ')"
+}
+
+Write-Host "Release v$version publicada com instalador, blockmap e latest.yml."

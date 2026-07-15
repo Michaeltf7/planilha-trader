@@ -1,13 +1,11 @@
 # Planilha Trader - Radar de Odds
 
-Extensao experimental para conectar Betfair Exchange e bet365 abertas no Chrome ao Radar de Odds do Planilha Trader.
+Extensao interna usada pelo Planilha Trader para conectar a bet365 ao Radar de Odds.
 
-## Instalar para teste
+## Uso
 
-1. Abra `chrome://extensions` no Chrome.
-2. Ative **Modo do desenvolvedor**.
-3. Clique em **Carregar sem compactacao**.
-4. Selecione esta pasta: `chrome-extension/planilha-trader-odds`.
-5. Mantenha o Planilha Trader aberto e acione o Radar de Odds.
+Esta extensao nao precisa ser instalada manualmente pelo usuario.
 
-A extensao abre janelas minimizadas e independentes da Betfair e da bet365 para cada Radar de Odds ativo. Ao fechar o radar, as janelas correspondentes tambem sao fechadas.
+O Planilha Trader ja envia esta pasta dentro do instalador e abre um navegador dedicado com a extensao carregada automaticamente. O usuario precisa apenas escolher o navegador no menu do Radar de Odds quando quiser usar Chrome, Edge, Brave ou Opera.
+
+Ao publicar uma nova versao do Planilha Trader, a extensao atualizada vai junto no instalador. Depois da atualizacao, basta fechar janelas antigas do coletor/navegador e abrir o Radar de Odds novamente.

@@ -1,6 +1,6 @@
 (() => {
   const API = 'http://127.0.0.1:38465/odds';
-  const HEADERS = { 'content-type': 'application/json', 'x-planilha-trader': 'extension-v1' };
+  const BASE_HEADERS = { 'content-type': 'application/json', 'x-planilha-trader': 'extension-v1' };
   let target = null;
   let lastSignature = '';
   let eventNavigationStarted = false;
@@ -225,7 +225,10 @@
     if (signature === lastSignature) return;
     lastSignature = signature;
     try {
-      await fetch(API, { method: 'POST', headers: HEADERS, body: JSON.stringify(payload) });
+      const headers = target.collectorToken
+        ? { ...BASE_HEADERS, 'x-planilha-client': target.collectorToken }
+        : BASE_HEADERS;
+      await fetch(API, { method: 'POST', headers, body: JSON.stringify(payload) });
     } catch (_) {}
   }
 

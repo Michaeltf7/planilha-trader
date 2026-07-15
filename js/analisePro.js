@@ -13,6 +13,14 @@ const AnalisePro = {
     theoInfoActiveTab: 'resumo',
     theoInfoCurrentData: null,
     theoInfoPendingGame: null,
+    sofaAnalysisCurrentData: null,
+    sofaAnalysisPendingGame: null,
+    sofaAnalysisActiveTab: 'resumo',
+    sofaAnalysisSampleSize: 5,
+    sofaGoalTypesData: null,
+    sofaGoalTypesLoading: false,
+    sofaGoalTypesError: '',
+    sofaGoalTypesKey: '',
     calendarTournamentLogoCache: null,
     calendarLoadToken: 0,
     theoBorgesDefaultSourceUrl: 'https://clube.theoborges.com/matches?dia=hoje&t=3cb1d16fe7',
@@ -3332,6 +3340,383 @@ const AnalisePro = {
         `;
     },
 
+    getSofaAnalysisCacheKey(game, sampleSize = 5) {
+        const eventId = Number(game?.sofascoreId || (game?.source !== 'wradar' ? game?.id : 0)) || 0;
+        return `pro_sofa_analysis_v2_${eventId}_${sampleSize}`;
+    },
+
+    getCachedSofaAnalysis(game, sampleSize = 5) {
+        try {
+            const raw = localStorage.getItem(this.getSofaAnalysisCacheKey(game, sampleSize));
+            const cached = raw ? JSON.parse(raw) : null;
+            if (!cached?.data || Date.now() - Number(cached.savedAt || 0) > 6 * 60 * 60 * 1000) return null;
+            return cached.data;
+        } catch (_error) {
+            return null;
+        }
+    },
+
+    saveSofaAnalysisCache(game, sampleSize, data) {
+        try {
+            localStorage.setItem(this.getSofaAnalysisCacheKey(game, sampleSize), JSON.stringify({ savedAt: Date.now(), data }));
+        } catch (_error) { }
+    },
+
+    saveSofaCacheSafely(cacheKey, data) {
+        try {
+            localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), data }));
+        } catch (_error) { }
+    },
+
+    ensureSofaAnalysisModal() {
+        let modal = document.getElementById('sofa-analysis-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'sofa-analysis-modal';
+            document.body.appendChild(modal);
+        }
+        return modal;
+    },
+
+    async openSofaAnalysis(gamePayload, sampleSize = 5, force = false) {
+        const game = typeof gamePayload === 'string' ? JSON.parse(decodeURIComponent(gamePayload)) : gamePayload;
+        const eventId = Number(game?.sofascoreId || (game?.source !== 'wradar' ? game?.id : 0)) || 0;
+        if (!eventId || !window.traderSofascoreData?.teamAnalysis) return;
+        const nextSampleSize = Math.max(3, Math.min(10, Number(sampleSize || 5)));
+        const nextGoalTypesKey = `${eventId}_${nextSampleSize}`;
+        if (this.sofaGoalTypesKey !== nextGoalTypesKey) {
+            this.sofaGoalTypesData = null;
+            this.sofaGoalTypesError = '';
+            this.sofaGoalTypesKey = nextGoalTypesKey;
+        }
+        const nextEventKey = String(eventId);
+        if (this.sofaAnalysisEventKey !== nextEventKey) {
+            this.sofaLineupsData = null;
+            this.sofaLineupsError = '';
+            this.sofaStandingsData = null;
+            this.sofaStandingsError = '';
+            this.sofaAnalysisEventKey = nextEventKey;
+        }
+        this.sofaAnalysisPendingGame = game;
+        this.sofaAnalysisSampleSize = nextSampleSize;
+        this.sofaAnalysisActiveTab = this.sofaAnalysisActiveTab || 'resumo';
+        const modal = this.ensureSofaAnalysisModal();
+        modal.className = 'sofa-analysis-modal is-open';
+
+        const cached = !force ? this.getCachedSofaAnalysis(game, this.sofaAnalysisSampleSize) : null;
+        if (cached) {
+            this.sofaAnalysisCurrentData = cached;
+            modal.innerHTML = this.renderSofaAnalysisShell({ data: cached, game, cached: true });
+            return;
+        }
+
+        modal.innerHTML = this.renderSofaAnalysisShell({ loading: true, game });
+        try {
+            const data = await window.traderSofascoreData.teamAnalysis({
+                sofascoreId: eventId,
+                sampleSize: this.sofaAnalysisSampleSize
+            });
+            if (!data?.ok) throw new Error(data?.error || 'O SofaScore não retornou dados suficientes.');
+            this.sofaAnalysisCurrentData = data;
+            this.saveSofaAnalysisCache(game, this.sofaAnalysisSampleSize, data);
+            modal.innerHTML = this.renderSofaAnalysisShell({ data, game });
+        } catch (error) {
+            this.sofaAnalysisCurrentData = null;
+            modal.innerHTML = this.renderSofaAnalysisShell({ error: error?.message || String(error), game });
+        }
+    },
+
+    closeSofaAnalysis() {
+        const modal = document.getElementById('sofa-analysis-modal');
+        if (modal) modal.classList.remove('is-open');
+    },
+
+    setSofaAnalysisTab(tab) {
+        this.sofaAnalysisActiveTab = tab || 'resumo';
+        const modal = document.getElementById('sofa-analysis-modal');
+        if (modal && this.sofaAnalysisCurrentData) {
+            modal.innerHTML = this.renderSofaAnalysisShell({ data: this.sofaAnalysisCurrentData, game: this.sofaAnalysisPendingGame });
+        }
+        if (this.sofaAnalysisActiveTab === 'tipos' && !this.sofaGoalTypesData && !this.sofaGoalTypesLoading) {
+            this.loadSofaGoalTypes();
+        }
+        if (this.sofaAnalysisActiveTab === 'escalacoes' && !this.sofaLineupsData && !this.sofaLineupsLoading) {
+            this.loadSofaLineups();
+        }
+        if (this.sofaAnalysisActiveTab === 'classificacao' && !this.sofaStandingsData && !this.sofaStandingsLoading) {
+            this.loadSofaStandings();
+        }
+    },
+
+    getSofaGoalTypesCacheKey(game, sampleSize = 5) {
+        const eventId = Number(game?.sofascoreId || (game?.source !== 'wradar' ? game?.id : 0)) || 0;
+        return `pro_sofa_goal_types_v1_${eventId}_${sampleSize}`;
+    },
+
+    async loadSofaGoalTypes(force = false) {
+        const game = this.sofaAnalysisPendingGame;
+        const eventId = Number(game?.sofascoreId || (game?.source !== 'wradar' ? game?.id : 0)) || 0;
+        if (!eventId || !window.traderSofascoreData?.teamGoalTypes) return;
+        const cacheKey = this.getSofaGoalTypesCacheKey(game, this.sofaAnalysisSampleSize);
+        if (!force) {
+            try {
+                const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+                if (cached?.data && Date.now() - Number(cached.savedAt || 0) < 7 * 24 * 60 * 60 * 1000) {
+                    this.sofaGoalTypesData = cached.data;
+                    this.setSofaAnalysisTab('tipos');
+                    return;
+                }
+            } catch (_error) { }
+        }
+        this.sofaGoalTypesLoading = true;
+        this.sofaGoalTypesError = '';
+        const modal = document.getElementById('sofa-analysis-modal');
+        if (modal && this.sofaAnalysisCurrentData) modal.innerHTML = this.renderSofaAnalysisShell({ data: this.sofaAnalysisCurrentData, game });
+        try {
+            const result = await window.traderSofascoreData.teamGoalTypes({ sofascoreId: eventId, sampleSize: this.sofaAnalysisSampleSize });
+            if (!result?.ok) throw new Error(result?.error || 'Tipos de gols indisponíveis.');
+            this.sofaGoalTypesData = result;
+            this.saveSofaCacheSafely(cacheKey, result);
+        } catch (error) {
+            this.sofaGoalTypesError = error?.message || String(error);
+        } finally {
+            this.sofaGoalTypesLoading = false;
+            if (modal && this.sofaAnalysisCurrentData) modal.innerHTML = this.renderSofaAnalysisShell({ data: this.sofaAnalysisCurrentData, game });
+        }
+    },
+
+    async loadSofaLineups(force = false) {
+        const game = this.sofaAnalysisPendingGame;
+        const eventId = Number(game?.sofascoreId || (game?.source !== 'wradar' ? game?.id : 0)) || 0;
+        if (!eventId || !window.traderSofascoreData?.matchDetails) return;
+        const cacheKey = `pro_sofa_lineups_v1_${eventId}`;
+        if (!force) {
+            try {
+                const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+                if (cached?.data && Date.now() - Number(cached.savedAt || 0) < 30 * 60 * 1000) {
+                    this.sofaLineupsData = cached.data;
+                    this.setSofaAnalysisTab('escalacoes');
+                    return;
+                }
+            } catch (_error) { }
+        }
+        this.sofaLineupsLoading = true;
+        this.sofaLineupsError = '';
+        const modal = document.getElementById('sofa-analysis-modal');
+        if (modal && this.sofaAnalysisCurrentData) modal.innerHTML = this.renderSofaAnalysisShell({ data: this.sofaAnalysisCurrentData, game });
+        try {
+            const result = await window.traderSofascoreData.matchDetails({ sofascoreId: eventId });
+            if (!result?.ok) throw new Error(result?.error || 'Escalações indisponíveis.');
+            const compactResult = {
+                ok: true,
+                source: result.source || 'Sofascore',
+                generatedAt: result.generatedAt || new Date().toISOString(),
+                eventId: result.eventId || eventId,
+                match: result.match || {},
+                lineups: result.lineups || {}
+            };
+            this.sofaLineupsData = compactResult;
+            this.saveSofaCacheSafely(cacheKey, compactResult);
+        } catch (error) {
+            this.sofaLineupsError = error?.message || String(error);
+        } finally {
+            this.sofaLineupsLoading = false;
+            if (modal && this.sofaAnalysisCurrentData) modal.innerHTML = this.renderSofaAnalysisShell({ data: this.sofaAnalysisCurrentData, game });
+        }
+    },
+
+    async loadSofaStandings(force = false) {
+        const game = this.sofaAnalysisPendingGame;
+        const eventId = Number(game?.sofascoreId || (game?.source !== 'wradar' ? game?.id : 0)) || 0;
+        if (!eventId || !window.traderSofascoreData?.eventStandings) return;
+        const cacheKey = `pro_sofa_standings_v1_${eventId}`;
+        if (!force) {
+            try {
+                const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+                if (cached?.data && Date.now() - Number(cached.savedAt || 0) < 6 * 60 * 60 * 1000) {
+                    this.sofaStandingsData = cached.data;
+                    this.setSofaAnalysisTab('classificacao');
+                    return;
+                }
+            } catch (_error) { }
+        }
+        this.sofaStandingsLoading = true;
+        this.sofaStandingsError = '';
+        const modal = document.getElementById('sofa-analysis-modal');
+        if (modal && this.sofaAnalysisCurrentData) modal.innerHTML = this.renderSofaAnalysisShell({ data: this.sofaAnalysisCurrentData, game });
+        try {
+            const result = await window.traderSofascoreData.eventStandings({ sofascoreId: eventId });
+            if (!result?.ok) throw new Error(result?.error || 'Classificação indisponível.');
+            this.sofaStandingsData = result;
+            this.saveSofaCacheSafely(cacheKey, result);
+        } catch (error) {
+            this.sofaStandingsError = error?.message || String(error);
+        } finally {
+            this.sofaStandingsLoading = false;
+            if (modal && this.sofaAnalysisCurrentData) modal.innerHTML = this.renderSofaAnalysisShell({ data: this.sofaAnalysisCurrentData, game });
+        }
+    },
+
+    changeSofaAnalysisSample(sampleSize) {
+        if (this.sofaAnalysisPendingGame) this.openSofaAnalysis(this.sofaAnalysisPendingGame, sampleSize);
+    },
+
+    renderSofaAnalysisShell({ loading = false, error = '', data = null, game = null, cached = false } = {}) {
+        const home = game?.homeTeam?.name || data?.teams?.[0]?.team?.name || 'Mandante';
+        const away = game?.awayTeam?.name || data?.teams?.[1]?.team?.name || 'Visitante';
+        const tabs = [
+            ['resumo', 'Resumo', 'bx-pulse'],
+            ['periodos', 'Períodos', 'bx-bar-chart-alt-2'],
+            ['jogos', 'Últimos jogos', 'bx-history'],
+            ['tipos', 'Tipos de gols', 'bx-football'],
+            ['escalacoes', 'Escalações', 'bx-user-pin'],
+            ['classificacao', 'Classificação', 'bx-table']
+        ];
+        const body = loading
+            ? `<div class="sofa-analysis-state"><i class='bx bx-loader-alt bx-spin'></i><strong>Montando análise dos últimos jogos...</strong><span>A primeira consulta pode levar alguns segundos.</span></div>`
+            : error
+                ? `<div class="sofa-analysis-state error"><i class='bx bx-error-circle'></i><strong>${this.escapeHtml(error)}</strong><button onclick="AnalisePro.openSofaAnalysis(AnalisePro.sofaAnalysisPendingGame, AnalisePro.sofaAnalysisSampleSize, true)">Tentar novamente</button></div>`
+                : this.renderSofaAnalysisTab(data);
+        return `
+            <div class="sofa-analysis-backdrop" onclick="AnalisePro.closeSofaAnalysis()"></div>
+            <section class="sofa-analysis-panel" role="dialog" aria-modal="true">
+                <header class="sofa-analysis-head">
+                    <div><span>SOFASCORE</span><strong>${this.escapeHtml(home)} <em>x</em> ${this.escapeHtml(away)}</strong><small>${this.escapeHtml(game?.tournament?.name || '')}</small></div>
+                    <button onclick="AnalisePro.closeSofaAnalysis()" title="Fechar"><i class='bx bx-x'></i></button>
+                </header>
+                ${!loading && !error ? `<div class="sofa-analysis-toolbar"><nav>${tabs.map(([id, label, icon]) => `<button class="${this.sofaAnalysisActiveTab === id ? 'active' : ''}" onclick="AnalisePro.setSofaAnalysisTab('${id}')"><i class='bx ${icon}'></i>${label}</button>`).join('')}</nav><div class="sofa-analysis-sample"><span>Amostra</span><button class="${this.sofaAnalysisSampleSize === 5 ? 'active' : ''}" onclick="AnalisePro.changeSofaAnalysisSample(5)">5 jogos</button><button class="${this.sofaAnalysisSampleSize === 10 ? 'active' : ''}" onclick="AnalisePro.changeSofaAnalysisSample(10)">10 jogos</button></div></div>` : ''}
+                <div class="sofa-analysis-body">${body}</div>
+                ${data ? `<footer><span><i class='bx bx-data'></i>${cached ? 'Cache local' : 'SofaScore'} · atualizado ${new Date(data.generatedAt || Date.now()).toLocaleString('pt-BR')}</span><button onclick="AnalisePro.openSofaAnalysis(AnalisePro.sofaAnalysisPendingGame, AnalisePro.sofaAnalysisSampleSize, true)"><i class='bx bx-refresh'></i>Atualizar</button></footer>` : ''}
+            </section>`;
+    },
+
+    renderSofaAnalysisTab(data) {
+        if (!data?.teams?.length) return '';
+        if (this.sofaAnalysisActiveTab === 'tipos') return this.renderSofaGoalTypes();
+        if (this.sofaAnalysisActiveTab === 'escalacoes') return this.renderSofaLineups();
+        if (this.sofaAnalysisActiveTab === 'classificacao') return this.renderSofaStandings();
+        if (this.sofaAnalysisActiveTab === 'periodos') return this.renderSofaAnalysisPeriods(data);
+        if (this.sofaAnalysisActiveTab === 'jogos') return this.renderSofaAnalysisMatches(data);
+        return this.renderSofaAnalysisSummary(data);
+    },
+
+    renderSofaAnalysisTeamHead(item) {
+        return `<div class="sofa-analysis-team-head"><img src="${this.escapeAttr(item.team?.logo || '')}" onerror="this.style.display='none'"><div><strong>${this.escapeHtml(item.team?.name || '')}</strong><span>Últimos ${item.sampleSize} jogos</span></div></div>`;
+    },
+
+    renderSofaAnalysisSummary(data) {
+        return `<div class="sofa-analysis-columns">${data.teams.map(item => {
+            const s = item.summary || {};
+            const metrics = [
+                ['Vitórias', `${s.winPercent || 0}%`], ['Gols marcados', s.goalsFor || 0],
+                ['Gols sofridos', s.goalsAgainst || 0], ['Média marcados', Number(s.goalsForAverage || 0).toFixed(2)],
+                ['Média sofridos', Number(s.goalsAgainstAverage || 0).toFixed(2)], ['Ambas marcam', `${s.bttsPercent || 0}%`],
+                ['Mais de 2,5', `${s.over25Percent || 0}%`], ['Sem sofrer gol', `${s.cleanSheetPercent || 0}%`],
+                ['Não marcou', `${s.failedToScorePercent || 0}%`]
+            ];
+            return `<article class="sofa-analysis-card">${this.renderSofaAnalysisTeamHead(item)}<div class="sofa-analysis-metrics">${metrics.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('')}</div></article>`;
+        }).join('')}</div>`;
+    },
+
+    renderSofaAnalysisPeriods(data) {
+        const labels = ['0–15', '16–30', '31–45+', '46–60', '61–75', '76–90+'];
+        const block = (title, values) => {
+            const max = Math.max(1, ...values);
+            return `<section class="sofa-period-block"><h4>${title}</h4>${labels.map((label, index) => {
+                const value = Number(values[index] || 0);
+                const ratio = value / max;
+                const level = ratio >= 0.76 ? 'peak' : ratio >= 0.46 ? 'high' : ratio > 0 ? 'medium' : 'empty';
+                return `<div class="${level}"><span>${label}</span><i><b style="width:${Math.round(ratio * 100)}%"></b></i><strong>${value}</strong></div>`;
+            }).join('')}</section>`;
+        };
+        return `<div class="sofa-analysis-columns">${data.teams.map(item => `<article class="sofa-analysis-card">${this.renderSofaAnalysisTeamHead(item)}<div class="sofa-period-grid">${block('Gols marcados', item.periods?.scored || [])}${block('Gols sofridos', item.periods?.conceded || [])}${block('Primeiro gol da partida', item.periods?.firstGoal || [])}</div></article>`).join('')}</div>`;
+    },
+
+    renderSofaAnalysisMatches(data) {
+        return `<div class="sofa-analysis-columns">${data.teams.map(item => `<article class="sofa-analysis-card">${this.renderSofaAnalysisTeamHead(item)}<div class="sofa-match-list">${(item.matches || []).map(match => `<div><em class="${match.result === 'W' ? 'win' : match.result === 'L' ? 'loss' : 'draw'}">${match.result === 'W' ? 'V' : match.result === 'L' ? 'D' : 'E'}</em><span><strong>${this.escapeHtml(match.home)} ${match.homeScore}–${match.awayScore} ${this.escapeHtml(match.away)}</strong><small>${this.escapeHtml(match.date)} · ${this.escapeHtml(match.tournament || '')}</small></span></div>`).join('')}</div></article>`).join('')}</div>`;
+    },
+
+    renderSofaGoalTypes() {
+        if (this.sofaGoalTypesLoading) return `<div class="sofa-analysis-state"><i class='bx bx-loader-alt bx-spin'></i><strong>Classificando os gols...</strong><span>Esta consulta será armazenada no cache local.</span></div>`;
+        if (this.sofaGoalTypesError) return `<div class="sofa-analysis-state error"><i class='bx bx-error-circle'></i><strong>${this.escapeHtml(this.sofaGoalTypesError)}</strong><button onclick="AnalisePro.loadSofaGoalTypes(true)">Tentar novamente</button></div>`;
+        const data = this.sofaGoalTypesData;
+        if (!data?.teams?.length) return `<div class="sofa-analysis-state"><i class='bx bx-loader-alt bx-spin'></i><strong>Preparando tipos de gols...</strong></div>`;
+        const labels = {
+            header: 'Cabeça', corner: 'Escanteio', crossedFreeKick: 'Falta cruzada',
+            directFreeKick: 'Falta direta', throwIn: 'Arremesso lateral', counterAttack: 'Contra-ataque',
+            outsideBox: 'Fora da área', penalty: 'Pênalti', other: 'Outros'
+        };
+        const table = (title, values, coverage, total) => `<section class="sofa-goal-type-table"><h4>${title}</h4><header><span>Tipo</span><b>Gols</b><b>%</b></header>${Object.entries(labels).map(([key, label]) => {
+            const value = Number(values?.[key] || 0);
+            const percent = total ? Math.round((value / total) * 100) : 0;
+            return `<div><span>${label}</span><b>${value}</b><strong>${percent}%</strong></div>`;
+        }).join('')}<footer><span>Todos os gols</span><b>${total}</b><strong>100%</strong></footer><small>${coverage} de ${total} gols com classificação detalhada</small></section>`;
+        return `<div class="sofa-analysis-columns">${data.teams.map(item => {
+            const coverage = item.coverage || {};
+            return `<article class="sofa-analysis-card sofa-goal-types-card">${this.renderSofaAnalysisTeamHead(item)}<div class="sofa-goal-types-grid">${table('Tipos de gols marcados', item.scored, coverage.scored || 0, coverage.scoredTotal || 0)}${table('Tipos de gols sofridos', item.conceded, coverage.conceded || 0, coverage.concededTotal || 0)}</div></article>`;
+        }).join('')}</div>`;
+    },
+
+    renderSofaLineups() {
+        if (this.sofaLineupsLoading) return `<div class="sofa-analysis-state"><i class='bx bx-loader-alt bx-spin'></i><strong>Carregando escalações...</strong><span>O SofaScore pode liberar estes dados perto do início do jogo.</span></div>`;
+        if (this.sofaLineupsError) return `<div class="sofa-analysis-state error"><i class='bx bx-error-circle'></i><strong>${this.escapeHtml(this.sofaLineupsError)}</strong><button onclick="AnalisePro.loadSofaLineups(true)">Tentar novamente</button></div>`;
+        const data = this.sofaLineupsData;
+        const lineups = data?.lineups || {};
+        const home = lineups.home || {};
+        const away = lineups.away || {};
+        if (!home.starters?.length && !away.starters?.length) {
+            return `<div class="sofa-analysis-state"><i class='bx bx-user-x'></i><strong>Escalações ainda não disponíveis.</strong><span>Quando o SofaScore liberar, esta aba passa a mostrar titulares, reservas e ausências.</span></div>`;
+        }
+        const teamCard = (side, label) => {
+            const starters = Array.isArray(side.starters) ? side.starters : [];
+            const bench = Array.isArray(side.bench) ? side.bench : [];
+            const missing = Array.isArray(side.missing) ? side.missing : [];
+            const playerRow = player => `<li><b>${this.escapeHtml(player.number || '-')}</b><span>${this.escapeHtml(player.name || player.shortName || '-')}</span>${player.position ? `<em>${this.escapeHtml(player.position)}</em>` : ''}${player.rating ? `<strong>${this.escapeHtml(String(player.rating))}</strong>` : ''}</li>`;
+            return `<article class="sofa-analysis-card sofa-lineup-card">
+                <header><div><strong>${this.escapeHtml(label)}</strong><span>${side.formation ? `Formação ${this.escapeHtml(side.formation)}` : 'Formação indisponível'}</span></div>${side.manager ? `<small>Técnico: ${this.escapeHtml(side.manager)}</small>` : ''}</header>
+                <section><h4>Titulares</h4><ol>${starters.map(playerRow).join('')}</ol></section>
+                ${bench.length ? `<section><h4>Banco</h4><ol>${bench.slice(0, 12).map(playerRow).join('')}</ol></section>` : ''}
+                ${missing.length ? `<section><h4>Ausências</h4><ol>${missing.slice(0, 8).map(playerRow).join('')}</ol></section>` : ''}
+            </article>`;
+        };
+        const homeName = data?.match?.home || this.sofaAnalysisPendingGame?.homeTeam?.name || 'Mandante';
+        const awayName = data?.match?.away || this.sofaAnalysisPendingGame?.awayTeam?.name || 'Visitante';
+        return `<div class="sofa-analysis-columns">${teamCard(home, homeName)}${teamCard(away, awayName)}</div>`;
+    },
+
+    renderSofaStandings() {
+        if (this.sofaStandingsLoading) return `<div class="sofa-analysis-state"><i class='bx bx-loader-alt bx-spin'></i><strong>Carregando classificação...</strong><span>Buscando a tabela da competição no SofaScore.</span></div>`;
+        if (this.sofaStandingsError) return `<div class="sofa-analysis-state error"><i class='bx bx-error-circle'></i><strong>${this.escapeHtml(this.sofaStandingsError)}</strong><button onclick="AnalisePro.loadSofaStandings(true)">Tentar novamente</button></div>`;
+        const data = this.sofaStandingsData;
+        const groups = Array.isArray(data?.groups) ? data.groups.filter(group => Array.isArray(group.rows) && group.rows.length) : [];
+        if (!groups.length) return `<div class="sofa-analysis-state"><i class='bx bx-table'></i><strong>Classificação indisponível.</strong><span>Alguns torneios de mata-mata ou amistosos não possuem tabela.</span></div>`;
+        const promotionClass = value => {
+            const text = String(value || '').toLowerCase();
+            if (/releg|desc/.test(text)) return 'danger';
+            if (/champions|libertadores|promotion|promoc|playoff|qual/i.test(text)) return 'success';
+            if (/sudamericana|europa|conference|continental/i.test(text)) return 'warning';
+            return '';
+        };
+        const rowHtml = row => {
+            const promo = row.promotion?.name || '';
+            const promoClass = promotionClass(promo);
+            return `<tr class="${promoClass}">
+                <td><span title="${this.escapeAttr(promo)}">${this.escapeHtml(row.position || '-')}</span></td>
+                <td><img src="${this.escapeAttr(row.logo || '')}" onerror="this.style.display='none'"><strong>${this.escapeHtml(row.team || '')}</strong></td>
+                <td>${this.escapeHtml(row.played ?? '-')}</td>
+                <td>${this.escapeHtml(row.wins ?? '-')}</td>
+                <td>${this.escapeHtml(row.draws ?? '-')}</td>
+                <td>${this.escapeHtml(row.losses ?? '-')}</td>
+                <td>${this.escapeHtml(row.goalDiff ?? '-')}</td>
+                <td><b>${this.escapeHtml(row.points ?? '-')}</b></td>
+            </tr>`;
+        };
+        return `<div class="sofa-standings-list">${groups.map(group => `<article class="sofa-analysis-card sofa-standings-card">
+            <header><strong>${this.escapeHtml(group.name || data.competition?.name || 'Classificação')}</strong><span>${this.escapeHtml(data.competition?.name || '')}</span></header>
+            <div class="sofa-standings-table"><table><thead><tr><th>#</th><th>Time</th><th>J</th><th>V</th><th>E</th><th>D</th><th>SG</th><th>Pts</th></tr></thead><tbody>${group.rows.map(rowHtml).join('')}</tbody></table></div>
+        </article>`).join('')}</div>`;
+    },
+
     getCalendarGameActionData(game) {
         const sofaId = Number(game.sofascoreId || (game.source !== 'wradar' ? game.id : 0)) || null;
         const sofaUrl = sofaId ? `https://www.sofascore.com/event/${sofaId}` : null;
@@ -3343,11 +3728,20 @@ const AnalisePro = {
             away: game.awayTeam?.name || '',
             startTimestamp: game.startTimestamp || null
         }).replace(/"/g, '&quot;');
-        return { sofaUrl, radarFutebolUrl, wradarGame };
+        const analysisGame = encodeURIComponent(JSON.stringify({
+            id: game.id,
+            sofascoreId: sofaId,
+            source: game.source,
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            tournament: game.tournament,
+            startTimestamp: game.startTimestamp
+        }));
+        return { sofaUrl, radarFutebolUrl, wradarGame, analysisGame };
     },
 
     renderCalendarActions(game, extraClass = '') {
-        const { sofaUrl, radarFutebolUrl, wradarGame } = this.getCalendarGameActionData(game);
+        const { sofaUrl, radarFutebolUrl, wradarGame, analysisGame } = this.getCalendarGameActionData(game);
         return `
             <div class="calendar-action-grid ${extraClass}">
                 <a class="mod" href="#" onclick="AnalisePro.openCustomWRadarMod(${wradarGame}); return false;" title="1 - Radar MOD proprio">
@@ -3368,6 +3762,7 @@ const AnalisePro = {
                 <a class="sofa" href="${sofaUrl || '#'}" ${sofaUrl ? 'target="_blank"' : 'onclick="return false;"'} title="6 - Sofascore detalhes">
                     <i class='bx bx-plus-circle'></i>
                 </a>
+                ${sofaUrl ? `<a class="analysis" href="#" onclick="AnalisePro.openSofaAnalysis(decodeURIComponent('${this.escapeAttr(analysisGame)}')); return false;" title="Análise estatística dos times"><i class='bx bx-line-chart'></i><span>Análise</span></a>` : ''}
             </div>
         `;
     },

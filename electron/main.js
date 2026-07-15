@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const { app, BrowserWindow, ipcMain, Menu, shell, session, nativeImage, dialog, screen } = require('electron');
@@ -15,13 +16,17 @@ const extensionOddsCommands = new Map();
 let extensionOddsServer = null;
 let extensionOddsLastContact = 0;
 let extensionOddsLastBrowserLaunch = 0;
+let extensionOddsDedicatedStarted = false;
 const extensionOddsPort = 38465;
+const extensionOddsCollectorToken = crypto.randomBytes(24).toString('hex');
 const customWRadarWindowDefaultBounds = { width: 1220, height: 460 };
 const customWRadarWindowMinBounds = { width: 520, height: 260 };
 const customRadarHighlightMinBounds = { width: 260, height: 120 };
 
 if (process.env.PLANILHA_TRADER_PORTABLE_DATA) {
   app.setPath('userData', path.resolve(process.env.PLANILHA_TRADER_PORTABLE_DATA));
+} else {
+  app.setPath('userData', path.join(app.getPath('appData'), 'planilha-trader'));
 }
 
 function getSettingsFilePath(fileName) {
@@ -113,13 +118,48 @@ function writeCustomRadarPositionSlots(slots) {
   writeJsonFile('custom-radar-highlight-slots.json', { slots });
 }
 
+function readCustomRadarLayoutSlots() {
+  const saved = readJsonFile('custom-radar-layout-slots.json');
+  return saved && typeof saved.slots === 'object' ? saved.slots : {};
+}
+
+function writeCustomRadarLayoutSlots(slots) {
+  writeJsonFile('custom-radar-layout-slots.json', { version: 1, slots });
+}
+
+async function readCustomRadarWindowLayout(item) {
+  if (!item?.window || item.window.isDestroyed()) return null;
+  return item.window.webContents.executeJavaScript(`
+    (() => window.__customRadarLayoutProfile ? window.__customRadarLayoutProfile() : null)()
+  `, true).catch(() => null);
+}
+
+async function applyCustomRadarWindowLayout(item, profile) {
+  if (!profile || !item?.window || item.window.isDestroyed()) return false;
+  const encoded = JSON.stringify(profile).replace(/</g, '\\u003c');
+  return item.window.webContents.executeJavaScript(`
+    (() => window.__customRadarApplyLayoutProfile ? window.__customRadarApplyLayoutProfile(${encoded}) : false)()
+  `, true).catch(() => false);
+}
+
+async function persistCustomRadarSlotLayout(item, slotId = item?.positionSlot) {
+  const id = String(slotId || '');
+  if (!/^\d+$/.test(id)) return false;
+  const profile = await readCustomRadarWindowLayout(item);
+  if (!profile) return false;
+  const slots = readCustomRadarLayoutSlots();
+  slots[id] = profile;
+  writeCustomRadarLayoutSlots(slots);
+  return true;
+}
+
 function occupiedCustomRadarSlots(exceptItem = null) {
   return new Set(Array.from(replicaWindows.values())
     .filter(item => item !== exceptItem && item.isLiveOverlay && item.positionSlot && item.window && !item.window.isDestroyed())
     .map(item => String(item.positionSlot)));
 }
 
-function chooseCustomRadarPositionSlot(parentWindow) {
+async function chooseCustomRadarPositionSlot(parentWindow) {
   const slots = readCustomRadarPositionSlots();
   const occupied = occupiedCustomRadarSlots();
   const configuredIds = Object.keys(slots).sort((a, b) => Number(a) - Number(b));
@@ -160,7 +200,7 @@ function chooseCustomRadarPositionSlot(parentWindow) {
   });
 }
 
-function saveCustomRadarSlot(item, slotId, bounds = null) {
+async function saveCustomRadarSlot(item, slotId, bounds = null) {
   if (!item || !item.window || item.window.isDestroyed()) return false;
   const id = String(slotId || '');
   if (!/^\d+$/.test(id)) return false;
@@ -169,10 +209,11 @@ function saveCustomRadarSlot(item, slotId, bounds = null) {
   slots[id] = normalizeWindowBounds(current, customWRadarWindowDefaultBounds, customRadarHighlightMinBounds);
   writeCustomRadarPositionSlots(slots);
   item.positionSlot = id;
+  await persistCustomRadarSlotLayout(item, id);
   return true;
 }
 
-function moveCustomRadarToSlot(item, slotId) {
+async function moveCustomRadarToSlot(item, slotId) {
   if (!item || !item.window || item.window.isDestroyed()) return false;
   const id = String(slotId || '');
   if (!/^\d+$/.test(id) || occupiedCustomRadarSlots(item).has(id)) return false;
@@ -180,6 +221,8 @@ function moveCustomRadarToSlot(item, slotId) {
   if (!slots[id]) return saveCustomRadarSlot(item, id);
   item.positionSlot = id;
   item.window.setBounds(slots[id]);
+  const layout = readCustomRadarLayoutSlots()[id];
+  if (layout) await applyCustomRadarWindowLayout(item, layout);
   return true;
 }
 
@@ -189,6 +232,9 @@ function removeCustomRadarSlot(item, slotId) {
   const slots = readCustomRadarPositionSlots();
   delete slots[id];
   writeCustomRadarPositionSlots(slots);
+  const layouts = readCustomRadarLayoutSlots();
+  delete layouts[id];
+  writeCustomRadarLayoutSlots(layouts);
   if (item?.positionSlot === id) item.positionSlot = null;
   return true;
 }
@@ -595,6 +641,11 @@ async function createCustomRadarOverlayReplica(sourceWebContents, rect, title) {
   replicaWindows.set(id, item);
   configureReplicaControls(item);
   rememberCustomRadarHighlightBounds(item);
+  overlay.webContents.once('did-finish-load', async () => {
+    if (!positionSlot) return;
+    const layout = readCustomRadarLayoutSlots()[positionSlot];
+    if (layout) await applyCustomRadarWindowLayout(item, layout);
+  });
   overlay.on('closed', () => {
     clearTimeout(item.timer);
     replicaWindows.delete(id);
@@ -797,7 +848,21 @@ function createWRadarRealModWindow(payload) {
     }
   });
 
+  win.webContents.setBackgroundThrottling?.(false);
   win.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+  win.webContents.on('dom-ready', () => {
+    win.webContents.executeJavaScript(`(() => {
+      const define = (target, key, value) => {
+        try { Object.defineProperty(target, key, { configurable: true, get: () => value }); } catch (_) {}
+      };
+      define(document, 'hidden', false);
+      define(document, 'visibilityState', 'visible');
+      define(Document.prototype, 'hidden', false);
+      define(Document.prototype, 'visibilityState', 'visible');
+      try { document.dispatchEvent(new Event('visibilitychange')); } catch (_) {}
+      return true;
+    })()`, true).catch(() => {});
+  });
   win.loadURL(buildWRadarScoreboardModUrl(payload));
   return win;
 }
@@ -866,8 +931,8 @@ function scrapeWRadarRealModScript() {
 
 async function pollWRadarRealModFeed(feedId) {
   const feed = wradarRealModFeeds.get(feedId);
-  if (!feed || !feed.window || feed.window.isDestroyed() || feed.owner.isDestroyed()) {
-    cleanupWRadarRealModFeed(feedId);
+  if (!feed || !feed.window || feed.window.isDestroyed() || !feed.subscribers?.size) {
+    cleanupWRadarRealModFeed(feedId, true);
     return;
   }
 
@@ -882,31 +947,42 @@ async function pollWRadarRealModFeed(feedId) {
     });
     if (signature !== feed.lastSignature) {
       feed.lastSignature = signature;
-      feed.owner.send('wradar-real-mod:update', {
-        feedId,
-        eventId: feed.eventId,
-        data
-      });
+      feed.lastData = data;
+      broadcastWRadarRealModFeed(feed, { data });
     }
   } catch (error) {
-    feed.owner.send('wradar-real-mod:update', {
-      feedId,
-      eventId: feed.eventId,
-      error: error?.message || 'Falha ao ler scoreboard.'
-    });
+    broadcastWRadarRealModFeed(feed, { error: error?.message || 'Falha ao ler scoreboard.' });
   } finally {
     const stillActive = wradarRealModFeeds.get(feedId);
     if (stillActive) {
       clearTimeout(stillActive.timer);
-      stillActive.timer = setTimeout(() => pollWRadarRealModFeed(feedId), 250);
+      stillActive.timer = setTimeout(() => pollWRadarRealModFeed(feedId), 180);
     }
   }
 }
 
-function cleanupWRadarRealModFeed(feedId) {
+function broadcastWRadarRealModFeed(feed, payload) {
+  if (!feed?.subscribers) return;
+  for (const [ownerId, owner] of feed.subscribers) {
+    if (!owner || owner.isDestroyed()) {
+      feed.subscribers.delete(ownerId);
+      continue;
+    }
+    owner.send('wradar-real-mod:update', {
+      feedId: feed.id,
+      eventId: feed.eventId,
+      ...payload
+    });
+  }
+}
+
+function cleanupWRadarRealModFeed(feedId, force = false, ownerId = null) {
   const feed = wradarRealModFeeds.get(feedId);
   if (!feed) return;
+  if (ownerId !== null && ownerId !== undefined) feed.subscribers?.delete(Number(ownerId));
+  if (!force && feed.subscribers?.size) return;
   clearTimeout(feed.timer);
+  feed.closing = true;
   if (feed.window && !feed.window.isDestroyed()) feed.window.close();
   wradarRealModFeeds.delete(feedId);
 }
@@ -935,16 +1011,31 @@ ipcMain.handle('wradar-real-mod:start', async (event, rawPayload) => {
   if (!payload) throw new Error('EventId invalido para o Radar MOD real.');
 
   const owner = event.sender;
-  const feedId = `${owner.id}:${payload.eventId}`;
-  cleanupWRadarRealModFeed(feedId);
+  const feedId = `event:${payload.eventId}`;
+  const existing = wradarRealModFeeds.get(feedId);
+  if (existing?.window && !existing.window.isDestroyed()) {
+    existing.subscribers.set(owner.id, owner);
+    if (existing.lastData) {
+      setTimeout(() => {
+        if (!owner.isDestroyed() && existing.subscribers.has(owner.id)) {
+          owner.send('wradar-real-mod:update', { feedId, eventId: payload.eventId, data: existing.lastData });
+        }
+      }, 0);
+    }
+    owner.once('destroyed', () => cleanupWRadarRealModFeed(feedId, false, owner.id));
+    return { feedId, eventId: payload.eventId, shared: true };
+  }
 
   const win = createWRadarRealModWindow(payload);
   const feed = {
     id: feedId,
     eventId: payload.eventId,
-    owner,
+    subscribers: new Map([[owner.id, owner]]),
     window: win,
-    timer: null
+    timer: null,
+    lastSignature: '',
+    lastData: null,
+    closing: false
   };
   wradarRealModFeeds.set(feedId, feed);
 
@@ -952,27 +1043,24 @@ ipcMain.handle('wradar-real-mod:start', async (event, rawPayload) => {
     const active = wradarRealModFeeds.get(feedId);
     if (!active) return;
     clearTimeout(active.timer);
-    active.timer = setTimeout(() => pollWRadarRealModFeed(feedId), 700);
+    active.timer = setTimeout(() => pollWRadarRealModFeed(feedId), 80);
   };
 
   win.webContents.on('did-finish-load', startPolling);
   win.webContents.on('did-fail-load', (_loadEvent, errorCode, errorDescription) => {
-    if (!owner.isDestroyed()) {
-      owner.send('wradar-real-mod:update', {
-        feedId,
-        eventId: payload.eventId,
-        error: `${errorCode}: ${errorDescription}`
-      });
-    }
+    broadcastWRadarRealModFeed(feed, { error: `${errorCode}: ${errorDescription}` });
   });
-  win.on('closed', () => cleanupWRadarRealModFeed(feedId));
-  owner.once('destroyed', () => cleanupWRadarRealModFeed(feedId));
+  win.on('closed', () => {
+    clearTimeout(feed.timer);
+    if (wradarRealModFeeds.get(feedId) === feed) wradarRealModFeeds.delete(feedId);
+  });
+  owner.once('destroyed', () => cleanupWRadarRealModFeed(feedId, false, owner.id));
 
   return { feedId, eventId: payload.eventId };
 });
 
-ipcMain.handle('wradar-real-mod:stop', async (_event, feedId) => {
-  cleanupWRadarRealModFeed(String(feedId || ''));
+ipcMain.handle('wradar-real-mod:stop', async (event, feedId) => {
+  cleanupWRadarRealModFeed(String(feedId || ''), false, event.sender.id);
   return true;
 });
 
@@ -1000,14 +1088,16 @@ ipcMain.handle('public-odds:start', async (event, rawPayload = {}) => {
 ipcMain.handle('public-odds:open-window', async (_event, rawPayload = {}) => {
   const payload = normalizePublicOddsPayload(rawPayload);
   if (!payload) throw new Error('Times invalidos para abrir o Radar de Odds.');
-  const win = createPublicOddsWindow(payload);
+  const owner = BrowserWindow.fromWebContents(_event.sender);
+  const win = createPublicOddsWindow(payload, { ownerWindow: owner });
   return { ok: true, windowId: win.id };
 });
 
 ipcMain.handle('public-odds:open-overlay', async (_event, rawPayload = {}) => {
   const payload = normalizePublicOddsPayload(rawPayload);
   if (!payload) throw new Error('Times invalidos para abrir o mercado destacado.');
-  const overlay = createPublicOddsWindow(payload, { overlay: true });
+  const owner = BrowserWindow.fromWebContents(_event.sender);
+  const overlay = createPublicOddsWindow(payload, { overlay: true, ownerWindow: owner });
   return { ok: true, windowId: overlay.id };
 });
 
@@ -1070,10 +1160,10 @@ ipcMain.handle('public-odds:resize-goal-sides', async (event, rawCount) => {
   if (!win || win.isDestroyed()) return { ok: false };
   const count = Number(rawCount) === 1 ? 1 : 2;
   const bounds = win.getBounds();
-  const height = Math.max(count === 1 ? 105 : 120, bounds.height);
-  const width = count === 1 ? Math.max(135, Math.round(height * 1.29)) : Math.max(240, Math.round(height * 2));
-  win.setAspectRatio(count === 1 ? 1.29 : 2);
-  win.setMinimumSize(count === 1 ? 135 : 240, count === 1 ? 105 : 120);
+  const height = Math.max(68, bounds.height);
+  const width = count === 1 ? Math.max(96, Math.round(height * 1.36)) : Math.max(168, Math.round(height * 2.45));
+  win.setAspectRatio(count === 1 ? 1.36 : 2.45);
+  win.setMinimumSize(count === 1 ? 96 : 168, 68);
   win.setSize(width, height);
   return { ok: true, width, height };
 });
@@ -1116,6 +1206,22 @@ ipcMain.handle('sofascore:momentum', async (_event, payload = {}) => {
 
 ipcMain.handle('sofascore:event-details', async (_event, payload = {}) => {
   return fetchSofascoreEventDetails(payload);
+});
+
+ipcMain.handle('sofascore:match-details', async (_event, payload = {}) => {
+  return fetchSofascoreMatchDetails(payload);
+});
+
+ipcMain.handle('sofascore:team-analysis', async (_event, payload = {}) => {
+  return fetchSofascoreTeamAnalysis(payload);
+});
+
+ipcMain.handle('sofascore:team-goal-types', async (_event, payload = {}) => {
+  return fetchSofascoreTeamGoalTypes(payload);
+});
+
+ipcMain.handle('sofascore:event-standings', async (_event, payload = {}) => {
+  return fetchSofascoreEventStandings(payload);
 });
 
 ipcMain.handle('sofascore:tournament-logo', async (_event, payload = {}) => {
@@ -1262,7 +1368,7 @@ function extensionOddsResponse(response, status, data) {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, x-planilha-trader',
+    'access-control-allow-headers': 'content-type, x-planilha-trader, x-planilha-client',
     'cache-control': 'no-store'
   });
   response.end(JSON.stringify(data));
@@ -1311,7 +1417,20 @@ function launchOddsBrowser(browser, force = false) {
   if (!executable) return false;
   extensionOddsLastBrowserLaunch = Date.now();
   try {
-    const child = spawn(executable, ['--no-startup-window'], {
+    const extensionPath = getAppResourcePath('chrome-extension', 'planilha-trader-odds');
+    const profilePath = path.join(app.getPath('userData'), `odds-browser-profile-v4-${selectedBrowser}`);
+    fs.mkdirSync(profilePath, { recursive: true });
+    const bet365Url = `https://www.bet365.bet.br/?planilha_collector=${extensionOddsCollectorToken}#/IP/B1`;
+    const child = spawn(executable, [
+      `--user-data-dir=${profilePath}`,
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling',
+      `--app=${bet365Url}`
+    ], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true
@@ -1324,7 +1443,11 @@ function launchOddsBrowser(browser, force = false) {
 }
 
 function ensureOddsBrowserAvailable() {
-  return launchOddsBrowser(readOddsBrowserPreference().browser, false);
+  if (extensionOddsDedicatedStarted && Date.now() - extensionOddsLastContact < 5000) return false;
+  if (Date.now() - extensionOddsLastBrowserLaunch < 12000) return false;
+  const launched = launchOddsBrowser(readOddsBrowserPreference().browser, true);
+  if (launched) extensionOddsDedicatedStarted = true;
+  return launched;
 }
 
 function ensureOddsExtensionConnection(startedAt, owner) {
@@ -1355,21 +1478,26 @@ function startExtensionOddsServer() {
   if (extensionOddsServer) return;
   extensionOddsServer = http.createServer((request, response) => {
     if (request.method === 'OPTIONS') return extensionOddsResponse(response, 204, {});
-    if (request.headers['x-planilha-trader'] !== 'extension-v1') return extensionOddsResponse(response, 403, { ok: false });
     const url = new URL(request.url || '/', `http://127.0.0.1:${extensionOddsPort}`);
+    if (request.headers['x-planilha-trader'] !== 'extension-v1') return extensionOddsResponse(response, 403, { ok: false });
+    const authorizedCollector = request.headers['x-planilha-client'] === extensionOddsCollectorToken;
     if (request.method === 'GET' && url.pathname === '/commands') {
       const reportedBrowser = String(url.searchParams.get('browser') || '').toLowerCase();
-      if (reportedBrowser === readOddsBrowserPreference().browser) extensionOddsLastContact = Date.now();
+      if (authorizedCollector) extensionOddsLastContact = Date.now();
       return extensionOddsResponse(response, 200, {
         ok: true,
         selectedBrowser: readOddsBrowserPreference().browser,
-        commands: Array.from(extensionOddsCommands.entries()).map(([feedId, payload]) => ({ feedId, ...payload }))
+        collector: authorizedCollector,
+        commands: authorizedCollector
+          ? Array.from(extensionOddsCommands.entries()).map(([feedId, payload]) => ({ feedId, ...payload }))
+          : []
       });
     }
     if (request.method === 'GET' && url.pathname === '/status') {
       return extensionOddsResponse(response, 200, { ok: true, app: 'Planilha Trader', commands: extensionOddsCommands.size });
     }
     if (request.method === 'POST' && url.pathname === '/odds') {
+      if (!authorizedCollector) return extensionOddsResponse(response, 403, { ok: false, error: 'Coletor nao autorizado' });
       let body = '';
       request.on('data', chunk => {
         if (body.length < 512000) body += chunk;
@@ -1420,11 +1548,14 @@ function createBetfairPublicWindow(payload) {
 
 function createPublicOddsWindow(payload, options = {}) {
   const overlay = !!options.overlay;
+  const ownerWindow = options.ownerWindow && !options.ownerWindow.isDestroyed() ? options.ownerWindow : null;
   const widget = overlay && ['mo', 'lht', 'lft', 'laft'].includes(payload.viewMode);
   const matchWidget = widget && payload.viewMode === 'mo';
-  const fallback = { width: overlay ? (matchWidget ? 280 : (widget ? 360 : 320)) : 760, height: overlay ? (matchWidget ? 140 : (widget ? 180 : 130)) : 540 };
-  const minBounds = overlay ? { width: matchWidget ? 240 : (widget ? 330 : 280), height: matchWidget ? 120 : (widget ? 165 : 100) } : { width: 520, height: 360 };
-  const boundsFile = widget ? `public-odds-overlay-bounds-${payload.viewMode}.json` : 'public-odds-overlay-bounds.json';
+  const fallback = { width: overlay ? (matchWidget ? 205 : (widget ? 255 : 320)) : 760, height: overlay ? (matchWidget ? 190 : (widget ? 96 : 130)) : 540 };
+  const minBounds = overlay ? { width: matchWidget ? 145 : (widget ? 168 : 280), height: matchWidget ? 132 : (widget ? 68 : 100) } : { width: 520, height: 360 };
+  const boundsFile = matchWidget
+    ? 'public-odds-overlay-bounds-mo-v2.json'
+    : widget ? `public-odds-overlay-bounds-${payload.viewMode}.json` : 'public-odds-overlay-bounds.json';
   const saved = overlay ? readJsonFile(boundsFile) : null;
   const bounds = normalizeWindowBounds(saved, fallback, minBounds);
   const child = new BrowserWindow({
@@ -1442,13 +1573,23 @@ function createPublicOddsWindow(payload, options = {}) {
     skipTaskbar: overlay,
     webPreferences: baseWebPreferences()
   });
-  if (widget) child.setAspectRatio(2);
+  if (widget) child.setAspectRatio(matchWidget ? 1.1 : 2.45);
   childWindows.add(child);
   child.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  child.on('closed', () => childWindows.delete(child));
+  let closeWithOwner = null;
+  if (ownerWindow) {
+    closeWithOwner = () => {
+      if (!child.isDestroyed()) child.close();
+    };
+    ownerWindow.once('closed', closeWithOwner);
+  }
+  child.on('closed', () => {
+    childWindows.delete(child);
+    if (ownerWindow && closeWithOwner) ownerWindow.removeListener('closed', closeWithOwner);
+  });
   if (overlay) {
     const saveBounds = () => {
       if (!child.isDestroyed()) writeJsonFile(boundsFile, child.getBounds());
@@ -1828,10 +1969,30 @@ async function showLiveRadarMenu(item) {
     const payload = JSON.stringify({ action, value });
     win.webContents.executeJavaScript(`
       (() => window.__customRadarNativeMenuAction ? window.__customRadarNativeMenuAction(${payload}) : null)()
-    `, true).catch(() => {});
+    `, true).then(() => {
+      if (action === 'toggle-layout-editor' && radarState.layoutEditMode && item.positionSlot) {
+        persistCustomRadarSlotLayout(item).catch(() => {});
+      }
+    }).catch(() => {});
   };
   const fontPercent = Math.round((Number(radarState.fontScale) || 1) * 100);
   const opacityPercent = Math.round((Number(radarState.overlayOpacity) || 1) * 100);
+  const radarIconPercent = Math.round((Number(radarState.radarIconScale) || 1) * 100);
+  const pressureIconPercent = Math.round((Number(radarState.pressureIconScale) || 1) * 100);
+  const componentSettings = radarState.componentSettings || {};
+  const componentLabels = {
+    score: 'Placar',
+    events: 'Eventos',
+    stats: 'Estatisticas',
+    charts: 'Graficos',
+    heatmap: 'Mapa de calor'
+  };
+  const componentScalePercent = key => Math.round((Number(componentSettings?.[key]?.scale) || 1) * 100);
+  const componentScaleMenu = key => ([
+    { label: 'Menor', click: () => sendAction('component-scale-down', key) },
+    { label: 'Padrao (100%)', click: () => sendAction('component-scale-reset', key) },
+    { label: 'Maior', click: () => sendAction('component-scale-up', key) }
+  ]);
   const radarLayout = radarState.radarLayout === 'ticker' ? 'ticker' : 'standard';
   const contentMode = ['current', 'events', 'full'].includes(radarState.overlayContentMode)
     ? radarState.overlayContentMode
@@ -1843,11 +2004,9 @@ async function showLiveRadarMenu(item) {
     ? radarState.heatmapStyle
     : 'candles';
   const intelligenceSettings = radarState.intelligenceSettings || {};
-  const alertSettings = radarState.alertSettings || {};
   const configuredPositionSlots = readCustomRadarPositionSlots();
   const occupiedPositionSlots = occupiedCustomRadarSlots(item);
   const positionSlotIds = ['1', '2', '3', '4', '5', '6'];
-
   const menu = Menu.buildFromTemplate([
     {
       label: 'Layout visual',
@@ -1937,23 +2096,6 @@ async function showLiveRadarMenu(item) {
       ]
     },
     {
-      label: 'Alertas e resumo',
-      submenu: [
-        { label: 'Ativar alertas', type: 'checkbox', checked: !!alertSettings.enabled, click: () => sendAction('toggle-alerts') },
-        { label: 'Som', type: 'checkbox', checked: alertSettings.sound !== false, click: () => sendAction('alert-setting', 'sound') },
-        { label: 'Destaque visual', type: 'checkbox', checked: alertSettings.visual !== false, click: () => sendAction('alert-setting', 'visual') },
-        { label: 'Notificacao do sistema', type: 'checkbox', checked: !!alertSettings.notification, click: () => sendAction('alert-setting', 'notification') },
-        { type: 'separator' },
-        { label: 'Pressao crescente', type: 'checkbox', checked: alertSettings.pressure !== false, click: () => sendAction('alert-setting', 'pressure') },
-        { label: 'Ataques perigosos', type: 'checkbox', checked: alertSettings.sequence !== false, click: () => sendAction('alert-setting', 'sequence') },
-        { label: 'Muitos remates', type: 'checkbox', checked: alertSettings.shots !== false, click: () => sendAction('alert-setting', 'shots') },
-        { label: 'Cartao vermelho', type: 'checkbox', checked: alertSettings.redCard !== false, click: () => sendAction('alert-setting', 'redCard') },
-        { label: 'Momento perigoso', type: 'checkbox', checked: alertSettings.goalChance !== false, click: () => sendAction('alert-setting', 'goalChance') },
-        { type: 'separator' },
-        { label: 'Resumo automatico', type: 'checkbox', checked: !!radarState.showAutoSummary, click: () => sendAction('toggle-auto-summary') }
-      ]
-    },
-    {
       label: `Posicao (${item.positionSlot || 'livre'})`,
       submenu: [
         ...positionSlotIds.map(id => ({
@@ -1961,15 +2103,15 @@ async function showLiveRadarMenu(item) {
           type: 'radio',
           checked: String(item.positionSlot || '') === id,
           enabled: !occupiedPositionSlots.has(id),
-          click: () => moveCustomRadarToSlot(item, id)
+          click: () => { moveCustomRadarToSlot(item, id).catch(() => {}); }
         })),
         { type: 'separator' },
         {
-          label: 'Salvar local atual',
+          label: 'Salvar posicao + layout atual',
           submenu: positionSlotIds.map(id => ({
             label: `Como posicao ${id}`,
             enabled: !occupiedPositionSlots.has(id),
-            click: () => saveCustomRadarSlot(item, id)
+            click: () => { saveCustomRadarSlot(item, id).catch(() => {}); }
           }))
         },
         {
@@ -1985,6 +2127,32 @@ async function showLiveRadarMenu(item) {
             click: () => removeCustomRadarSlot(item, id)
           }))
         }
+      ]
+    },
+    {
+      label: 'Tamanhos',
+      submenu: [
+        {
+          label: `Icones do Radar (${radarIconPercent}%)`,
+          submenu: [
+            { label: 'Menor', click: () => sendAction('radar-icon-scale-down') },
+            { label: 'Padrao (100%)', click: () => sendAction('radar-icon-scale-reset') },
+            { label: 'Maior', click: () => sendAction('radar-icon-scale-up') }
+          ]
+        },
+        {
+          label: `Icones do grafico (${pressureIconPercent}%)`,
+          submenu: [
+            { label: 'Menor', click: () => sendAction('pressure-icon-scale-down') },
+            { label: 'Padrao (100%)', click: () => sendAction('pressure-icon-scale-reset') },
+            { label: 'Maior', click: () => sendAction('pressure-icon-scale-up') }
+          ]
+        },
+        { type: 'separator' },
+        ...Object.entries(componentLabels).map(([key, label]) => ({
+          label: `${label} (${componentScalePercent(key)}%)`,
+          submenu: componentScaleMenu(key)
+        }))
       ]
     },
     {
@@ -2030,7 +2198,9 @@ ipcMain.on('replica:begin-drag', (event, point) => {
     startX: Number(point.x) || 0,
     startY: Number(point.y) || 0,
     winX: x,
-    winY: y
+    winY: y,
+    lastX: x,
+    lastY: y
   };
 });
 
@@ -2039,7 +2209,12 @@ ipcMain.on('replica:drag-to', (event, point) => {
   if (!item || !item.drag || item.window.isDestroyed()) return;
   const x = item.drag.winX + (Number(point.x) || 0) - item.drag.startX;
   const y = item.drag.winY + (Number(point.y) || 0) - item.drag.startY;
-  item.window.setPosition(Math.round(x), Math.round(y));
+  const nextX = Math.round(x);
+  const nextY = Math.round(y);
+  if (nextX === item.drag.lastX && nextY === item.drag.lastY) return;
+  item.drag.lastX = nextX;
+  item.drag.lastY = nextY;
+  item.window.setPosition(nextX, nextY, false);
 });
 
 ipcMain.on('replica:end-drag', (event) => {
@@ -2462,6 +2637,44 @@ async function fetchSofascoreEventDetails(payload = {}) {
   }
   const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
   return runPythonJsonScript(scriptPath, 30000, ['event-details', String(eventId)]);
+}
+
+async function fetchSofascoreMatchDetails(payload = {}) {
+  const eventId = Number(payload.sofascoreId || payload.eventId || 0);
+  if (!eventId) {
+    return { ok: false, source: 'Sofascore', error: 'Jogo sem ID do Sofascore.' };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  return runPythonJsonScript(scriptPath, 60000, ['details', String(eventId)]);
+}
+
+async function fetchSofascoreTeamAnalysis(payload = {}) {
+  const eventId = Number(payload.sofascoreId || payload.eventId || 0);
+  const sampleSize = Math.max(3, Math.min(10, Number(payload.sampleSize || 5)));
+  if (!eventId) {
+    return { ok: false, source: 'Sofascore', error: 'Jogo sem ID do Sofascore.' };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  return runPythonJsonScript(scriptPath, 90000, ['team-analysis', String(eventId), String(sampleSize)]);
+}
+
+async function fetchSofascoreTeamGoalTypes(payload = {}) {
+  const eventId = Number(payload.sofascoreId || payload.eventId || 0);
+  const sampleSize = Math.max(3, Math.min(10, Number(payload.sampleSize || 5)));
+  if (!eventId) {
+    return { ok: false, source: 'Sofascore', error: 'Jogo sem ID do Sofascore.' };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  return runPythonJsonScript(scriptPath, 90000, ['team-goal-types', String(eventId), String(sampleSize)]);
+}
+
+async function fetchSofascoreEventStandings(payload = {}) {
+  const eventId = Number(payload.sofascoreId || payload.eventId || 0);
+  if (!eventId) {
+    return { ok: false, source: 'Sofascore', error: 'Jogo sem ID do Sofascore.' };
+  }
+  const scriptPath = getAppResourcePath('tools', 'worldcup_sofascore_cffi.py');
+  return runPythonJsonScript(scriptPath, 45000, ['event-standings', String(eventId)]);
 }
 
 async function fetchSofascoreTournamentLogo(payload = {}) {

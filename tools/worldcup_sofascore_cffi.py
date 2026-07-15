@@ -659,6 +659,340 @@ def fetch_match_player_events(event_id):
     }
 
 
+def _history_score_value(score):
+    if not isinstance(score, dict):
+        return None
+    value = score.get("current")
+    if value is None:
+        value = score.get("normaltime")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _history_period(minute):
+    try:
+        value = int(minute)
+    except (TypeError, ValueError):
+        return None
+    for index, limit in enumerate((15, 30, 45, 60, 75, 120)):
+        if value <= limit:
+            return index
+    return 5
+
+
+def _load_recent_team_events(team, event_id, before_timestamp, sample_size):
+    team_id = int(team.get("id"))
+    payload = api_get(f"/team/{team_id}/events/last/0", timeout=25, retries=2) or {}
+    candidates = sorted(
+        payload.get("events") or [],
+        key=lambda item: int(item.get("startTimestamp") or 0),
+        reverse=True,
+    )
+    finished = []
+    for item in candidates:
+        item_id = int(item.get("id") or 0)
+        timestamp = int(item.get("startTimestamp") or 0)
+        if item_id == event_id or (before_timestamp and timestamp >= before_timestamp):
+            continue
+        if str((item.get("status") or {}).get("type") or "").lower() != "finished":
+            continue
+        home_score = _history_score_value(item.get("homeScore"))
+        away_score = _history_score_value(item.get("awayScore"))
+        if home_score is None or away_score is None:
+            continue
+        finished.append(item)
+        if len(finished) >= sample_size:
+            break
+    return team, finished
+
+
+def fetch_team_analysis(event_id, sample_size=5):
+    event_id = int(event_id)
+    sample_size = max(3, min(10, int(sample_size or 5)))
+    event_payload = api_get(f"/event/{event_id}", timeout=20, retries=2) or {}
+    current = event_payload.get("event") or {}
+    teams = [current.get("homeTeam") or {}, current.get("awayTeam") or {}]
+    before_timestamp = int(current.get("startTimestamp") or 0)
+    if not all(team.get("id") for team in teams):
+        return {"ok": False, "source": "Sofascore", "error": "Jogo sem equipes validas."}
+
+    def load_team_events(team):
+        return _load_recent_team_events(team, event_id, before_timestamp, sample_size)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        loaded = list(executor.map(load_team_events, teams))
+
+    incident_jobs = {}
+    all_events = {}
+    for _team, matches in loaded:
+        for match in matches:
+            match_id = int(match.get("id") or 0)
+            if match_id:
+                all_events[match_id] = match
+
+    def load_incidents(match_id):
+        try:
+            payload = api_get(f"/event/{match_id}/incidents", timeout=18, retries=2) or {}
+            return match_id, payload.get("incidents") or []
+        except Exception:
+            return match_id, []
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for match_id, incidents in executor.map(load_incidents, all_events.keys()):
+            incident_jobs[match_id] = incidents
+
+    def summarize(team, matches):
+        team_id = int(team.get("id"))
+        periods_scored = [0] * 6
+        periods_conceded = [0] * 6
+        first_goal_periods = [0] * 6
+        rows = []
+        wins = draws = losses = scored = conceded = btts = over25 = clean_sheets = failed_to_score = 0
+
+        for match in matches:
+            is_home = int((match.get("homeTeam") or {}).get("id") or 0) == team_id
+            home_score = _history_score_value(match.get("homeScore")) or 0
+            away_score = _history_score_value(match.get("awayScore")) or 0
+            own_score, rival_score = (home_score, away_score) if is_home else (away_score, home_score)
+            scored += own_score
+            conceded += rival_score
+            wins += int(own_score > rival_score)
+            draws += int(own_score == rival_score)
+            losses += int(own_score < rival_score)
+            btts += int(own_score > 0 and rival_score > 0)
+            over25 += int(own_score + rival_score >= 3)
+            clean_sheets += int(rival_score == 0)
+            failed_to_score += int(own_score == 0)
+
+            goals = []
+            for incident in incident_jobs.get(int(match.get("id") or 0), []):
+                if str(incident.get("incidentType") or "").lower() != "goal":
+                    continue
+                minute = incident.get("time")
+                period = _history_period(minute)
+                if period is None:
+                    continue
+                goal_is_home = bool(incident.get("isHome"))
+                team_goal = goal_is_home == is_home
+                target = periods_scored if team_goal else periods_conceded
+                target[period] += 1
+                goals.append((int(minute or 0), team_goal))
+            if goals:
+                first = sorted(goals, key=lambda item: item[0])[0]
+                first_goal_periods[_history_period(first[0])] += 1
+
+            date, hour = br_datetime_from_timestamp(match.get("startTimestamp"))
+            opponent = match.get("awayTeam") if is_home else match.get("homeTeam")
+            rows.append({
+                "id": match.get("id"),
+                "date": date,
+                "time": hour,
+                "home": team_name(match.get("homeTeam") or {}),
+                "away": team_name(match.get("awayTeam") or {}),
+                "homeScore": home_score,
+                "awayScore": away_score,
+                "opponent": team_name(opponent or {}),
+                "venue": "home" if is_home else "away",
+                "result": "W" if own_score > rival_score else "D" if own_score == rival_score else "L",
+                "tournament": ((match.get("tournament") or {}).get("name") or ""),
+            })
+
+        count = len(rows)
+        percent = lambda value: round((value / count) * 100) if count else 0
+        return {
+            "team": {"id": team_id, "name": team_name(team), "logo": logo_url(team_id)},
+            "sampleSize": count,
+            "summary": {
+                "wins": wins, "draws": draws, "losses": losses,
+                "goalsFor": scored, "goalsAgainst": conceded,
+                "goalsForAverage": round(scored / count, 2) if count else 0,
+                "goalsAgainstAverage": round(conceded / count, 2) if count else 0,
+                "winPercent": percent(wins), "bttsPercent": percent(btts),
+                "over25Percent": percent(over25), "cleanSheetPercent": percent(clean_sheets),
+                "failedToScorePercent": percent(failed_to_score),
+            },
+            "periods": {"scored": periods_scored, "conceded": periods_conceded, "firstGoal": first_goal_periods},
+            "matches": rows,
+        }
+
+    analyses = [summarize(team, matches) for team, matches in loaded]
+    return {
+        "ok": True,
+        "source": "Sofascore",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "eventId": event_id,
+        "sampleSize": sample_size,
+        "teams": analyses,
+    }
+
+
+GOAL_TYPE_KEYS = ["header", "corner", "crossedFreeKick", "directFreeKick", "throwIn", "counterAttack", "outsideBox", "penalty", "other"]
+
+
+def _classify_goal_shot(shot):
+    body_part = str(shot.get("bodyPart") or "").lower()
+    situation = str(shot.get("situation") or "").lower().replace("_", "-")
+    goal_type = str(shot.get("goalType") or "").lower().replace("_", "-")
+    coordinates = shot.get("playerCoordinates") or {}
+    try:
+        distance = float(coordinates.get("x") or 0)
+    except (TypeError, ValueError):
+        distance = 0
+    if "penalty" in situation or "penalty" in goal_type:
+        return "penalty"
+    if body_part == "head":
+        return "header"
+    if "corner" in situation:
+        return "corner"
+    if "throw" in situation:
+        return "throwIn"
+    if "fast" in situation or "counter" in situation:
+        return "counterAttack"
+    if "direct" in situation and ("free" in situation or "set" in situation):
+        return "directFreeKick"
+    if "free-kick" in situation or "set-piece" in situation:
+        return "crossedFreeKick"
+    if distance > 16.5:
+        return "outsideBox"
+    return "other"
+
+
+def fetch_team_goal_types(event_id, sample_size=5):
+    event_id = int(event_id)
+    sample_size = max(3, min(10, int(sample_size or 5)))
+    event_payload = api_get(f"/event/{event_id}", timeout=20, retries=2) or {}
+    current = event_payload.get("event") or {}
+    teams = [current.get("homeTeam") or {}, current.get("awayTeam") or {}]
+    before_timestamp = int(current.get("startTimestamp") or 0)
+    if not all(team.get("id") for team in teams):
+        return {"ok": False, "source": "Sofascore", "error": "Jogo sem equipes validas."}
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        loaded = list(executor.map(
+            lambda team: _load_recent_team_events(team, event_id, before_timestamp, sample_size),
+            teams,
+        ))
+
+    match_ids = sorted({
+        int(match.get("id") or 0)
+        for _team, matches in loaded
+        for match in matches
+        if int(match.get("id") or 0)
+    })
+
+    def load_shotmap(match_id):
+        try:
+            payload = api_get(f"/event/{match_id}/shotmap", timeout=18, retries=2) or {}
+            return match_id, payload.get("shotmap") or []
+        except Exception:
+            return match_id, []
+
+    shotmaps = {}
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for match_id, shots in executor.map(load_shotmap, match_ids):
+            shotmaps[match_id] = shots
+
+    def summarize(team, matches):
+        team_id = int(team.get("id"))
+        scored = {key: 0 for key in GOAL_TYPE_KEYS}
+        conceded = {key: 0 for key in GOAL_TYPE_KEYS}
+        expected_scored = expected_conceded = mapped_scored = mapped_conceded = 0
+        detailed_scored = detailed_conceded = 0
+
+        for match in matches:
+            match_id = int(match.get("id") or 0)
+            is_home = int((match.get("homeTeam") or {}).get("id") or 0) == team_id
+            home_score = _history_score_value(match.get("homeScore")) or 0
+            away_score = _history_score_value(match.get("awayScore")) or 0
+            own_score, rival_score = (home_score, away_score) if is_home else (away_score, home_score)
+            expected_scored += own_score
+            expected_conceded += rival_score
+            for shot in shotmaps.get(match_id, []):
+                if str(shot.get("shotType") or "").lower() != "goal":
+                    continue
+                team_goal = bool(shot.get("isHome")) == is_home
+                goal_type = _classify_goal_shot(shot)
+                target = scored if team_goal else conceded
+                target[goal_type] += 1
+                if team_goal:
+                    mapped_scored += 1
+                    detailed_scored += int(goal_type != "other")
+                else:
+                    mapped_conceded += 1
+                    detailed_conceded += int(goal_type != "other")
+
+        scored["other"] += max(0, expected_scored - mapped_scored)
+        conceded["other"] += max(0, expected_conceded - mapped_conceded)
+        return {
+            "team": {"id": team_id, "name": team_name(team), "logo": logo_url(team_id)},
+            "sampleSize": len(matches),
+            "scored": scored,
+            "conceded": conceded,
+            "coverage": {
+                "scored": detailed_scored,
+                "scoredTotal": expected_scored,
+                "conceded": detailed_conceded,
+                "concededTotal": expected_conceded,
+            },
+        }
+
+    return {
+        "ok": True,
+        "source": "Sofascore",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "eventId": event_id,
+        "sampleSize": sample_size,
+        "teams": [summarize(team, matches) for team, matches in loaded],
+    }
+
+
+def fetch_event_standings(event_id):
+    event_id = int(event_id)
+    event_payload = api_get(f"/event/{event_id}", timeout=20, retries=2) or {}
+    event = event_payload.get("event") or {}
+    tournament = event.get("tournament") or {}
+    unique = tournament.get("uniqueTournament") or {}
+    unique_tournament_id = unique.get("id") or tournament.get("uniqueTournamentId") or tournament.get("id")
+    season = event.get("season") or {}
+    season_id = season.get("id")
+    if not unique_tournament_id:
+        return {"ok": False, "source": "Sofascore", "error": "Competicao sem ID do SofaScore."}
+    if not season_id:
+        season_id = find_tournament_season(unique_tournament_id, calendar_event_date_key(event))
+    if not season_id:
+        return {"ok": False, "source": "Sofascore", "error": "Temporada da competicao nao encontrada."}
+
+    standings_payload = fetch_standings(season_id, unique_tournament_id)
+    if isinstance(standings_payload, dict) and standings_payload.get("error"):
+        return {"ok": False, "source": "Sofascore", "error": standings_payload.get("error")}
+
+    groups = []
+    for group in standings_payload or []:
+        rows = [normalize_standing_row(row) for row in group.get("rows", []) or []]
+        groups.append({
+            "id": group.get("id"),
+            "name": group.get("name") or group.get("type") or "Classificacao",
+            "type": group.get("type") or "",
+            "rows": rows,
+        })
+
+    return {
+        "ok": bool(groups),
+        "source": "Sofascore",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "eventId": event_id,
+        "competition": {
+            "name": tournament.get("name") or unique.get("name") or "",
+            "uniqueTournamentId": int(unique_tournament_id),
+            "seasonId": int(season_id),
+        },
+        "groups": groups,
+        "error": "" if groups else "Classificacao indisponivel para esta competicao.",
+    }
+
+
 def logo_url(team_id):
     return f"https://api.sofascore.app/api/v1/team/{team_id}/image" if team_id else ""
 
@@ -1262,6 +1596,17 @@ def main():
             return
         if len(sys.argv) >= 3 and sys.argv[1] == "event-details":
             print(json.dumps(fetch_match_player_events(sys.argv[2]), ensure_ascii=False))
+            return
+        if len(sys.argv) >= 3 and sys.argv[1] == "team-analysis":
+            sample_size = int(sys.argv[3]) if len(sys.argv) >= 4 else 5
+            print(json.dumps(fetch_team_analysis(sys.argv[2], sample_size), ensure_ascii=False))
+            return
+        if len(sys.argv) >= 3 and sys.argv[1] == "team-goal-types":
+            sample_size = int(sys.argv[3]) if len(sys.argv) >= 4 else 5
+            print(json.dumps(fetch_team_goal_types(sys.argv[2], sample_size), ensure_ascii=False))
+            return
+        if len(sys.argv) >= 3 and sys.argv[1] == "event-standings":
+            print(json.dumps(fetch_event_standings(sys.argv[2]), ensure_ascii=False))
             return
         if len(sys.argv) >= 3 and sys.argv[1] == "details":
             print(json.dumps(fetch_match_details(sys.argv[2]), ensure_ascii=False))

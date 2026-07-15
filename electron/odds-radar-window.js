@@ -57,8 +57,8 @@
     const bet365Ready = !!(bet365Prices.home || bet365Prices.draw || bet365Prices.away);
     const ready = betfairReady || bet365Ready;
     const labels = {
-      loading: 'Conectando ao Chrome...',
-      'waiting-extension': 'Aguardando a extensao do Chrome...',
+      loading: 'Abrindo navegador de odds...',
+      'waiting-extension': 'Aguardando coletor de odds...',
       searching: 'Procurando partida...',
       'opening-match': 'Abrindo mercados...',
       'loading-market': 'Lendo mercados...',
@@ -123,7 +123,7 @@
 
   const statusLabels = {
     loading: 'Conectando',
-    'waiting-extension': 'Aguardando extensao',
+    'waiting-extension': 'Aguardando coletor',
     searching: 'Procurando partida',
     'opening-match': 'Abrindo mercados',
     'loading-market': 'Lendo mercados',
@@ -347,7 +347,7 @@
 
   function widgetState(model, hasMarket, mode = '') {
     const bet365State = String(model.bet365?.marketStates?.[mode] || model.bet365?.marketState || '').toLowerCase();
-    if (bet365State === 'var') return { className: 'is-var', text: 'VAR em analise' };
+    if (bet365State === 'var') return null;
     if (bet365State === 'closed') return { className: 'is-closed', text: 'Mercado fechado' };
     const bet365Waiting = model.bet365?.status && model.bet365.status !== 'found';
     if (!hasMarket && bet365Waiting) return { className: 'is-waiting', text: 'Aguardando mercado' };
@@ -415,11 +415,10 @@
     const hasMarket = rows.some(([key]) => model.bet365Prices[key]);
     const marketState = widgetState(model, hasMarket, 'mo');
     return `<section class="match-odds-strip bet365-only ${marketState?.className || ''}">
-      <header><b>MO</b><strong>${escapeHtml(state.payload.home)} <i>x</i> ${escapeHtml(state.payload.away)}</strong><button type="button" data-action="settings" title="Configuracoes"><i class='bx bx-cog'></i></button></header>
+      <header><strong>Match Odds</strong><button type="button" data-action="settings" title="Configuracoes"><i class='bx bx-cog'></i></button></header>
       <div class="match-strip-rows">${rows.map(([key, label]) => {
         const bet365 = model.bet365Prices[key];
-        const trend = state.trends[`bet365:${key}`] || 'flat';
-        return `<div class="match-strip-row"><strong>${escapeHtml(label)}</strong><b class="bet365">${escapeHtml(bet365 || '-')}</b><i class='bx ${trend === 'up' ? 'bx-up-arrow-alt trend-up' : trend === 'down' ? 'bx-down-arrow-alt trend-down' : 'bx-minus trend-flat'}'></i></div>`;
+        return `<div class="match-strip-row"><strong title="${escapeHtml(key === 'draw' ? 'Empate' : label)}">${escapeHtml(label)}</strong><span class="match-strip-divider"></span><b class="bet365">${escapeHtml(bet365 || '-')}</b>${trendIcon('bet365', key)}</div>`;
       }).join('')}</div>
       ${marketState ? marketStateOverlay(marketState) : ''}
     </section>`;
@@ -451,11 +450,22 @@
     const bet365Source = useHalf ? sanitizeProviderGoalLines(model.bet365.htGoalLines, 'bet365') : Array.from(model.bet365Lines.values());
     const bet365Map = new Map(bet365Source.map(line => [String(line.line), line]));
     const keys = Array.from(bet365Map.keys()).filter(key => Number.isFinite(Number(key))).sort((a, b) => Number(a) - Number(b));
+    const providerGoals = Number(model.bet365.currentGoals);
+    const live = currentLiveMatch();
+    const currentGoals = Number.isFinite(providerGoals)
+      ? providerGoals
+      : Math.max(0, Number(live.score.home) || 0) + Math.max(0, Number(live.score.away) || 0);
+    const liveGoalLineKeys = keys.filter(candidate => Number(candidate) > currentGoals);
+    const limitKey = liveGoalLineKeys[0];
+    const aheadKey = liveGoalLineKeys[1];
     const primary = String(useHalf ? model.bet365.primaryHtGoalLine : model.bet365.primaryFtGoalLine || '');
     const confirmedPrimary = keys.includes(primary) ? primary : keys.find(candidate => bet365Map.get(candidate)?.primary);
-    const key = mode === 'laft'
+    const fallbackKey = mode === 'laft'
       ? keys.find(candidate => confirmedPrimary && Number(candidate) > Number(confirmedPrimary))
       : confirmedPrimary;
+    const key = mode === 'laft'
+      ? (aheadKey || fallbackKey)
+      : (limitKey || fallbackKey);
     return { key, bet365: bet365Map.get(key) || {}, betfair: {}, scope: useHalf ? 'HT' : 'FT' };
   }
 
@@ -468,7 +478,6 @@
 
   function Bet365GoalStrip(model, mode) {
     const selected = selectGoalWidgetLine(model, mode);
-    const labels = { lht: 'Limite HT', lft: 'Limite FT', laft: 'Limite a frente FT' };
     const sides = goalSidesForMode(mode);
     const over = providerOdd(selected.bet365, 'over', 'bet365');
     const under = providerOdd(selected.bet365, 'under', 'bet365');
@@ -476,14 +485,13 @@
     const marketState = intervalClosed
       ? { className: 'is-closed', text: 'Mercado HT encerrado' }
       : widgetState(model, !!(over || under), mode);
-    const code = mode.toUpperCase();
     const overHistoryId = observeWidgetOdd(mode, 'over', selected.key, over);
     const underHistoryId = observeWidgetOdd(mode, 'under', selected.key, under);
     return `<section class="bet365-goal-strip ${marketState?.className || ''}">
-      <header><span class="goal-market-badges"><b>${escapeHtml(code)}</b><em>${escapeHtml(selected.scope)}</em></span><strong>${escapeHtml(labels[mode])} ${escapeHtml(selected.key || '-')}</strong><button type="button" class="compact-tool" data-action="settings" title="Configuracoes"><i class='bx bx-cog'></i></button></header>
+      <header><strong>${escapeHtml(selected.scope)} ${escapeHtml(selected.key || '-')}</strong><button type="button" class="compact-tool" data-action="settings" title="Configuracoes"><i class='bx bx-cog'></i></button></header>
       <div class="bet365-goal-pair count-${Number(sides.over) + Number(sides.under)}">
-        ${sides.over ? `<div class="bet365-goal-price over"><small>OVER ${escapeHtml(selected.key || '-')}</small><span class="goal-price-value"><b>${escapeHtml(over || '-')}</b>${trendIcon('bet365', overHistoryId)}</span></div>` : ''}
-        ${sides.under ? `<div class="bet365-goal-price under"><small>UNDER ${escapeHtml(selected.key || '-')}</small><span class="goal-price-value"><b>${escapeHtml(under || '-')}</b>${trendIcon('bet365', underHistoryId)}</span></div>` : ''}
+        ${sides.over ? `<div class="bet365-goal-price over"><strong class="goal-side-letter">O</strong><span class="goal-price-divider"></span><span class="goal-price-value"><b title="${escapeHtml(trendHistoryTooltip(state.trendHistory[`bet365:${overHistoryId}`] || []))}">${escapeHtml(over || '-')}</b></span></div>` : ''}
+        ${sides.under ? `<div class="bet365-goal-price under"><strong class="goal-side-letter">U</strong><span class="goal-price-divider"></span><span class="goal-price-value"><b title="${escapeHtml(trendHistoryTooltip(state.trendHistory[`bet365:${underHistoryId}`] || []))}">${escapeHtml(under || '-')}</b></span></div>` : ''}
       </div>
       ${marketState ? marketStateOverlay(marketState) : ''}
     </section>`;
@@ -653,6 +661,7 @@
   async function init() {
     state.payload = decodePayload();
     state.overlay = !!state.payload.overlay;
+    const dedicatedOverlay = state.overlay && ['mo', 'lht', 'lft', 'laft'].includes(state.payload.viewMode);
     document.body.classList.toggle('is-overlay', state.overlay);
     if (state.overlay && ['lht', 'lft', 'laft'].includes(state.payload.viewMode)) {
       const sides = goalSidesForMode(state.payload.viewMode);
@@ -662,9 +671,9 @@
       localStorage.setItem('public_odds_layout', 'compact');
       localStorage.setItem('public_odds_layout_version', '2');
       state.layoutNeedsMigration = false;
-      if (state.overlay) window.traderPublicOdds?.resizeLayout?.('compact');
+      if (state.overlay && !dedicatedOverlay) window.traderPublicOdds?.resizeLayout?.('compact');
     }
-    if (state.overlay) window.traderPublicOdds?.setLayoutMinimum?.(state.layoutMode);
+    if (state.overlay && !dedicatedOverlay) window.traderPublicOdds?.setLayoutMinimum?.(state.layoutMode);
     setInterval(() => {
       refreshRateIndicators();
       refreshLiveClocks();
