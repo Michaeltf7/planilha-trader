@@ -8,20 +8,24 @@ let detectedBrowserPromise = null;
 let managedTabsRestored = false;
 let pollInFlight = false;
 let collectorTokenValue = '';
+let emptyCommandsSince = 0;
 
 async function collectorToken() {
   const tabs = await chrome.tabs.query({ url: 'https://www.bet365.bet.br/*' }).catch(() => []);
   const candidates = tabs.map(tab => {
     try {
       const token = new URL(tab.url || tab.pendingUrl || '').searchParams.get('planilha_collector') || '';
-      return { token, lastAccessed: Number(tab.lastAccessed) || 0 };
+      return { token, tabId: tab.id, lastAccessed: Number(tab.lastAccessed) || 0 };
     } catch (_) {
-      return { token: '', lastAccessed: 0 };
+      return { token: '', tabId: null, lastAccessed: 0 };
     }
   }).filter(item => item.token).sort((left, right) => right.lastAccessed - left.lastAccessed);
   if (candidates[0]?.token) {
     collectorTokenValue = candidates[0].token;
-    await chrome.storage.local.set({ planilha_collector_token: collectorTokenValue }).catch(() => {});
+    await chrome.storage.local.set({
+      planilha_collector_token: collectorTokenValue,
+      planilha_collector_tab_id: candidates[0].tabId
+    }).catch(() => {});
   }
   if (collectorTokenValue) return collectorTokenValue;
   const saved = await chrome.storage.local.get('planilha_collector_token').catch(() => ({}));
@@ -122,7 +126,17 @@ async function claimAvailableProviderTab(provider) {
   const tabs = await chrome.tabs.query({ url: patterns }).catch(() => []);
   const tab = tabs.find(candidate => Number.isInteger(candidate.id) && !claimedIds.has(candidate.id));
   if (!tab) return null;
-  return { tabId: tab.id, windowId: tab.windowId, managedWindow: true };
+  const saved = await chrome.storage.local.get('planilha_collector_tab_id').catch(() => ({}));
+  let hasCollectorToken = false;
+  try {
+    hasCollectorToken = !!new URL(tab.url || tab.pendingUrl || '').searchParams.get('planilha_collector');
+  } catch (_) {}
+  return {
+    tabId: tab.id,
+    windowId: tab.windowId,
+    managedWindow: true,
+    persistentCollector: provider === 'bet365' && (hasCollectorToken || Number(saved?.planilha_collector_tab_id) === tab.id)
+  };
 }
 
 async function ensureCommandTab(command, provider) {
@@ -180,12 +194,18 @@ async function pollCommands() {
     if (!response.ok) return;
     const data = await response.json();
     const commands = Array.isArray(data.commands) ? data.commands : [];
+    if (commands.length) emptyCommandsSince = 0;
+    else if (!emptyCommandsSince) emptyCommandsSince = Date.now();
+    const canCloseCollectors = !commands.length && (Date.now() - emptyCommandsSince >= 4000);
     const activeIds = new Set(commands.flatMap(command => Object.keys(PROVIDERS).map(provider => `${command.feedId}:${provider}`)));
     for (const command of commands) {
       for (const provider of Object.keys(PROVIDERS)) await ensureCommandTab(command, provider);
     }
     for (const [managedKey, managed] of managedTabs.entries()) {
       if (activeIds.has(managedKey)) continue;
+      // A janela pertence ao conjunto de widgets, nao a um comando isolado.
+      // Mantemos todos os coletores enquanto houver ao menos um widget aberto.
+      if (!canCloseCollectors) continue;
       managedTabs.delete(managedKey);
       if (managed.managedWindow && managed.windowId) chrome.windows.remove(managed.windowId).catch(() => {});
       else if (await tabExists(managed.tabId)) chrome.tabs.remove(managed.tabId).catch(() => {});

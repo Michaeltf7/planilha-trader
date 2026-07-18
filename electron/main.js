@@ -10,6 +10,8 @@ const childWindows = new Set();
 const replicaWindows = new Map();
 const nativeReplicaProcesses = new Set();
 const wradarRealModFeeds = new Map();
+const wradarWidgetGroups = new Map();
+const wradarWidgetWindows = new Map();
 const publicOddsFeeds = new Map();
 const extensionOddsSubscriptions = new Map();
 const extensionOddsCommands = new Map();
@@ -867,6 +869,587 @@ function createWRadarRealModWindow(payload) {
   return win;
 }
 
+const radarWidgetDefinitions = {
+  events: { title: 'Eventos', width: 620, height: 156, minWidth: 300, minHeight: 48 },
+  stats: { title: 'Placar e estatisticas', width: 920, height: 58, minWidth: 430, minHeight: 42 },
+  sofascore: { title: 'Pressao SofaScore', width: 760, height: 150, minWidth: 240, minHeight: 68 },
+  'radar-pressure': { title: 'Pressao Radar MOD', width: 760, height: 190, minWidth: 240, minHeight: 78 },
+  intelligence: { title: 'Inteligencia ao vivo', width: 760, height: 150, minWidth: 260, minHeight: 72 },
+  heatmap: { title: 'Mapa de calor', width: 760, height: 150, minWidth: 240, minHeight: 68 }
+};
+
+function radarWidgetGroupId(event) {
+  return `event:${String(event?.id || '').trim()}`;
+}
+
+function readRadarWidgetBounds() {
+  const saved = readJsonFile('custom-radar-widget-bounds.json');
+  return saved && typeof saved === 'object' ? saved : {};
+}
+
+function readRadarWidgetLayouts() {
+  const saved = readJsonFile('custom-radar-widget-layouts.json');
+  return saved && typeof saved === 'object' ? saved : { slots: {} };
+}
+
+function saveRadarWidgetLayout(group, slot) {
+  if (!group || !slot) return false;
+  const layouts = readRadarWidgetLayouts();
+  if (!layouts.slots || typeof layouts.slots !== 'object') layouts.slots = {};
+  const widgets = {};
+  for (const [type, win] of group.widgets.entries()) {
+    if (win && !win.isDestroyed()) widgets[type] = win.getBounds();
+  }
+  layouts.slots[String(slot)] = {
+    manager: group.manager && !group.manager.isDestroyed() ? group.manager.getBounds() : null,
+    widgets,
+    openTypes: Object.keys(widgets),
+    updatedAt: new Date().toISOString()
+  };
+  writeJsonFile('custom-radar-widget-layouts.json', layouts);
+  group.layoutSlot = String(slot);
+  return true;
+}
+
+function radarWidgetLayoutForSlot(slot) {
+  if (!slot) return null;
+  return readRadarWidgetLayouts()?.slots?.[String(slot)] || null;
+}
+
+function applyRadarWidgetLayout(group, slot) {
+  const layout = radarWidgetLayoutForSlot(slot);
+  if (!group || !layout) return false;
+  group.layoutSlot = String(slot);
+  if (layout.manager && group.manager && !group.manager.isDestroyed()) {
+    group.manager.setBounds(normalizeWindowBounds(layout.manager, { width: 382, height: 48 }, { width: 382, height: 48 }), false);
+  }
+  const openTypes = new Set((layout.openTypes || Object.keys(layout.widgets || {})).filter(type => radarWidgetDefinitions[type]));
+  for (const [type, win] of [...group.widgets.entries()]) {
+    if (!openTypes.has(type) && win && !win.isDestroyed()) win.close();
+  }
+  for (const type of openTypes) {
+    const win = createRadarWidgetWindow(group, type, layout.widgets?.[type]);
+    if (win && !win.isDestroyed() && layout.widgets?.[type]) {
+      const definition = radarWidgetDefinitions[type];
+      win.setMinimumSize(definition.minWidth, definition.minHeight);
+      win.setBounds(normalizeWindowBounds(layout.widgets[type], definition, {
+        width: definition.minWidth,
+        height: definition.minHeight
+      }), false);
+      win.webContents.send('wradar-widgets:menu-action', { action: 'layout-restored' });
+    }
+  }
+  return true;
+}
+
+function persistRadarWidgetBounds(type, win) {
+  if (!radarWidgetDefinitions[type] || !win || win.isDestroyed()) return;
+  const saved = readRadarWidgetBounds();
+  saved[type] = win.getBounds();
+  writeJsonFile('custom-radar-widget-bounds.json', saved);
+}
+
+function resolveRadarWidgetBounds(type) {
+  const definition = radarWidgetDefinitions[type];
+  const rawSaved = readRadarWidgetBounds()[type];
+  const saved = type === 'events' && Number(rawSaved?.width) > 1800 ? null : rawSaved;
+  const fallback = { width: definition.width, height: definition.height };
+  const normalized = normalizeWindowBounds(saved, fallback, {
+    width: definition.minWidth,
+    height: definition.minHeight
+  });
+  if (Number.isFinite(normalized.x) && Number.isFinite(normalized.y) && boundsIntersectDisplay(normalized, {
+    width: definition.minWidth,
+    height: definition.minHeight
+  })) return normalized;
+  return fallback;
+}
+
+function closeRadarWidgetGroup(groupId) {
+  const group = wradarWidgetGroups.get(groupId);
+  if (!group) return;
+  for (const win of group.widgets.values()) {
+    if (win && !win.isDestroyed()) win.close();
+  }
+  if (group.manager && !group.manager.isDestroyed()) group.manager.close();
+  wradarWidgetGroups.delete(groupId);
+}
+
+function createRadarWidgetWindow(group, type, preferredBounds = null) {
+  const definition = radarWidgetDefinitions[type];
+  if (!definition) return null;
+  const existing = group.widgets.get(type);
+  if (existing && !existing.isDestroyed()) {
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+
+  const savedSlotBounds = radarWidgetLayoutForSlot(group.layoutSlot)?.widgets?.[type];
+  const bounds = preferredBounds
+    ? normalizeWindowBounds(preferredBounds, radarWidgetDefinitions[type], {
+        width: definition.minWidth,
+        height: definition.minHeight
+      })
+    : (savedSlotBounds
+        ? normalizeWindowBounds(savedSlotBounds, radarWidgetDefinitions[type], {
+            width: definition.minWidth,
+            height: definition.minHeight
+          })
+        : resolveRadarWidgetBounds(type));
+  const win = new BrowserWindow({
+    ...bounds,
+    minWidth: definition.minWidth,
+    minHeight: definition.minHeight,
+    title: `${definition.title} - Radar MOD`,
+    alwaysOnTop: true,
+    resizable: true,
+    movable: true,
+    frame: false,
+    skipTaskbar: true,
+    transparent: true,
+    backgroundColor: '#00000000',
+    thickFrame: true,
+    autoHideMenuBar: true,
+    webPreferences: baseWebPreferences()
+  });
+  const payload = {
+    event: group.event,
+    density: 'compact',
+    radarWidget: type,
+    radarWidgetGroupId: group.id,
+    radarWidgetHasSavedBounds: !!(preferredBounds || savedSlotBounds)
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.loadFile(path.join(__dirname, 'custom-radar-window.html'), { query: { payload: encodedPayload } });
+  group.widgets.set(type, win);
+  const widgetWebContentsId = win.webContents.id;
+  wradarWidgetWindows.set(widgetWebContentsId, { groupId: group.id, type, window: win });
+
+  let saveTimer = null;
+  const scheduleSave = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => persistRadarWidgetBounds(type, win), 180);
+  };
+  win.on('move', scheduleSave);
+  win.on('resize', scheduleSave);
+  win.webContents.on('context-menu', event => {
+    event.preventDefault();
+    showRadarWidgetMenu(win, type);
+  });
+  win.on('closed', () => {
+    clearTimeout(saveTimer);
+    wradarWidgetWindows.delete(widgetWebContentsId);
+    if (group.widgets.get(type) === win) group.widgets.delete(type);
+    if (group.manager && !group.manager.isDestroyed()) {
+      group.manager.webContents.send('wradar-widgets:changed', { type, open: false });
+    }
+  });
+  win.webContents.once('did-finish-load', () => {
+    if (group.manager && !group.manager.isDestroyed()) {
+      group.manager.webContents.send('wradar-widgets:changed', { type, open: true });
+    }
+  });
+  return win;
+}
+
+function createRadarWidgetManager(owner, event, layoutSlot = '') {
+  const groupId = radarWidgetGroupId(event);
+  if (!event?.id) return null;
+  let group = wradarWidgetGroups.get(groupId);
+  if (!group) {
+    group = { id: groupId, event, ownerId: owner?.id || null, manager: null, widgets: new Map(), layoutSlot: String(layoutSlot || '') };
+    wradarWidgetGroups.set(groupId, group);
+  } else {
+    group.event = event;
+    group.ownerId = owner?.id || group.ownerId;
+    group.layoutSlot = String(layoutSlot || '');
+  }
+  if (group.manager && !group.manager.isDestroyed()) {
+    group.manager.show();
+    group.manager.focus();
+    return group.manager;
+  }
+  const savedManagerBounds = radarWidgetLayoutForSlot(layoutSlot)?.manager || readRadarWidgetBounds().manager;
+  const managerBounds = normalizeWindowBounds(savedManagerBounds, { width: 382, height: 48 }, { width: 382, height: 48 });
+  const manager = new BrowserWindow({
+    ...managerBounds,
+    width: 382,
+    height: 48,
+    minWidth: 382,
+    minHeight: 48,
+    title: 'Radar MOD Widgets',
+    alwaysOnTop: true,
+    resizable: false,
+    frame: false,
+    skipTaskbar: true,
+    transparent: true,
+    backgroundColor: '#00000000',
+    autoHideMenuBar: true,
+    webPreferences: baseWebPreferences()
+  });
+  group.manager = manager;
+  childWindows.add(manager);
+  const encodedPayload = Buffer.from(JSON.stringify({ event, groupId }), 'utf8').toString('base64url');
+  manager.loadFile(path.join(__dirname, 'radar-widget-manager.html'), { query: { payload: encodedPayload } });
+  manager.setAlwaysOnTop(true, 'floating');
+  manager.webContents.on('context-menu', event => {
+    event.preventDefault();
+    showRadarWidgetManagerMenu(group, manager);
+  });
+  let managerSaveTimer = null;
+  manager.on('move', () => {
+    clearTimeout(managerSaveTimer);
+    managerSaveTimer = setTimeout(() => {
+      if (manager.isDestroyed()) return;
+      const saved = readRadarWidgetBounds();
+      saved.manager = manager.getBounds();
+      writeJsonFile('custom-radar-widget-bounds.json', saved);
+    }, 180);
+  });
+  manager.on('closed', () => {
+    clearTimeout(managerSaveTimer);
+    childWindows.delete(manager);
+    if (group.manager === manager) group.manager = null;
+    for (const win of group.widgets.values()) {
+      if (win && !win.isDestroyed()) win.close();
+    }
+    wradarWidgetGroups.delete(groupId);
+  });
+  if (owner && !owner.isDestroyed()) {
+    owner.once('closed', () => closeRadarWidgetGroup(groupId));
+  }
+  return manager;
+}
+
+async function chooseRadarWidgetLayoutSlot(owner) {
+  const layouts = readRadarWidgetLayouts();
+  const savedSlots = [1, 2, 3, 4, 5].filter(slot => layouts?.slots?.[String(slot)]);
+  const displays = screen.getAllDisplays();
+  const slotDetails = savedSlots.map(slot => {
+    const layout = layouts.slots[String(slot)] || {};
+    const display = layout.manager ? screen.getDisplayMatching(layout.manager) : null;
+    const monitorIndex = display ? displays.findIndex(item => String(item.id) === String(display.id)) + 1 : 0;
+    return {
+      slot,
+      widgetCount: (layout.openTypes || Object.keys(layout.widgets || {})).length,
+      monitor: monitorIndex || 1
+    };
+  });
+  const width = 420;
+  const rows = Math.max(1, Math.ceil((slotDetails.length + 1) / 2));
+  const height = 116 + (rows * 62);
+  const ownerBounds = owner && !owner.isDestroyed() ? owner.getBounds() : null;
+  const targetDisplay = ownerBounds ? screen.getDisplayMatching(ownerBounds) : screen.getPrimaryDisplay();
+  const anchor = ownerBounds || targetDisplay.workArea;
+  const x = Math.round(anchor.x + ((anchor.width - width) / 2));
+  const y = Math.round(anchor.y + ((anchor.height - height) / 2));
+  const picker = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: width,
+    minHeight: height,
+    maxWidth: width,
+    maxHeight: height,
+    parent: owner && !owner.isDestroyed() ? owner : undefined,
+    modal: !!(owner && !owner.isDestroyed()),
+    show: false,
+    frame: false,
+    resizable: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    webPreferences: baseWebPreferences()
+  });
+  const encodedPayload = Buffer.from(JSON.stringify({ slots: slotDetails }), 'utf8').toString('base64url');
+  picker.loadFile(path.join(__dirname, 'radar-widget-position.html'), { query: { payload: encodedPayload } });
+  picker.setAlwaysOnTop(true, 'floating');
+  picker.webContents.once('did-finish-load', () => picker.show());
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeListener('wradar-widgets:layout-choice', onChoice);
+      if (!picker.isDestroyed()) picker.close();
+      resolve(value);
+    };
+    const onChoice = (ipcEvent, payload = {}) => {
+      if (ipcEvent.sender !== picker.webContents) return;
+      if (payload.cancelled) finish(null);
+      else finish(String(payload.slot || ''));
+    };
+    ipcMain.on('wradar-widgets:layout-choice', onChoice);
+    picker.on('closed', () => finish(null));
+  });
+}
+
+function clearRadarWidgetLayout(group) {
+  if (!group) return;
+  group.layoutSlot = '';
+  for (const win of [...group.widgets.values()]) {
+    if (win && !win.isDestroyed()) win.close();
+  }
+}
+
+function radarWidgetLayoutSlotItems(group, action) {
+  const layouts = readRadarWidgetLayouts();
+  return [1, 2, 3, 4, 5].map(slot => {
+    const saved = !!layouts?.slots?.[String(slot)];
+    return {
+      label: `Posicao ${slot}${saved ? '' : ' (vazia)'}`,
+      enabled: action === 'save' || saved,
+      type: action === 'apply' ? 'radio' : 'normal',
+      checked: action === 'apply' && String(group?.layoutSlot || '') === String(slot),
+      click: () => {
+        if (action === 'save') saveRadarWidgetLayout(group, slot);
+        else applyRadarWidgetLayout(group, slot);
+      }
+    };
+  });
+}
+
+function showRadarWidgetManagerMenu(group, manager) {
+  if (!group || !manager || manager.isDestroyed()) return;
+  const currentSlot = String(group.layoutSlot || '');
+  const template = [
+    {
+      label: 'Trazer todos para frente',
+      click: () => {
+        for (const win of group.widgets.values()) {
+          if (!win || win.isDestroyed()) continue;
+          if (win.isMinimized()) win.restore();
+          win.showInactive();
+          win.moveTop();
+        }
+        manager.show();
+        manager.moveTop();
+      }
+    },
+    {
+      label: 'Minimizar widgets',
+      click: () => {
+        for (const win of group.widgets.values()) {
+          if (win && !win.isDestroyed() && !win.isMinimized()) win.minimize();
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Abrir conjunto salvo',
+      submenu: radarWidgetLayoutSlotItems(group, 'apply')
+    },
+    {
+      label: 'Salvar conjunto atual em',
+      submenu: radarWidgetLayoutSlotItems(group, 'save')
+    },
+    ...(currentSlot ? [{
+      label: `Atualizar Posicao ${currentSlot}`,
+      click: () => saveRadarWidgetLayout(group, currentSlot)
+    }] : []),
+    { type: 'separator' },
+    { label: 'Fechar central e widgets', click: () => closeRadarWidgetGroup(group.id) }
+  ];
+  Menu.buildFromTemplate(template).popup({ window: manager });
+}
+
+function showRadarWidgetMenu(win, type) {
+  if (!win || win.isDestroyed()) return;
+  const send = (action, value) => {
+    if (!win.isDestroyed()) win.webContents.send('wradar-widgets:menu-action', { action, value });
+  };
+  const widgetItem = [...wradarWidgetWindows.values()].find(item => item.window === win);
+  const widgetGroup = widgetItem ? wradarWidgetGroups.get(widgetItem.groupId) : null;
+  const opacityMenu = [100, 80, 60, 40, 20].map(value => ({
+    label: `${value}%`,
+    click: () => send('opacity', value)
+  }));
+  const template = [
+    { label: 'Fonte menor', click: () => send('font-down') },
+    { label: 'Fonte padrao', click: () => send('font-reset') },
+    { label: 'Fonte maior', click: () => send('font-up') },
+    ...(type === 'events' ? [{
+      label: 'Quantidade de eventos',
+      submenu: [1, 2, 3, 4, 5, 6, 7].map(value => ({ label: String(value), click: () => send('event-lines', value) }))
+    }] : []),
+    ...(type === 'heatmap' ? [{
+      label: 'Exibicao do mapa',
+      submenu: [
+        { label: 'Partida', click: () => send('heatmap-mode', 'match') },
+        { label: 'Time da casa', click: () => send('heatmap-mode', 'home') },
+        { label: 'Time visitante', click: () => send('heatmap-mode', 'away') },
+        { label: 'Times separados', click: () => send('heatmap-mode', 'teams') }
+      ]
+    }, {
+      label: 'Visual do mapa',
+      submenu: [
+        { label: 'Velas', click: () => send('heatmap-style', 'candles') },
+        { label: 'Bolinhas', click: () => send('heatmap-style', 'dots') },
+        { label: 'Onda', click: () => send('heatmap-style', 'wave') },
+        { label: 'Barra ao vivo', click: () => send('heatmap-style', 'bar') }
+      ]
+    }] : []),
+    {
+      label: 'Fundo',
+      submenu: [
+        { label: 'Transparente', click: () => send('background', 'transparent') },
+        { label: 'Mostrar fundo', click: () => send('background', 'show') }
+      ]
+    },
+    { label: 'Opacidade', submenu: opacityMenu },
+    { type: 'separator' },
+    {
+      label: win.isAlwaysOnTop() ? 'Desligar sempre acima' : 'Ligar sempre acima',
+      click: () => {
+        const next = !win.isAlwaysOnTop();
+        win.setAlwaysOnTop(next, 'screen-saver');
+      }
+    },
+    ...(widgetGroup ? [{
+      label: 'Salvar conjunto de widgets em',
+      submenu: radarWidgetLayoutSlotItems(widgetGroup, 'save')
+    }, ...(widgetGroup.layoutSlot ? [{
+      label: `Atualizar Posicao ${widgetGroup.layoutSlot}`,
+      click: () => saveRadarWidgetLayout(widgetGroup, widgetGroup.layoutSlot)
+    }] : [])] : [{
+      label: 'Salvar posicao e tamanho',
+      click: () => persistRadarWidgetBounds(type, win)
+    }]),
+    {
+      label: 'Restaurar tamanho e posicao',
+      click: () => {
+        const definition = radarWidgetDefinitions[type];
+        win.setBounds({ width: definition.width, height: definition.height });
+        persistRadarWidgetBounds(type, win);
+      }
+    },
+    { type: 'separator' },
+    { label: 'Fechar widget', click: () => win.close() }
+  ];
+  Menu.buildFromTemplate(template).popup({ window: win });
+}
+
+ipcMain.handle('wradar-widgets:open-manager', async (event, payload = {}) => {
+  const source = BrowserWindow.fromWebContents(event.sender);
+  const radarEvent = payload.event || payload;
+  const layoutSlot = await chooseRadarWidgetLayoutSlot(source);
+  if (layoutSlot === null) return { ok: false, cancelled: true };
+  const manager = createRadarWidgetManager(source, radarEvent, layoutSlot);
+  const groupId = radarWidgetGroupId(radarEvent);
+  const group = wradarWidgetGroups.get(groupId);
+  if (group) {
+    if (layoutSlot) {
+      const restore = () => applyRadarWidgetLayout(group, layoutSlot);
+      if (manager?.webContents?.isLoading()) manager.webContents.once('did-finish-load', restore);
+      else restore();
+    } else {
+      clearRadarWidgetLayout(group);
+    }
+  }
+  return { ok: !!manager, groupId, layoutSlot };
+});
+
+ipcMain.handle('wradar-widgets:open-widget', async (_event, payload = {}) => {
+  const group = wradarWidgetGroups.get(String(payload.groupId || radarWidgetGroupId(payload.event)));
+  if (!group) return { ok: false, error: 'Central de widgets nao encontrada.' };
+  const type = String(payload.type || '');
+  const win = createRadarWidgetWindow(group, type);
+  return { ok: !!win, type, windowId: win?.id || null };
+});
+
+ipcMain.handle('wradar-widgets:close-all', async (_event, payload = {}) => {
+  closeRadarWidgetGroup(String(payload.groupId || ''));
+  return { ok: true };
+});
+
+ipcMain.handle('wradar-widgets:fit-content', async (event, payload = {}) => {
+  const item = wradarWidgetWindows.get(event.sender.id);
+  if (!item?.window || item.window.isDestroyed()) return { ok: false };
+  const definition = radarWidgetDefinitions[item.type];
+  const current = item.window.getBounds();
+  const workArea = screen.getDisplayMatching(current).workArea;
+  const requestedWidth = Math.ceil(Number(payload.width) || current.width);
+  const requestedHeight = Math.ceil(Number(payload.height) || current.height);
+  const width = Math.max(definition.minWidth, Math.min(workArea.width, requestedWidth));
+  const height = Math.max(definition.minHeight, Math.min(workArea.height, requestedHeight));
+  const x = current.x;
+  const y = current.y;
+  if (payload.lockMinimum) item.window.setMinimumSize(definition.minWidth, definition.minHeight);
+  item.window.setBounds({ x, y, width, height }, false);
+  if (payload.lockMinimum) item.window.setMinimumSize(width, height);
+  persistRadarWidgetBounds(item.type, item.window);
+  return { ok: true, width, height };
+});
+
+ipcMain.on('wradar-widgets:show-menu', event => {
+  const item = wradarWidgetWindows.get(event.sender.id);
+  if (item) showRadarWidgetMenu(item.window, item.type);
+});
+
+ipcMain.on('wradar-widgets:show-manager-menu', event => {
+  for (const group of wradarWidgetGroups.values()) {
+    if (group.manager?.webContents === event.sender) {
+      showRadarWidgetManagerMenu(group, group.manager);
+      break;
+    }
+  }
+});
+
+ipcMain.on('wradar-widgets:begin-drag', (event, point = {}) => {
+  const item = wradarWidgetWindows.get(event.sender.id);
+  if (!item?.window || item.window.isDestroyed()) return;
+  const [x, y] = item.window.getPosition();
+  item.drag = {
+    startX: Number(point.x) || 0,
+    startY: Number(point.y) || 0,
+    winX: x,
+    winY: y,
+    lastX: x,
+    lastY: y
+  };
+});
+
+ipcMain.on('wradar-widgets:drag-to', (event, point = {}) => {
+  const item = wradarWidgetWindows.get(event.sender.id);
+  if (!item?.drag || !item.window || item.window.isDestroyed()) return;
+  const nextX = Math.round(item.drag.winX + (Number(point.x) || 0) - item.drag.startX);
+  const nextY = Math.round(item.drag.winY + (Number(point.y) || 0) - item.drag.startY);
+  if (nextX === item.drag.lastX && nextY === item.drag.lastY) return;
+  item.drag.lastX = nextX;
+  item.drag.lastY = nextY;
+  item.window.setPosition(nextX, nextY, false);
+});
+
+ipcMain.on('wradar-widgets:end-drag', event => {
+  const item = wradarWidgetWindows.get(event.sender.id);
+  if (!item) return;
+  item.drag = null;
+  persistRadarWidgetBounds(item.type, item.window);
+});
+
+ipcMain.on('wradar-widgets:show-odds-menu', event => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return;
+  const markets = [
+    ['mo', 'Match Odds'],
+    ['lht', 'Limite HT'],
+    ['lft', 'Limite FT'],
+    ['laft', 'Limite a frente FT'],
+    ['limits', 'Todos os limites']
+  ];
+  Menu.buildFromTemplate(markets.map(([mode, label]) => ({
+    label,
+    click: () => {
+      if (!win.isDestroyed()) win.webContents.send('wradar-widgets:odds-action', { mode });
+    }
+  }))).popup({ window: win });
+});
+
 function scrapeWRadarRealModScript() {
   return `(() => {
     const text = (selector, root = document) => (root.querySelector(selector)?.textContent || '').trim();
@@ -1168,6 +1751,19 @@ ipcMain.handle('public-odds:resize-goal-sides', async (event, rawCount) => {
   return { ok: true, width, height };
 });
 
+ipcMain.handle('public-odds:resize-all-limits', async (event, rawRows) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return { ok: false };
+  const rows = Math.max(1, Math.min(3, Number(rawRows) || 1));
+  const bounds = win.getBounds();
+  const width = Math.max(190, Math.min(bounds.width, 250));
+  const height = rows === 3 ? 108 : (rows === 2 ? 74 : 40);
+  win.setAspectRatio(0);
+  win.setMinimumSize(190, rows === 1 ? 38 : 68);
+  win.setSize(width, height, false);
+  return { ok: true, width, height };
+});
+
 ipcMain.on('public-odds:show-menu', event => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win && !win.isDestroyed()) showPublicOddsMenu(win);
@@ -1343,7 +1939,7 @@ function normalizePublicOddsPayload(payload = {}) {
   const requestedMode = String(payload.viewMode || '').toLowerCase();
   const legacyModes = { ulht: 'lht', ufht: 'lht', ulft: 'lft', ufft: 'laft', up: 'lft' };
   const migratedMode = legacyModes[requestedMode] || requestedMode;
-  const viewMode = ['mo', 'lht', 'lft', 'laft'].includes(migratedMode) ? migratedMode : '';
+  const viewMode = ['mo', 'lht', 'lft', 'laft', 'limits'].includes(migratedMode) ? migratedMode : '';
   const period = ['first', 'interval', 'second'].includes(payload.period) ? payload.period : 'first';
   return {
     home,
@@ -1421,6 +2017,12 @@ function launchOddsBrowser(browser, force = false) {
     const profilePath = path.join(app.getPath('userData'), `odds-browser-profile-v4-${selectedBrowser}`);
     fs.mkdirSync(profilePath, { recursive: true });
     const bet365Url = `https://www.bet365.bet.br/?planilha_collector=${extensionOddsCollectorToken}#/IP/B1`;
+    const collectorWidth = 340;
+    const collectorHeight = 560;
+    const cursorDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const workArea = cursorDisplay?.workArea || screen.getPrimaryDisplay().workArea;
+    const collectorX = Math.max(workArea.x, workArea.x + workArea.width - collectorWidth - 12);
+    const collectorY = Math.max(workArea.y, workArea.y + workArea.height - collectorHeight - 12);
     const child = spawn(executable, [
       `--user-data-dir=${profilePath}`,
       `--disable-extensions-except=${extensionPath}`,
@@ -1429,11 +2031,13 @@ function launchOddsBrowser(browser, force = false) {
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
       '--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling',
+      `--window-size=${collectorWidth},${collectorHeight}`,
+      `--window-position=${collectorX},${collectorY}`,
       `--app=${bet365Url}`
     ], {
       detached: true,
       stdio: 'ignore',
-      windowsHide: true
+      windowsHide: false
     });
     child.unref();
     return true;
@@ -1451,9 +2055,13 @@ function ensureOddsBrowserAvailable() {
 }
 
 function ensureOddsExtensionConnection(startedAt, owner) {
+  // A regular browser tab may contact the extension without creating the
+  // dedicated collector window. Guarantee one visible collector per app run.
+  if (!extensionOddsDedicatedStarted) ensureOddsBrowserAvailable();
   [0, 2500, 6500, 13000].forEach(delay => {
     setTimeout(() => {
-      if (owner?.isDestroyed?.() || extensionOddsLastContact >= startedAt) return;
+      if (owner?.isDestroyed?.()) return;
+      if (extensionOddsDedicatedStarted && extensionOddsLastContact >= startedAt) return;
       ensureOddsBrowserAvailable();
     }, delay);
   });
@@ -1549,10 +2157,11 @@ function createBetfairPublicWindow(payload) {
 function createPublicOddsWindow(payload, options = {}) {
   const overlay = !!options.overlay;
   const ownerWindow = options.ownerWindow && !options.ownerWindow.isDestroyed() ? options.ownerWindow : null;
-  const widget = overlay && ['mo', 'lht', 'lft', 'laft'].includes(payload.viewMode);
+  const widget = overlay && ['mo', 'lht', 'lft', 'laft', 'limits'].includes(payload.viewMode);
   const matchWidget = widget && payload.viewMode === 'mo';
-  const fallback = { width: overlay ? (matchWidget ? 205 : (widget ? 255 : 320)) : 760, height: overlay ? (matchWidget ? 190 : (widget ? 96 : 130)) : 540 };
-  const minBounds = overlay ? { width: matchWidget ? 145 : (widget ? 168 : 280), height: matchWidget ? 132 : (widget ? 68 : 100) } : { width: 520, height: 360 };
+  const limitsWidget = widget && payload.viewMode === 'limits';
+  const fallback = { width: overlay ? (matchWidget ? 205 : (limitsWidget ? 250 : (widget ? 255 : 320))) : 760, height: overlay ? (matchWidget ? 190 : (limitsWidget ? 108 : (widget ? 96 : 130))) : 540 };
+  const minBounds = overlay ? { width: matchWidget ? 145 : (limitsWidget ? 190 : (widget ? 168 : 280)), height: matchWidget ? 132 : (limitsWidget ? 38 : (widget ? 68 : 100)) } : { width: 520, height: 360 };
   const boundsFile = matchWidget
     ? 'public-odds-overlay-bounds-mo-v2.json'
     : widget ? `public-odds-overlay-bounds-${payload.viewMode}.json` : 'public-odds-overlay-bounds.json';
@@ -1573,7 +2182,7 @@ function createPublicOddsWindow(payload, options = {}) {
     skipTaskbar: overlay,
     webPreferences: baseWebPreferences()
   });
-  if (widget) child.setAspectRatio(matchWidget ? 1.1 : 2.45);
+  if (widget && !limitsWidget) child.setAspectRatio(matchWidget ? 1.1 : 2.45);
   childWindows.add(child);
   child.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
@@ -1708,7 +2317,8 @@ async function showPublicOddsMenu(win) {
         ['mo', 'MO - Match Odds'],
         ['lht', 'LHT - Limite do primeiro tempo'],
         ['lft', 'LFT - Limite da partida'],
-        ['laft', 'LAFT - Limite a frente FT']
+        ['laft', 'LAFT - Limite a frente FT'],
+        ['limits', 'Todos os limites']
       ].map(([key, label]) => ({
         label,
         type: 'radio',
@@ -1734,6 +2344,19 @@ async function showPublicOddsMenu(win) {
           click: item => send('show-goal-side', item.checked, 'under')
         }
       ]
+    }] : []),
+    ...(state.viewMode === 'limits' ? [{
+      label: 'Linhas do painel',
+      submenu: [
+        ['lht', 'Limite HT'],
+        ['lft', 'Limite FT'],
+        ['laft', 'Limite a frente FT']
+      ].map(([key, label]) => ({
+        label,
+        type: 'checkbox',
+        checked: state.limitRows?.[key] !== false,
+        click: item => send('show-limit-row', item.checked, key)
+      }))
     }] : []),
     {
       label: 'Layout',

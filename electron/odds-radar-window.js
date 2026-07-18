@@ -23,6 +23,8 @@
     trendObservedAt: {},
     widgetOdds: {},
     goalSidesByMode: readStoredJson('public_odds_goal_sides_by_mode', {}),
+    limitRows: readStoredJson('public_odds_limit_rows', { lht: true, lft: true, laft: true }),
+    lastLimitRowCount: 0,
     rateCycles: {},
     goalSelectionCustomized: localStorage.getItem('public_odds_goal_lines_customized') === '1',
     outcomes: readStoredJson('public_odds_outcomes', { home: true, draw: true, away: true }),
@@ -497,6 +499,49 @@
     </section>`;
   }
 
+  function AllLimitsStrip(model) {
+    const live = currentLiveMatch();
+    const sides = goalSidesForMode('limits');
+    const definitions = [
+      ['lht', 'HT', 'Limite HT'],
+      ['lft', 'FT', 'Limite FT'],
+      ['laft', 'F+', 'Limite a frente FT']
+    ];
+    const periods = [state.bet365Data?.livePeriod, state.payload.period]
+      .map(value => String(value || '').toLowerCase().trim());
+    const firstHalfFinished = periods.some(period =>
+      ['interval', 'second', '2t', '2º t', '2o t', 'second half'].includes(period)
+      || period.includes('interval')
+      || period.includes('second')
+    );
+    const visibleRows = definitions.filter(([mode]) => {
+      if (state.limitRows[mode] === false) return false;
+      return mode !== 'lht' || !firstHalfFinished;
+    });
+    if (!visibleRows.length) visibleRows.push(definitions[1]);
+    if (state.lastLimitRowCount !== visibleRows.length) {
+      state.lastLimitRowCount = visibleRows.length;
+      setTimeout(() => window.traderPublicOdds?.resizeAllLimits?.(visibleRows.length), 0);
+    }
+    const rowsHtml = visibleRows.map(([mode, badge, label]) => {
+      const selected = selectGoalWidgetLine(model, mode);
+      const over = providerOdd(selected.bet365, 'over', 'bet365');
+      const under = providerOdd(selected.bet365, 'under', 'bet365');
+      const overId = observeWidgetOdd(mode, 'over', selected.key, over);
+      const underId = observeWidgetOdd(mode, 'under', selected.key, under);
+      const unavailable = !(over || under);
+      return `<div class="all-limits-row ${unavailable ? 'is-unavailable' : ''}" title="${escapeHtml(label)}">
+        <span class="all-limits-name"><b>${badge}</b><em>${escapeHtml(selected.key || '-')}</em></span>
+        ${sides.over ? `<span class="all-limits-price over"><small>O</small><b title="${escapeHtml(trendHistoryTooltip(state.trendHistory[`bet365:${overId}`] || []))}">${escapeHtml(over || '-')}</b></span>` : ''}
+        ${sides.under ? `<span class="all-limits-price under"><small>U</small><b title="${escapeHtml(trendHistoryTooltip(state.trendHistory[`bet365:${underId}`] || []))}">${escapeHtml(under || '-')}</b></span>` : ''}
+      </div>`;
+    }).join('');
+    return `<section class="all-limits-strip count-${visibleRows.length}">
+      <header><strong>Limites</strong>${compactLiveStatus()}<button type="button" class="compact-tool" data-action="settings" title="Configurações"><i class='bx bx-cog'></i></button></header>
+      <div class="all-limits-rows sides-${Number(sides.over) + Number(sides.under)}">${rowsHtml}</div>
+    </section>`;
+  }
+
   function GoalLineWidget(model, mode) {
     const selected = selectGoalWidgetLine(model, mode);
     const labels = { lht: 'Limite HT', lft: 'Limite FT', laft: 'Limite a frente FT' };
@@ -614,12 +659,12 @@
     const model = buildOddsViewModel();
     const compact = state.overlay && state.layoutMode === 'compact' && !state.compactExpanded;
     const viewMode = String(state.payload.viewMode || '');
-    const dedicatedWidget = state.overlay && ['mo', 'lht', 'lft', 'laft'].includes(viewMode);
+    const dedicatedWidget = state.overlay && ['mo', 'lht', 'lft', 'laft', 'limits'].includes(viewMode);
     document.body.classList.toggle('layout-compact', compact);
     document.body.classList.toggle('layout-normal', !compact);
     document.body.classList.toggle('layout-market-widget', dedicatedWidget);
     const content = dedicatedWidget
-      ? (viewMode === 'mo' ? MatchOddsStrip(model) : Bet365GoalStrip(model, viewMode))
+      ? (viewMode === 'mo' ? MatchOddsStrip(model) : (viewMode === 'limits' ? AllLimitsStrip(model) : Bet365GoalStrip(model, viewMode)))
       : (compact ? CompactOddsCard(model) : NormalOddsPanel(model));
     root.innerHTML = `${state.overlay ? '' : `<header class="odds-head"><div class="odds-title"><span>Radar de Odds</span><h1>${escapeHtml(state.payload.home || '-')} x ${escapeHtml(state.payload.away || '-')}</h1></div><div class="odds-actions"><button type="button" data-action="top" class="${state.alwaysOnTop ? 'active' : ''}" title="Sempre por cima"><i class='bx bx-pin'></i></button><button type="button" data-action="highlight" title="Destacar"><i class='bx bx-crop'></i></button><button type="button" data-action="close" title="Fechar"><i class='bx bx-x'></i></button></div></header>`}${content}${state.overlay ? '' : `<footer class="odds-foot"><span>${model.updatedAt ? `Atualizado ${new Date(model.updatedAt).toLocaleTimeString('pt-BR')}` : 'Conectando fontes...'}</span><button type="button" data-action="diagnostics"><i class='bx bx-show'></i> Diagnostico</button></footer>`}`;
   }
@@ -661,7 +706,7 @@
   async function init() {
     state.payload = decodePayload();
     state.overlay = !!state.payload.overlay;
-    const dedicatedOverlay = state.overlay && ['mo', 'lht', 'lft', 'laft'].includes(state.payload.viewMode);
+    const dedicatedOverlay = state.overlay && ['mo', 'lht', 'lft', 'laft', 'limits'].includes(state.payload.viewMode);
     document.body.classList.toggle('is-overlay', state.overlay);
     if (state.overlay && ['lht', 'lft', 'laft'].includes(state.payload.viewMode)) {
       const sides = goalSidesForMode(state.payload.viewMode);
@@ -778,18 +823,21 @@
       ...(state.bet365Data?.goalLines || []).map(line => String(line.line))
     ])).sort((left, right) => Number(left) - Number(right)),
     goalLineVisibility: { ...state.goalLineVisibility },
-    goalSides: goalSidesForMode(state.payload.viewMode)
+    goalSides: goalSidesForMode(state.payload.viewMode),
+    limitRows: { ...state.limitRows }
   });
   window.traderPublicOdds?.onMenuAction?.(payload => {
     const action = payload?.action;
     if (action === 'switch-market') {
-      const nextMode = ['mo', 'lht', 'lft', 'laft'].includes(payload.value) ? payload.value : state.payload.viewMode;
+      const nextMode = ['mo', 'lht', 'lft', 'laft', 'limits'].includes(payload.value) ? payload.value : state.payload.viewMode;
       state.payload.viewMode = nextMode;
       state.compactMarketIndex = 0;
       state.compactExpanded = false;
       state.rateCycles = {};
       if (nextMode === 'mo') window.traderPublicOdds?.resizeGoalSides?.(2);
-      else {
+      else if (nextMode === 'limits') {
+        state.lastLimitRowCount = 0;
+      } else {
         const sides = goalSidesForMode(nextMode);
         window.traderPublicOdds?.resizeGoalSides?.(Number(sides.over) + Number(sides.under));
       }
@@ -801,7 +849,13 @@
       if (!sides.over && !sides.under) sides[payload.key] = true;
       state.goalSidesByMode[mode] = sides;
       localStorage.setItem('public_odds_goal_sides_by_mode', JSON.stringify(state.goalSidesByMode));
-      window.traderPublicOdds?.resizeGoalSides?.(Number(sides.over) + Number(sides.under));
+      if (mode !== 'limits') window.traderPublicOdds?.resizeGoalSides?.(Number(sides.over) + Number(sides.under));
+      render();
+    } else if (action === 'show-limit-row') {
+      state.limitRows[payload.key] = !!payload.value;
+      if (!Object.values(state.limitRows).some(Boolean)) state.limitRows[payload.key] = true;
+      localStorage.setItem('public_odds_limit_rows', JSON.stringify(state.limitRows));
+      state.lastLimitRowCount = 0;
       render();
     } else if (action === 'show-match-odds') {
       state.showMatchOdds = !!payload.value;

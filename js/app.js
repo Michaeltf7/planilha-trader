@@ -3,7 +3,7 @@
 const App = {
     data: [],
     customMethods: [],
-    currentView: 'dashboard',
+    currentView: 'inicio',
     theme: 'light',
     ligas: [],
     dicionarioTimes: {},
@@ -17,9 +17,31 @@ const App = {
     desempenhoMonth: null,
     desempenhoSelectedDay: '',
     appVersion: '',
+    viewTitles: {
+        'inicio': 'Início',
+        'dashboard': 'Dashboard',
+        'central-analise': 'Central de Análise',
+        'desempenho': 'Desempenho',
+        'entradas': 'Todas as Entradas',
+        'metodos': 'Análise por Métodos',
+        'ligas': 'Análise por Liga',
+        'times': 'Análise por Time',
+        'financas': 'Saques e Depósitos',
+        'ciclos': 'Método de Ciclos',
+        'escudos': 'Configurar Escudos',
+        'configuracoes': 'Configurações do Sistema',
+        'calendario': 'Calendário de Jogos',
+        'planejamento': 'Planejamento Diário',
+        'copa-mundo': 'Copa do Mundo',
+        'competicoes': 'Competições',
+        'escada': 'Simulador de Escada'
+    },
 
     async init() {
+        const startupView = localStorage.getItem('planilha-trader-startup-view');
+        if (startupView) this.currentView = startupView;
         this.cacheDOM();
+        this.updatePageTitle();
         this.bindEvents();
         await this.loadAppInfo();
         await this.loadTheme();
@@ -36,6 +58,10 @@ const App = {
         this.csvInput = document.getElementById('csvFileInput');
         this.themeToggle = document.getElementById('theme-toggle');
         this.versionLabel = document.getElementById('app-version');
+    },
+
+    updatePageTitle() {
+        if (this.pageTitle) this.pageTitle.textContent = this.viewTitles[this.currentView] || 'Planilha Trader';
     },
     
     bindEvents() {
@@ -297,6 +323,10 @@ const App = {
                 toggle.setAttribute('aria-expanded', String(nextOpen));
                 localStorage.setItem(storageKey, nextOpen ? 'open' : 'closed');
             });
+        });
+
+        this.navLinks.forEach(link => {
+            link.classList.toggle('active', link.getAttribute('data-view') === this.currentView);
         });
         
         this.csvInput.addEventListener('change', (e) => this.handleFileUpload(e));
@@ -1124,27 +1154,8 @@ const App = {
         }
         this.currentView = view;
         
-        // Update Title
-        const titleMap = {
-            'dashboard': 'Dashboard',
-            'central-analise': 'Central de Análise',
-            'desempenho': 'Desempenho',
-            'entradas': 'Todas as Entradas',
-            'metodos': 'Análise por Métodos',
-            'ligas': 'Análise por Liga',
-            'times': 'Análise por Time',
-            'financas': 'Saques e Depósitos',
-            'ciclos': 'Método de Ciclos',
-            'escudos': 'Configurar Escudos',
-            'configuracoes': 'Configurações do Sistema',
-            'calendario': 'Calendário de Jogos',
-            'planejamento': 'Planejamento Diário',
-            'copa-mundo': 'Copa do Mundo',
-            'competicoes': 'Competições',
-            'escada': 'Simulador de Escada'
-        };
-        
-        this.pageTitle.textContent = titleMap[view] || 'Planilha Trader';
+        this.updatePageTitle();
+        if (view !== 'inicio') localStorage.setItem('planilha-trader-last-view', view);
         
         // Sincronizar classe active no menu lateral
         if (this.navLinks) {
@@ -1412,7 +1423,7 @@ const App = {
     
     render() {
         // Permitir que certas views funcionem sem dados de entradas
-        const viewsIndependentes = ['calendario', 'planejamento', 'copa-mundo', 'competicoes', 'escudos', 'configuracoes', 'escada'];
+        const viewsIndependentes = ['inicio', 'calendario', 'planejamento', 'copa-mundo', 'competicoes', 'escudos', 'configuracoes', 'escada'];
         
         if (!viewsIndependentes.includes(this.currentView) && (!this.data || this.data.length === 0)) {
             this.appContainer.innerHTML = `
@@ -1426,6 +1437,9 @@ const App = {
         }
 
         switch(this.currentView) {
+            case 'inicio':
+                if (typeof HomePage !== 'undefined') HomePage.render();
+                break;
             case 'dashboard':
                 this.renderDashboard();
                 break;

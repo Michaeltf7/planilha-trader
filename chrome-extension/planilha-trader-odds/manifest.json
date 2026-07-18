@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Planilha Trader - Radar de Odds",
-  "version": "0.9.1",
+  "version": "0.9.3",
   "description": "Conecta odds publicas da Betfair Exchange e bet365 ao Planilha Trader.",
   "permissions": ["tabs", "storage", "alarms"],
   "host_permissions": [

@@ -109,6 +109,20 @@ contextBridge.exposeInMainWorld('traderDesktopHighlight', {
 
 contextBridge.exposeInMainWorld('traderWRadarRealMod', {
   openWindow: (payload) => ipcRenderer.invoke('wradar-real-mod:open-window', payload),
+  openWidgets: (payload) => ipcRenderer.invoke('wradar-widgets:open-manager', payload),
+  openWidget: (payload) => ipcRenderer.invoke('wradar-widgets:open-widget', payload),
+  closeWidgets: (payload) => ipcRenderer.invoke('wradar-widgets:close-all', payload),
+  fitWidgetContent: (payload) => ipcRenderer.invoke('wradar-widgets:fit-content', payload),
+  dragWidgetWindow: (payload = {}) => {
+    const point = { x: Number(payload.x) || 0, y: Number(payload.y) || 0 };
+    if (payload.phase === 'start') ipcRenderer.send('wradar-widgets:begin-drag', point);
+    else if (payload.phase === 'move') ipcRenderer.send('wradar-widgets:drag-to', point);
+    else if (payload.phase === 'end' || payload.phase === 'cancel') ipcRenderer.send('wradar-widgets:end-drag');
+  },
+  showWidgetMenu: () => ipcRenderer.send('wradar-widgets:show-menu'),
+  showWidgetManagerMenu: () => ipcRenderer.send('wradar-widgets:show-manager-menu'),
+  showWidgetOddsMenu: () => ipcRenderer.send('wradar-widgets:show-odds-menu'),
+  selectWidgetLayout: (payload) => ipcRenderer.send('wradar-widgets:layout-choice', payload),
   resizeWindow: (payload) => ipcRenderer.invoke('wradar-real-mod:resize-window', payload),
   chooseRadarIcon: (payload) => ipcRenderer.invoke('wradar-real-mod:choose-icon', payload),
   dragOverlayWindow: (payload = {}) => {
@@ -134,6 +148,24 @@ contextBridge.exposeInMainWorld('traderWRadarRealMod', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('wradar-real-mod:update', listener);
     return () => ipcRenderer.removeListener('wradar-real-mod:update', listener);
+  },
+  onWidgetAction: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('wradar-widgets:menu-action', listener);
+    return () => ipcRenderer.removeListener('wradar-widgets:menu-action', listener);
+  },
+  onWidgetsChanged: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('wradar-widgets:changed', listener);
+    return () => ipcRenderer.removeListener('wradar-widgets:changed', listener);
+  },
+  onWidgetOddsAction: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('wradar-widgets:odds-action', listener);
+    return () => ipcRenderer.removeListener('wradar-widgets:odds-action', listener);
   }
 });
 
@@ -147,6 +179,7 @@ contextBridge.exposeInMainWorld('traderPublicOdds', {
   toggleAlwaysOnTop: () => ipcRenderer.invoke('public-odds:toggle-always-on-top'),
   resizeLayout: layout => ipcRenderer.invoke('public-odds:resize-layout', layout),
   resizeGoalSides: count => ipcRenderer.invoke('public-odds:resize-goal-sides', count),
+  resizeAllLimits: rows => ipcRenderer.invoke('public-odds:resize-all-limits', rows),
   setLayoutMinimum: layout => ipcRenderer.invoke('public-odds:set-layout-minimum', layout),
   showMenu: () => ipcRenderer.send('public-odds:show-menu'),
   onUpdate: callback => {
